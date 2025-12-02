@@ -5,9 +5,7 @@ __pycache__/
 *.pyc
 venv/
 env/
-back/project/.env
-back/project/*.pkl
-back/project/ML_model/*.pkl
+back/Project/.env
 
 # ===========================
 # Flutter (frontend)
