@@ -1,0 +1,30 @@
+# ===========================
+# Python (backend)
+# ===========================
+__pycache__/
+*.pyc
+venv/
+env/
+back/project/.env
+back/project/*.pkl
+back/project/ML_model/*.pkl
+
+# ===========================
+# Flutter (frontend)
+# ===========================
+build/
+.dart_tool/
+.packages
+pubspec.lock
+ios/Pods/
+android/.gradle/
+.android/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE files
+.vscode/
+.idea/
+
+# OS junk
+.DS_Store
