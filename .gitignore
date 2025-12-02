@@ -5,7 +5,7 @@ __pycache__/
 *.pyc
 venv/
 env/
-back/Project/.env
+
 
 # ===========================
 # Flutter (frontend)
