@@ -4,26 +4,31 @@ import 'package:flutter/material.dart';
 
 class CheckIcon extends StatelessWidget {
   final String type;
+  final VoidCallback? onTap;
 
-  const CheckIcon({super.key, this.type = 'none'});
+  const CheckIcon({super.key, this.type = 'none', this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 38,
-      height: 38,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(width: 1, color: const Color(0xFFE6E6E6)),
-      ),
-      child: Center(
-        child: Image.asset(
-          type == 'done'
-              ? 'assets/todo_screen/button2.png'
-              : 'assets/todo_screen/button1.png',
-          width: 38,
-          height: 38,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            width: 1,
+            color: type == 'done'
+                ? const Color(0xFFE6E6E6) // 체크됨: 회색
+                : const Color(0xFF4B57BB), // 체크 안됨: 앱의 accent 색상
+          ),
+        ),
+        child: Center(
+          child: type == 'done'
+              ? const Text('✔️', style: TextStyle(fontSize: 14))
+              : null, // 체크 안됨: 빈 박스
         ),
       ),
     );
