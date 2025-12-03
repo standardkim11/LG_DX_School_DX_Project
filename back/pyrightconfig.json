@@ -1,0 +1,15 @@
+{
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/node_modules",
+    "**/.venv"
+  ],
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "basic",
+  "venvPath": "C:\\Users\\125\\AppData\\Local\\Programs\\Python\\Python313",
+  "venv": "."
+}
+

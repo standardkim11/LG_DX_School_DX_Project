@@ -1,0 +1,56 @@
+name: front
+description: "A new Flutter project."
+
+
+environment:
+  sdk: ^3.9.2
+
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/home_screen/MainHome.png
+    - assets/bottom_navigation_icon/home.png
+    - assets/bottom_navigation_icon/device.png
+    - assets/bottom_navigation_icon/routine.png
+    - assets/bottom_navigation_icon/care.png
+    - assets/bottom_navigation_icon/menu.png
+    - assets/lgrouthinq/routhinqmain.png
+    - assets/todo_screen/bar.png
+    - assets/todo_screen/button1.png
+    - assets/todo_screen/button2.png
+    - assets/todo_screen/chat.png
+    - assets/routine_screen/routine_bar.png
+    - assets/routine_screen/human.png
+    - assets/routine_screen/friends.png
+    - assets/routine_screen/friends1.png
+    - assets/routine_screen/friends2.png
+    
+  # 폰트 설정
+  fonts:
+    - family: LGSmart_H
+      fonts:
+        - asset: fonts/LGSmart_H-Regular.ttf
+        - asset: fonts/LGSmart_H-Bold.ttf
+          weight: 700
+        - asset: fonts/LGSmart_H-SemiBold.ttf
+          weight: 500
+        - asset: fonts/LGSmart_H-Light.ttf
+          weight: 300
+
