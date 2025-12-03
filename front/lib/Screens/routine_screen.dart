@@ -8,6 +8,7 @@ import '../components/habit_card.dart';
 import 'todo_screen.dart';
 import 'viewall_screen.dart';
 import 'dashboard_screen.dart';
+import 'chat_screen.dart';
 
 class RoutineScreen extends StatefulWidget {
   const RoutineScreen({super.key});
@@ -346,10 +347,20 @@ class _RoutineScreenState extends State<RoutineScreen> {
                   ],
                 ),
                 child: Center(
-                  child: Image.asset(
-                    'assets/todo_screen/chat.png',
-                    width: 45,
-                    height: 45,
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ChatScreen(),
+                        ),
+                      );
+                    },
+                    child: Image.asset(
+                      'assets/todo_screen/chat.png',
+                      width: 45,
+                      height: 45,
+                    ),
                   ),
                 ),
               ),
