@@ -25,4 +25,8 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/
+    - assets/home_screen/
+    - assets/bottom_navigation_icon/
+    - assets/lgrouthinq/
+    - assets/routine_screen/
+    - assets/todo_screen/

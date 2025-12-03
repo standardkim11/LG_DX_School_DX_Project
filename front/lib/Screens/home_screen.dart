@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'routine_screen.dart';
+import 'lgrouthinq.dart' as lg;
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -12,7 +12,7 @@ class HomeScreen extends StatelessWidget {
           // 1) 전체 배경 Home.png
           Positioned.fill(
             child: Image.asset(
-              'assets/MainHome.png', // 실제 파일명/경로에 맞게
+              'assets/home_screen/MainHome.png', // 실제 파일명/경로에 맞게
               fit: BoxFit.cover,
             ),
           ),
@@ -46,7 +46,7 @@ class HomeScreen extends StatelessWidget {
                             width: iconSize,
                             height: iconSize,
                             child: Image.asset(
-                              'assets/Home_icon_bold.png',
+                              'assets/bottom_navigation_icon/Home_icon_bold.png',
                               fit: BoxFit.contain,
                               filterQuality: FilterQuality.high,
                               isAntiAlias: true,
@@ -57,7 +57,7 @@ class HomeScreen extends StatelessWidget {
                             width: iconSize,
                             height: iconSize,
                             child: Image.asset(
-                              'assets/Device_icon.png',
+                              'assets/bottom_navigation_icon/Device_icon.png',
                               fit: BoxFit.contain,
                               filterQuality: FilterQuality.high,
                               isAntiAlias: true,
@@ -69,7 +69,8 @@ class HomeScreen extends StatelessWidget {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => const RoutineScreen(),
+                                  builder: (context) =>
+                                      const lg.RoutineScreen(),
                                 ),
                               );
                             },
@@ -77,7 +78,7 @@ class HomeScreen extends StatelessWidget {
                               width: iconSize,
                               height: iconSize,
                               child: Image.asset(
-                                'assets/Routine_icon.png',
+                                'assets/bottom_navigation_icon/Routine_icon.png',
                                 fit: BoxFit.contain,
                                 filterQuality: FilterQuality.high,
                                 isAntiAlias: true,
@@ -89,7 +90,7 @@ class HomeScreen extends StatelessWidget {
                             width: iconSize,
                             height: iconSize,
                             child: Image.asset(
-                              'assets/Care_icon.png',
+                              'assets/bottom_navigation_icon/Care_icon.png',
                               fit: BoxFit.contain,
                               filterQuality: FilterQuality.high,
                               isAntiAlias: true,
@@ -100,7 +101,7 @@ class HomeScreen extends StatelessWidget {
                             width: iconSize,
                             height: iconSize,
                             child: Image.asset(
-                              'assets/Menu_icon.png',
+                              'assets/bottom_navigation_icon/Menu_icon.png',
                               fit: BoxFit.contain,
                               filterQuality: FilterQuality.high,
                               isAntiAlias: true,
