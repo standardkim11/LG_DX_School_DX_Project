@@ -23,6 +23,7 @@ class HabitCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
+      constraints: const BoxConstraints(minHeight: 88), // TodoItemCard와 높이 통일
       decoration: BoxDecoration(
         color: AppColors.backgroundWhite,
         borderRadius: BorderRadius.circular(16),
@@ -44,6 +45,7 @@ class HabitCard extends StatelessWidget {
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       subtitle,
@@ -53,16 +55,16 @@ class HabitCard extends StatelessWidget {
                         color: Color(0xFF9FA7B9),
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF3843FF),
+                        color: AppColors.textAccent,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     _buildProgressBar(progress),
                   ],
                 ),
@@ -83,7 +85,7 @@ class HabitCard extends StatelessWidget {
 
   Widget _buildProgressBar(double progress) {
     return Container(
-      height: 20, // 14 → 20으로 증가 (원하는 크기로 조정 가능)
+      height: 16, // 높이를 줄여서 전체 카드 높이 통일
       decoration: BoxDecoration(
         color: const Color(0xFFF1F1F1),
         borderRadius: BorderRadius.circular(12),
@@ -109,7 +111,7 @@ class HabitCard extends StatelessWidget {
               child: Text(
                 '${(progress * 100).toInt()}%',
                 style: const TextStyle(
-                  fontSize: 12, // 10 → 12로 증가 (박스 크기에 맞춰 조정)
+                  fontSize: 11, // progress bar 높이에 맞춰 조정
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 ),
@@ -131,25 +133,31 @@ class RoutineCreateBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 일정 추가하기 버튼과 동일한 위치로 설정
     return Positioned(
-      left: 10,
-      right: 10,
-      bottom: bottomNavHeight - 10,
+      left: 0,
+      right: 0,
+      bottom: 60 + MediaQuery.of(context).padding.bottom,
       child: Container(
-        height: 60,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(30),
-          image: const DecorationImage(
-            image: AssetImage('assets/routine_screen/routine_bar.png'),
-            fit: BoxFit.cover,
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: const BoxDecoration(color: AppColors.backgroundGray),
+        child: Container(
+          height: 60,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(30),
+            image: const DecorationImage(
+              image: AssetImage('assets/routine_screen/routine_bar.png'),
+              fit: BoxFit.cover,
+            ),
           ),
-        ),
-        child: const Center(
-          child: Text(
+          child: const Text(
             '루틴 생성하기',
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 17,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w600,
               color: Colors.white,
             ),
           ),
@@ -169,6 +177,7 @@ class TodoItemCard extends StatelessWidget {
   final String? friendIcon; // null이면 표시하지 않음
   final Map<String, double>? friendIconSizes; // 각 아이콘별 크기 설정 (키: 아이콘 경로, 값: 크기)
   final double? iconSpacing; // 아이콘과 체크박스 사이 간격 (기본값: 12)
+  final VoidCallback? onCheckChanged; // 체크 상태 변경 콜백
 
   const TodoItemCard({
     super.key,
@@ -179,12 +188,14 @@ class TodoItemCard extends StatelessWidget {
     this.friendIcon,
     this.friendIconSizes,
     this.iconSpacing,
+    this.onCheckChanged,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
+      height: 88, // HabitCard와 높이 통일
       decoration: BoxDecoration(
         color: AppColors.backgroundWhite,
         borderRadius: BorderRadius.circular(16),
@@ -203,12 +214,15 @@ class TodoItemCard extends StatelessWidget {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center, // 세로 중앙 정렬
               children: [
                 Text(
                   title,
                   style: AppTextStyles.todoTitle(
                     context,
-                    isHighlighted: isHighlighted,
+                    isHighlighted: checkType == 'done'
+                        ? false // 체크됨: textSecondary 색상 (다이소에서 신상키링 사기)
+                        : true, // 체크 안됨: textAccent 색상 (피그마 복습하기)
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -230,7 +244,7 @@ class TodoItemCard extends StatelessWidget {
                 SizedBox(width: iconSpacing ?? 12),
               ],
               // 기존 체크박스 위젯
-              CheckIcon(type: checkType),
+              CheckIcon(type: checkType, onTap: onCheckChanged),
             ],
           ),
         ],

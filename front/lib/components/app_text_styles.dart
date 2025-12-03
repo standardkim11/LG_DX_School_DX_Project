@@ -31,7 +31,7 @@ class AppTextStyles {
       color: AppColors.textAccent,
       fontSize: 16,
       fontFamily: 'LG Smart_H',
-      fontWeight: FontWeight.w400,
+      fontWeight: FontWeight.w700,
       height: 1.43,
     );
   }
@@ -52,7 +52,7 @@ class AppTextStyles {
       color: isSelected ? AppColors.textAccent : AppColors.textSelected,
       fontSize: 24,
       fontFamily: 'LG Smart_H',
-      fontWeight: FontWeight.w400,
+      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
       height: 1.20,
     );
   }
@@ -106,7 +106,7 @@ class AppTextStyles {
   // VIEW ALL
   static TextStyle viewAll(BuildContext context) {
     return TextStyle(
-      color: AppColors.textLink,
+      color: AppColors.textAccent,
       fontSize: 13,
       fontFamily: 'LG Smart_H',
       fontWeight: FontWeight.w700,
