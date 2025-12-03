@@ -5,36 +5,36 @@ import '../components/tab_bar.dart';
 import '../components/date_card.dart';
 import '../components/bottom_navigation.dart';
 import '../components/habit_card.dart';
-import 'todo_screen.dart';
+import 'routine_screen.dart';
 
-class RoutineScreen extends StatefulWidget {
-  const RoutineScreen({super.key});
+class TodoScreen extends StatefulWidget {
+  const TodoScreen({super.key});
 
   @override
-  State<RoutineScreen> createState() => _RoutineScreenState();
+  State<TodoScreen> createState() => _TodoScreenState();
 }
 
-class _RoutineScreenState extends State<RoutineScreen> {
-  int _selectedTabIndex = 1; // routine 탭이 선택된 상태
+class _TodoScreenState extends State<TodoScreen> {
+  int _selectedTabIndex = 0;
 
   final List<Map<String, dynamic>> _todos = [
     {
-      'title': '로봇청소기 물청소하기',
-      'category': '주 1회',
+      'title': '18:00 지나랑 밥 🍚',
+      'category': '친구',
       'isHighlighted': true,
       'checkType': 'none',
     },
     {
-      'title': '이불 빨래 하기',
-      'category': '2주 1회',
+      'title': '피그마 복습하기',
+      'category': '공부',
       'isHighlighted': true,
       'checkType': 'none',
     },
     {
-      'title': '아침에 물 마시기',
-      'category': '8:00까지 완료하기',
-      'isHighlighted': true,
-      'checkType': 'none',
+      'title': '다이소에서 신상키링 사기',
+      'category': '취미',
+      'isHighlighted': false,
+      'checkType': 'done',
     },
   ];
 
@@ -61,14 +61,12 @@ class _RoutineScreenState extends State<RoutineScreen> {
                   child: CustomTabBar(
                     selectedIndex: _selectedTabIndex,
                     onTabChanged: (index) {
-                      if (index == 0) {
-                        // to-do 탭 클릭 시 todo_screen으로 전환
+                      if (index == 1) {
+                        // routine 탭 클릭 시 화면 전환
                         Navigator.pushReplacement(
                           context,
                           PageRouteBuilder(
-                            pageBuilder:
-                                (context, animation, secondaryAnimation) =>
-                                    const TodoScreen(),
+                            pageBuilder: (context, animation, secondaryAnimation) => const RoutineScreen(),
                             transitionDuration: Duration.zero,
                             reverseTransitionDuration: Duration.zero,
                           ),
@@ -91,12 +89,36 @@ class _RoutineScreenState extends State<RoutineScreen> {
                 Expanded(child: _buildTodoSection(context)),
 
                 // 하단 네비게이션
-                const CustomBottomNavigation(currentScreen: 'routine'),
+                const CustomBottomNavigation(currentScreen: 'todo'),
               ],
             ),
 
-            // 루틴 생성하기 바
-            RoutineCreateBar(bottomNavHeight: bottomNavHeight),
+            // 일정 추가하기 바
+            Positioned(
+              left: 10,
+              right: 10,
+              bottom: bottomNavHeight - 10,
+              child: Container(
+                height: 60,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(30),
+                  image: const DecorationImage(
+                    image: AssetImage('assets/todo_screen/bar.png'),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                child: const Center(
+                  child: Text(
+                    '일정 추가하기',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
             // chat.png 플로팅 버튼
             Positioned(
@@ -185,11 +207,6 @@ class _RoutineScreenState extends State<RoutineScreen> {
   }
 
   Widget _buildTodoSection(BuildContext context) {
-    // 하단 네비게이션과 루틴 생성하기 바 높이 계산
-    final bottomNavHeight = 30.0 + MediaQuery.of(context).padding.bottom;
-    final routineBarHeight = 10.0;
-    final bottomPadding = bottomNavHeight + routineBarHeight + 5; // 여유 공간 추가
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Column(
@@ -201,58 +218,27 @@ class _RoutineScreenState extends State<RoutineScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Habits', style: AppTextStyles.sectionTitle(context)),
+                Text('오늘 할 일', style: AppTextStyles.sectionTitle(context)),
                 Text('VIEW ALL', style: AppTextStyles.viewAll(context)),
               ],
             ),
           ),
 
-          // 할 일 리스트 (스크롤 가능)
-          Expanded(
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.only(bottom: bottomPadding),
-              children: [
-                ..._todos.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final todo = entry.value;
-                  // 첫번째 카드: friends.png, 두번째 카드: friends1.png, 세번째 카드: friends2.png
-                  final friendIcons = [
-                    'assets/routine_screen/friends.png',
-                    'assets/routine_screen/friends1.png',
-                    'assets/routine_screen/friends2.png',
-                  ];
-                  final friendIcon = index < friendIcons.length
-                      ? friendIcons[index]
-                      : null;
-
-                  return Padding(
+          // 할 일 리스트 (스크롤 없음)
+          Column(
+            children: _todos
+                .map(
+                  (todo) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: TodoItemCard(
                       title: todo['title'] as String,
                       category: todo['category'] as String,
                       isHighlighted: todo['isHighlighted'] as bool,
                       checkType: todo['checkType'] as String,
-                      friendIcon: friendIcon,
-                      friendIconSizes: {
-                        'assets/routine_screen/friends.png': 60,
-                        'assets/routine_screen/friends1.png': 40,
-                        'assets/routine_screen/friends2.png': 26,
-                      },
                     ),
-                  );
-                }),
-                // HabitCard
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: HabitCard(
-                    subtitle: '습관 형성까지 16일 남았어요',
-                    title: '아침에 물 마시기💧',
-                    progress: 0.75,
                   ),
-                ),
-              ],
-            ),
+                )
+                .toList(),
           ),
         ],
       ),
