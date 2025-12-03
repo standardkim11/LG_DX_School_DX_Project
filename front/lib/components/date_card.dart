@@ -18,10 +18,24 @@ class DateCard extends StatelessWidget {
     this.isToday = false,
   });
 
+  Color _getLabelColor() {
+    if (label == 'SAT') {
+      // 토요일: 파란색
+      return const Color(0xFF4B57BB);
+    } else if (label == 'SUN') {
+      // 일요일: 빨간색
+      return const Color(0xFFE63946);
+    }
+    // 평일: 기본 색상
+    return isSelected ? AppColors.textSelected : AppColors.textUnselected;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final labelColor = _getLabelColor();
+
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
       decoration: BoxDecoration(
         color: AppColors.backgroundWhite,
         borderRadius: BorderRadius.circular(16),
@@ -38,13 +52,18 @@ class DateCard extends StatelessWidget {
           Text(
             '$day',
             textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
             style: AppTextStyles.dateNumber(context, isSelected: isSelected),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             label,
             textAlign: TextAlign.center,
-            style: AppTextStyles.dateLabel(context, isSelected: isSelected),
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.dateLabel(
+              context,
+              isSelected: isSelected,
+            ).copyWith(color: labelColor),
           ),
         ],
       ),
