@@ -79,7 +79,7 @@ class RoutineCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           title,
-                          style: AppTextStyles.routineTitle(context),
+                          style: AppTextStyles.todoTitle(context),
                         ),
                       ),
                     ],
@@ -89,7 +89,7 @@ class RoutineCard extends StatelessWidget {
                     padding: const EdgeInsets.only(left: 26),
                     child: Text(
                       time,
-                      style: AppTextStyles.routineTime(context),
+                      style: AppTextStyles.todoCategory(context),
                     ),
                   ),
                 ],
