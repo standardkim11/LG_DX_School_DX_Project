@@ -19,7 +19,6 @@ class Routine(db.Model):
         nullable=True,
     )  # 특정 가전과 연결된 루틴
 
-    importance = db.Column(db.Integer, nullable=True)
     run_minutes = db.Column(db.Integer, nullable=True)
     schedule_type = db.Column(db.String(20), nullable=False, default="ONCE")
     is_active = db.Column(db.Boolean, nullable=False, default=True)
@@ -28,7 +27,8 @@ class Routine(db.Model):
 
     executions = db.relationship("RoutineExecution", backref="routine", lazy=True)
     notifications = db.relationship("Notification", backref="routine", lazy=True)
-
+    habit_goal_days = db.Column("HABIT_GOAL_DAYS", db.Integer, nullable=True)
+    habit_start_date = db.Column("HABIT_START_DATE", db.Date, nullable=True)
     def __repr__(self):
         return f"<Routine {self.name} ({self.routine_type})>"
 
@@ -39,7 +39,6 @@ class Routine(db.Model):
             "name": self.name,
             "routine_type": self.routine_type,
             "serial_no": self.serial_no,
-            "importance": self.importance,
             "run_minutes": self.run_minutes,
             "schedule_type": self.schedule_type,
             "is_active": self.is_active,

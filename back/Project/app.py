@@ -15,7 +15,7 @@ from dotenv import load_dotenv  # ← 추가: .env 로드
 from Project.extensions import db, cors
 from routes.routine_routes import routine_bp
 from routes.notification_routes import notification_bp
-from routes.recommend_routes import recommend_bp
+from routes.recommend_routes import recommend_bp  # type: ignore
 from models.voice import voice_bp
 
 # 모델 import (SQLAlchemy 인식용)
@@ -71,6 +71,7 @@ def create_app():
     db.init_app(app)
     cors.init_app(app)
 
+
     # ============================================================
     #  🔹 DB 테이블 생성
     # ============================================================
@@ -103,11 +104,23 @@ def create_app():
     # ============================================================
     app.register_blueprint(routine_bp)
     app.register_blueprint(notification_bp, url_prefix="/api")
-    app.register_blueprint(recommend_bp,    url_prefix="/api")
+    app.register_blueprint(recommend_bp,    url_prefix="/api/recommend")
     app.register_blueprint(voice_bp,        url_prefix="/api")
+
+    # 디버깅: 등록된 모든 라우트 출력
+    if app.debug:
+        print("\n" + "="*60)
+        print("📋 등록된 라우트 목록:")
+        print("="*60)
+        for rule in app.url_map.iter_rules():
+            print(f"  {rule.methods} {rule.rule}")
+        print("="*60 + "\n")
 
     return app
 
+#print(">>> DB_USER:", repr(DB_USER))
+#print(">>> DB_PASSWORD:", repr(DB_PASSWORD))
+#print(">>> EZCONNECT_DSN:", repr(EZCONNECT_DSN))
 
 # ============================================================
 #  🔹 Flask App 실행
