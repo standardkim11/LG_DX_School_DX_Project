@@ -26,3 +26,6 @@ android/.gradle/
 
 # OS junk
 .DS_Store
+
+# Log files
+debug.log
