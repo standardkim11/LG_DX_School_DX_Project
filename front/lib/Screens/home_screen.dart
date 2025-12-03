@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'routine_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -11,7 +12,7 @@ class HomeScreen extends StatelessWidget {
           // 1) 전체 배경 Home.png
           Positioned.fill(
             child: Image.asset(
-              'assets/Home.png', // 실제 파일명/경로에 맞게
+              'assets/MainHome.png', // 실제 파일명/경로에 맞게
               fit: BoxFit.cover,
             ),
           ),
@@ -20,32 +21,96 @@ class HomeScreen extends StatelessWidget {
           Align(
             alignment: Alignment.bottomCenter,
             child: SafeArea(
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Image.asset('assets/Home_icon.png', height: 28),
-                    Image.asset('assets/Device_icon.png', height: 28),
-                    Image.asset('assets/Routine_icon.png', height: 28),
-                    Image.asset('assets/Care_icon.png', height: 28),
-                    Image.asset('assets/Menu_icon.png', height: 28),
-                  ],
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 15),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final double screenWidth = constraints.maxWidth;
+                    const int iconCount = 5;
+                    const int gapCount = 6; // 양쪽 끝 포함
+                    const double iconSize = 50;
+                    const double totalIconWidth = iconCount * iconSize;
+                    final double totalGapWidth = screenWidth - totalIconWidth;
+                    final double gapWidth = totalGapWidth > 0
+                        ? totalGapWidth / gapCount
+                        : 0;
+
+                    return SizedBox(
+                      width: screenWidth,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          SizedBox(width: gapWidth),
+                          SizedBox(
+                            width: iconSize,
+                            height: iconSize,
+                            child: Image.asset(
+                              'assets/Home_icon_bold.png',
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
+                              isAntiAlias: true,
+                            ),
+                          ),
+                          SizedBox(width: gapWidth),
+                          SizedBox(
+                            width: iconSize,
+                            height: iconSize,
+                            child: Image.asset(
+                              'assets/Device_icon.png',
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
+                              isAntiAlias: true,
+                            ),
+                          ),
+                          SizedBox(width: gapWidth),
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const RoutineScreen(),
+                                ),
+                              );
+                            },
+                            child: SizedBox(
+                              width: iconSize,
+                              height: iconSize,
+                              child: Image.asset(
+                                'assets/Routine_icon.png',
+                                fit: BoxFit.contain,
+                                filterQuality: FilterQuality.high,
+                                isAntiAlias: true,
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: gapWidth),
+                          SizedBox(
+                            width: iconSize,
+                            height: iconSize,
+                            child: Image.asset(
+                              'assets/Care_icon.png',
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
+                              isAntiAlias: true,
+                            ),
+                          ),
+                          SizedBox(width: gapWidth),
+                          SizedBox(
+                            width: iconSize,
+                            height: iconSize,
+                            child: Image.asset(
+                              'assets/Menu_icon.png',
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
+                              isAntiAlias: true,
+                            ),
+                          ),
+                          SizedBox(width: gapWidth),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
