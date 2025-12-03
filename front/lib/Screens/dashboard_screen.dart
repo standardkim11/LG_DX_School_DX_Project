@@ -3,6 +3,7 @@ import '../components/app_colors.dart';
 import '../components/app_text_styles.dart';
 import '../components/tab_bar.dart';
 import '../components/bottom_navigation.dart';
+import '../components/habit_card.dart';
 import 'todo_screen.dart';
 import 'routine_screen.dart';
 
@@ -233,7 +234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(
-                  padding: const EdgeInsets.only(left: 20, top: 70),
+                  padding: const EdgeInsets.only(left: 20, top: 50),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -250,7 +251,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 7),
                 child: CustomTabBar(
@@ -324,6 +325,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ],
                   ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              // 아침에 물 마시기 박스
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: HabitCard(
+                  subtitle: '습관 형성까지 16일 남았어요',
+                  title: '아침에 물 마시기💧',
+                  progress: 0.75,
                 ),
               ),
               const SizedBox(height: 20),
