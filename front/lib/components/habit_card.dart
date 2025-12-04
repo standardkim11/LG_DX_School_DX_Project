@@ -374,23 +374,13 @@ class _HabitCardState extends State<HabitCard> {
                                   color: textColor ?? AppColors.textAccent,
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 32), // 제목과 progress bar 사이 여백 증가 (24 -> 32)
                               _buildProgressBar(widget.progress),
                             ],
                           ),
                         ),
                         const SizedBox(width: 12),
                       ],
-                    ),
-                    // human.png를 Progress Bar 위에 배치
-                    Positioned(
-                      right: 100,
-                      bottom: 25,
-                      child: Image.asset(
-                        widget.runnerIcon,
-                        width: 20,
-                        height: 20,
-                      ),
                     ),
                   ],
                 ),
@@ -651,10 +641,10 @@ class _HabitCardState extends State<HabitCard> {
                     ),
                   ),
                 ),
-              // 캐릭터 아이콘 (제목과 진행률 바 사이 여백 공간에 배치)
+              // 캐릭터 아이콘 (progress bar 위쪽 여백 공간에 배치, progress에 따라 움직임)
               Positioned(
                 left: (runnerPosition - 10).clamp(0.0, progressBarWidth - 20),
-                top: -28, // 진행률 바 위쪽 24px 여백 공간 중간에 배치
+                top: -24, // progress bar 위쪽 32px 여백 공간에 배치
                 child: Image.asset(widget.runnerIcon, width: 20, height: 20),
               ),
             ],

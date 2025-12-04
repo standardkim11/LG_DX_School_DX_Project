@@ -36,7 +36,8 @@ class _PushScreenState extends State<PushScreen> {
   void _updateCurrentTime() {
     final now = DateTime.now();
     setState(() {
-      _currentTime = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      _currentTime =
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     });
   }
 
@@ -58,7 +59,7 @@ class _PushScreenState extends State<PushScreen> {
 
       if (response != null && response['triggered'] == true) {
         final latenessMinutes = response['lateness_minutes'] as int? ?? 0;
-        
+
         // 메시지 생성
         String message;
         if (latenessMinutes > 0) {
@@ -120,64 +121,76 @@ class _PushScreenState extends State<PushScreen> {
               child: Image.asset(
                 'assets/push_screen/pushscreen.png',
                 fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  // 이미지 로드 실패 시 대체 배경
+                  return Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          const Color(0xFFE8E8F0),
+                          const Color(0xFFD0D0E0),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
 
-            // 상단 시간 표시
+            // 시간, 날짜, 알림 카드를 세로로 배치
             SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 80),
-                child: Center(
-                  child: Column(
-                    children: [
-                      Text(
-                        _currentTime,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 56,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'LG Smart_H',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _getCurrentDate(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w400,
-                          fontFamily: 'LG Smart_H',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // 알림 카드들
-            Positioned(
-              bottom: 100,
-              left: 20,
-              right: 20,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 첫 번째 알림 카드
-                  if (!_isLoading && _latenessMessage != null)
-                    _buildNotificationCard(
-                      icon: Icons.home,
-                      message: '지현님, $_latenessMessage',
-                      timeLabel: '지금',
+                  // 상단 시간 표시
+                  Padding(
+                    padding: const EdgeInsets.only(top: 50),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _currentTime,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 56,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'LG Smart_H',
+                              letterSpacing: -1,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _getCurrentDate(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w400,
+                              fontFamily: 'LG Smart_H',
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  const SizedBox(height: 12),
-                  // 두 번째 알림 카드
-                  if (!_isLoading)
-                    _buildNotificationCard(
-                      icon: Icons.home,
-                      message: '지현님, 해야하는 루틴 추천 해드릴께요.',
-                      timeLabel: _getTimeAgoLabel(),
+                  ),
+
+                  // 알림 카드 (시간/날짜 아래 적절한 간격으로 배치)
+                  if (!_isLoading && _latenessMessage != null) ...[
+                    const SizedBox(height: 50),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: _buildNotificationCard(
+                        icon: Icons.home,
+                        message: '지현님, $_latenessMessage\n해야하는 루틴 추천 해드릴께요.',
+                        timeLabel: '지금',
+                      ),
                     ),
+                  ],
+
+                  // 하단 여백을 위한 Spacer
+                  const Spacer(),
                 ],
               ),
             ),
@@ -196,8 +209,15 @@ class _PushScreenState extends State<PushScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.8),
+        color: Colors.black.withOpacity(0.75),
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,11 +230,7 @@ class _PushScreenState extends State<PushScreen> {
               color: const Color(0xFFFF3132), // 빨간색
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
-              icon,
-              color: Colors.white,
-              size: 24,
-            ),
+            child: Icon(icon, color: Colors.white, size: 24),
           ),
           const SizedBox(width: 12),
           // 메시지와 시간
@@ -229,19 +245,21 @@ class _PushScreenState extends State<PushScreen> {
                     fontSize: 14,
                     fontWeight: FontWeight.w400,
                     fontFamily: 'LG Smart_H',
-                    height: 1.4,
+                    height: 1.5,
+                    letterSpacing: -0.2,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerRight,
                   child: Text(
                     timeLabel,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withOpacity(0.8),
                       fontSize: 12,
                       fontWeight: FontWeight.w400,
                       fontFamily: 'LG Smart_H',
+                      letterSpacing: -0.1,
                     ),
                   ),
                 ),
@@ -258,12 +276,4 @@ class _PushScreenState extends State<PushScreen> {
     final weekdays = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
     return '${now.month}월 ${now.day}일 ${weekdays[now.weekday - 1]}';
   }
-
-  String _getTimeAgoLabel() {
-    // 첫 번째 알림이 "지금"이므로 두 번째는 "10분 전" 같은 형식
-    // 실제로는 API 응답 시간과의 차이를 계산해야 하지만,
-    // 현재는 고정값으로 설정
-    return '10분 전';
-  }
 }
-

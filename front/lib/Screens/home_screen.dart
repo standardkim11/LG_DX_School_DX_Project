@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'lgrouthinq.dart' as lg;
+import 'push_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -97,14 +98,24 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ),
                           SizedBox(width: gapWidth),
-                          SizedBox(
-                            width: iconSize,
-                            height: iconSize,
-                            child: Image.asset(
-                              'assets/bottom_navigation_icon/Menu_icon.png',
-                              fit: BoxFit.contain,
-                              filterQuality: FilterQuality.high,
-                              isAntiAlias: true,
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const PushScreen(),
+                                ),
+                              );
+                            },
+                            child: SizedBox(
+                              width: iconSize,
+                              height: iconSize,
+                              child: Image.asset(
+                                'assets/bottom_navigation_icon/Menu_icon.png',
+                                fit: BoxFit.contain,
+                                filterQuality: FilterQuality.high,
+                                isAntiAlias: true,
+                              ),
                             ),
                           ),
                           SizedBox(width: gapWidth),
