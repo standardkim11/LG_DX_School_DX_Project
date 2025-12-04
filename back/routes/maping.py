@@ -204,6 +204,29 @@ REVERSE_SCHEDULE_TYPE = {v: k for k, v in SCHEDULE_MAP.items()}
 # WEATHER 역매핑
 REVERSE_WEATHER = {v: k for k, v in WEATHER_MAP.items()}
 
+# =========================
+# 루틴 유형별 기본 소요 시간 (시연용)
+# =========================
+DEFAULT_RUN_MINUTES_BY_TYPE = {
+    "LAUNDRY": 40,    # 세탁기 돌리기
+    "CLEANING": 30,   # 바닥 청소 등
+    "HOUSEWORK": 25,  # 설거지/정리 같은 집안일
+    "MORNING": 20,    # 아침 루틴
+    "AFTER_WORK": 20, # 퇴근 후 루틴
+    "ETC": 15,        # 기타
+}
+
+def get_default_run_minutes(routine_type) -> int:
+    """
+    루틴 타입(문자열 기준)에 따른 기본 소요 시간 반환.
+    값이 없거나 알 수 없으면 30분으로 가정.
+    """
+    if routine_type is None:
+        return 30
+    # DB에 "LAUNDRY", "CLEANING" 이런 문자열로 들어가 있으니 그대로 사용
+    key = str(routine_type).strip().upper()
+    return DEFAULT_RUN_MINUTES_BY_TYPE.get(key, 30)
+
 def is_scheduled_today(routine: Routine, today: date) -> bool:
     """
     ROUTINE.schedule_type 기준으로 '오늘 후보인지' 판단

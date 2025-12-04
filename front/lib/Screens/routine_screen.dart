@@ -20,7 +20,7 @@ class RoutineScreen extends StatefulWidget {
 // 전역 상태 관리
 class _RoutineScreenStateManager {
   static int _selectedDateIndex = 15;
-  static Map<String, String> _checkStates = {}; // 체크 상태 저장
+  static final Map<String, String> _checkStates = {}; // 체크 상태 저장
 
   static int get selectedDateIndex => _selectedDateIndex;
   static set selectedDateIndex(int value) => _selectedDateIndex = value;

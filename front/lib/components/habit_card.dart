@@ -105,6 +105,7 @@ class _HabitCardState extends State<HabitCard> {
         }
       },
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
           // 배경 버튼들
           if (_swipeState == 'right')
@@ -583,42 +584,83 @@ class _HabitCardState extends State<HabitCard> {
   }
 
   Widget _buildProgressBar(double progress) {
-    return Container(
-      height: 16, // 높이를 줄여서 전체 카드 높이 통일
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F1F1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Stack(
-        children: [
-          FractionallySizedBox(
-            widthFactor: progress.clamp(0.0, 1.0),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFF4FA5), Color(0xFFFF7EC6)],
-                ),
-                borderRadius: BorderRadius.circular(12), // borderRadius 동일하게 조정
-              ),
-            ),
-          ),
-          Positioned(
-            right: 8,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: Text(
-                '${(progress * 100).toInt()}%',
-                style: const TextStyle(
-                  fontSize: 11, // progress bar 높이에 맞춰 조정
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final progressBarWidth = constraints.maxWidth;
+        final clampedProgress = progress.clamp(0.0, 1.0);
+        final runnerPosition = progressBarWidth * clampedProgress;
+
+        return SizedBox(
+          height: 16, // 진행률 바 높이 명시
+          child: Stack(
+            clipBehavior: Clip.none, // Stack 밖으로 나가는 요소를 허용
+            children: [
+              // 진행률 바 배경
+              Container(
+                width: double.infinity,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F1F1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-            ),
+              // 진행률 바 채워진 부분
+              FractionallySizedBox(
+                widthFactor: clampedProgress,
+                child: Container(
+                  height: 16,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF4FA5), Color(0xFFFF7EC6)],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              // 진행률 퍼센트 텍스트 (채워진 부분의 오른쪽 끝에)
+              if (clampedProgress > 0.05) // 5% 이상일 때 표시
+                Positioned(
+                  left: (runnerPosition - 25).clamp(8.0, progressBarWidth - 30),
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: Text(
+                      '${(progress * 100).toInt()}%',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              // 진행률이 매우 낮을 때는 오른쪽에 표시
+              if (clampedProgress <= 0.05)
+                Positioned(
+                  right: 8,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: Text(
+                      '${(progress * 100).toInt()}%',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF9FA7B9),
+                      ),
+                    ),
+                  ),
+                ),
+              // 캐릭터 아이콘 (제목과 진행률 바 사이 여백 공간에 배치)
+              Positioned(
+                left: (runnerPosition - 10).clamp(0.0, progressBarWidth - 20),
+                top: -28, // 진행률 바 위쪽 24px 여백 공간 중간에 배치
+                child: Image.asset(widget.runnerIcon, width: 20, height: 20),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

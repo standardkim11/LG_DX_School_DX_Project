@@ -1,4 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -10,34 +15,33 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _messageFocusNode = FocusNode();
+  bool _isLoading = false;
 
-  final List<Map<String, dynamic>> _messages = [
-    {
-      'text': '오늘 시간이 별로 없어서 오늘 꼭 해야할 루틴 중요한 순위로 좀 알려줘',
-      'isUser': true,
-    },
-    {
-      'text': '좋아,\n\n귀가 전 바닥 청소하기\n세탁기 돌리기\n\n원하면 바로 우선순위 설정해 줄까?',
-      'isUser': false,
-    },
-    {
-      'text': '나 이번주에 세탁기 몇 번 돌렸어?',
-      'isUser': true,
-    },
-    {
-      'text': '1번 돌려서 긴급으로 저장되어 있어',
-      'isUser': false,
-    },
-    {
-      'text': '그럼 그렇게 설정해 줘',
-      'isUser': true,
-    },
-  ];
+  // API 베이스 URL
+  // 모바일/에뮬레이터: Android는 10.0.2.2, iOS 시뮬레이터는 localhost, 실제 기기는 컴퓨터 IP 사용
+  static String get baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:8088/api';
+    } else if (Platform.isAndroid) {
+      // Android 에뮬레이터는 10.0.2.2 사용 (실제 기기는 컴퓨터의 로컬 IP 주소 사용)
+      return 'http://10.0.2.2:8088/api';
+    } else if (Platform.isIOS) {
+      // iOS 시뮬레이터는 localhost 사용 (실제 기기는 컴퓨터의 로컬 IP 주소 사용)
+      return 'http://localhost:8088/api';
+    }
+    return 'http://localhost:8088/api';
+  }
+
+  static const int userId = 1; // 실제로는 사용자 인증에서 가져와야 함
+
+  final List<Map<String, dynamic>> _messages = [];
 
   @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
+    _messageFocusNode.dispose();
     super.dispose();
   }
 
@@ -51,17 +55,71 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _sendMessage() {
-    if (_messageController.text.isNotEmpty) {
-      setState(() {
-        _messages.add({
-          'text': _messageController.text,
-          'isUser': true,
+  Future<void> _sendMessage() async {
+    final messageText = _messageController.text.trim();
+    if (messageText.isEmpty || _isLoading) return;
+
+    // 사용자 메시지 추가
+    setState(() {
+      _messages.add({'text': messageText, 'isUser': true});
+      _isLoading = true;
+    });
+    _messageController.clear();
+    _scrollToBottom();
+
+    try {
+      // API 호출 - 경로: /api/chat/chat (url_prefix="/api/chat" + route="/chat")
+      // 모바일/에뮬레이터에서는 localhost 대신 10.0.2.2 (Android 에뮬레이터) 또는 실제 IP 사용
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/chat/chat'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'user_id': userId, 'message': messageText}),
+          )
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception('요청 시간 초과');
+            },
+          );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final reply = data['reply'] as String? ?? '응답을 받지 못했습니다.';
+
+        setState(() {
+          _messages.add({'text': reply, 'isUser': false});
+          _isLoading = false;
         });
+      } else {
+        final errorBody = response.body;
+        throw Exception('서버 오류: ${response.statusCode}\n$errorBody');
+      }
+    } catch (e) {
+      String errorMessage = '죄송합니다. 연결에 문제가 발생했습니다.';
+
+      if (e.toString().contains('Failed host lookup') ||
+          e.toString().contains('Connection refused')) {
+        errorMessage = '서버에 연결할 수 없습니다.\n백엔드 서버가 실행 중인지 확인해주세요.';
+      } else if (e.toString().contains('요청 시간 초과')) {
+        errorMessage = '요청 시간이 초과되었습니다.\n잠시 후 다시 시도해주세요.';
+      } else if (e.toString().contains('서버 오류')) {
+        errorMessage = '서버 오류가 발생했습니다.\n관리자에게 문의해주세요.';
+      }
+
+      setState(() {
+        _messages.add({'text': errorMessage, 'isUser': false});
+        _isLoading = false;
       });
-      _messageController.clear();
-      _scrollToBottom();
+
+      // 디버깅용: 콘솔에 에러 출력
+      print('Chat API Error: $e');
     }
+
+    _scrollToBottom();
   }
 
   @override
@@ -79,7 +137,10 @@ class _ChatScreenState extends State<ChatScreen> {
             children: [
               // 상단 헤더
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     GestureDetector(
@@ -109,16 +170,22 @@ class _ChatScreenState extends State<ChatScreen> {
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   itemCount: _messages.length,
                   itemBuilder: (context, index) {
                     final message = _messages[index];
                     final isUser = message['isUser'] as bool;
                     // 이전 메시지 확인
                     final prevMessage = index > 0 ? _messages[index - 1] : null;
-                    final prevIsUser = prevMessage != null ? prevMessage['isUser'] as bool : null;
+                    final prevIsUser = prevMessage != null
+                        ? prevMessage['isUser'] as bool
+                        : null;
                     // 질문-답 그룹 사이에만 여백 추가 (Rou 답변 다음에 사용자 질문이 오는 경우)
-                    final shouldAddSpacing = prevIsUser == false && isUser == true;
+                    final shouldAddSpacing =
+                        prevIsUser == false && isUser == true;
                     return _buildMessageBubble(
                       message['text'] as String,
                       isUser,
@@ -131,10 +198,11 @@ class _ChatScreenState extends State<ChatScreen> {
               // 하단 입력 영역
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 12,
                 ),
+                decoration: const BoxDecoration(color: Colors.white),
                 child: Row(
                   children: [
                     const Text(
@@ -149,40 +217,59 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        maxLines: null,
-                        minLines: 1,
-                        style: const TextStyle(
-                          color: Color(0xFF606D80),
-                          fontSize: 14,
-                          fontFamily: 'LG Smart_H',
-                          fontWeight: FontWeight.w400,
-                          height: 1.43,
-                        ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          hintText: '어떤 하루를 보내실 건가요?',
-                          hintStyle: TextStyle(
+                      child: KeyboardListener(
+                        focusNode: FocusNode(),
+                        onKeyEvent: (event) {
+                          if (event is KeyDownEvent &&
+                              event.logicalKey == LogicalKeyboardKey.enter &&
+                              !HardwareKeyboard.instance.isShiftPressed) {
+                            if (_messageController.text.trim().isNotEmpty &&
+                                !_isLoading) {
+                              _sendMessage();
+                            }
+                          }
+                        },
+                        child: TextField(
+                          controller: _messageController,
+                          focusNode: _messageFocusNode,
+                          maxLines: 1,
+                          style: const TextStyle(
                             color: Color(0xFF606D80),
                             fontSize: 14,
                             fontFamily: 'LG Smart_H',
                             fontWeight: FontWeight.w400,
                             height: 1.43,
                           ),
+                          decoration: const InputDecoration(
+                            border: InputBorder.none,
+                            hintText: '어떤 하루를 보내실 건가요?',
+                            hintStyle: TextStyle(
+                              color: Color(0xFF606D80),
+                              fontSize: 14,
+                              fontFamily: 'LG Smart_H',
+                              fontWeight: FontWeight.w400,
+                              height: 1.43,
+                            ),
+                          ),
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (text) {
+                            if (text.trim().isNotEmpty) {
+                              _sendMessage();
+                            }
+                          },
                         ),
-                        onSubmitted: (text) {
-                          _sendMessage();
-                        },
                       ),
                     ),
                     const SizedBox(width: 10),
                     GestureDetector(
-                      onTap: _sendMessage,
-                      child: Image.asset(
-                        'assets/bottom_navigation_icon/Send_icon.png',
-                        width: 18,
-                        height: 18,
+                      onTap: _isLoading ? null : _sendMessage,
+                      child: Opacity(
+                        opacity: _isLoading ? 0.5 : 1.0,
+                        child: Image.asset(
+                          'assets/bottom_navigation_icon/Send_icon.png',
+                          width: 18,
+                          height: 18,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 13),
@@ -196,7 +283,11 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildMessageBubble(String text, bool isUser, {bool addTopSpacing = false}) {
+  Widget _buildMessageBubble(
+    String text,
+    bool isUser, {
+    bool addTopSpacing = false,
+  }) {
     return Padding(
       padding: EdgeInsets.only(
         bottom: 16,
@@ -210,7 +301,10 @@ class _ChatScreenState extends State<ChatScreen> {
           Flexible(
             child: isUser
                 ? Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF6A6A6C).withOpacity(0.2),
                       borderRadius: BorderRadius.circular(7),
@@ -243,4 +337,3 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 }
-
