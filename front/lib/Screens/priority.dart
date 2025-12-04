@@ -2,8 +2,43 @@ import 'package:flutter/material.dart';
 import '../components/app_colors.dart';
 import '../components/app_text_styles.dart';
 import '../components/bottom_navigation.dart';
+import 'viewall_screen.dart';
 
-class PriorityScreen extends StatelessWidget {
+class PriorityScreen extends StatefulWidget {
+  const PriorityScreen({super.key});
+
+  @override
+  State<PriorityScreen> createState() => _PriorityScreenState();
+}
+
+class _PriorityScreenState extends State<PriorityScreen> {
+  List<Map<String, dynamic>> _routines = [
+    {
+      'key': ValueKey('routine_0'),
+      'title': '로봇청소기 물청소하기',
+      'time': '13:00(화, 목)',
+      'iconSize': 45.0,
+      'hasUrgentBadge': true,
+      'imagePath': 'assets/priority_screen/robot.png',
+    },
+    {
+      'key': ValueKey('routine_1'),
+      'title': '세탁기',
+      'time': '2/4',
+      'iconSize': 40.0,
+      'hasUrgentBadge': false,
+      'imagePath': 'assets/priority_screen/washing.png',
+    },
+    {
+      'key': ValueKey('routine_2'),
+      'title': '건조기 돌리기',
+      'time': '2/4',
+      'iconSize': 40.0,
+      'hasUrgentBadge': false,
+      'imagePath': 'assets/priority_screen/washing.png',
+    },
+  ];
+
   static const _cardShadow = BoxShadow(
     color: Color(0x0F222C5C),
     blurRadius: 68,
@@ -69,135 +104,201 @@ class PriorityScreen extends StatelessWidget {
             // 메인 콘텐츠
             Column(
               children: [
-                // 상단 제목
-                Padding(
-                  padding: const EdgeInsets.only(top: 47, left: 30, right: 20),
-                  child: Row(
+                // 상단 제목과 배너 영역 (흰색 배경)
+                Container(
+                  color: Colors.white,
+                  child: Column(
                     children: [
-                      Transform.rotate(
-                        angle: 3.14, // 180도 회전 (왼쪽 화살표)
-                        child: Text(
-                          '>',
-                          style: AppTextStyles.sectionTitle(
-                            context,
-                          ).copyWith(fontSize: 20, height: 1),
+                      // 상단 제목
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: 47,
+                          left: 30,
+                          right: 20,
+                        ),
+                        child: Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.pushReplacement(
+                                  context,
+                                  PageRouteBuilder(
+                                    pageBuilder:
+                                        (
+                                          context,
+                                          animation,
+                                          secondaryAnimation,
+                                        ) => const ViewAllScreen(),
+                                    transitionDuration: Duration.zero,
+                                    reverseTransitionDuration: Duration.zero,
+                                  ),
+                                );
+                              },
+                              child: Image.asset(
+                                'assets/lgrouthinq/Back_icon.png',
+                                width: 24,
+                                height: 24,
+                              ),
+                            ),
+                            Expanded(
+                              child: Center(
+                                child: Text(
+                                  '우선순위 설정',
+                                  style: AppTextStyles.sectionTitle(context)
+                                      .copyWith(
+                                        fontSize: 24,
+                                        height: 1,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 24, // 오른쪽 공간 (뒤로가기 버튼과 대칭)
+                            ),
+                          ],
                         ),
                       ),
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            '우선순위 설정',
-                            style: AppTextStyles.sectionTitle(context).copyWith(
-                              fontSize: 20,
-                              height: 1,
-                              fontWeight: FontWeight.w500,
+
+                      // 보라색 배너
+                      Padding(
+                        padding: const EdgeInsets.only(top: 20),
+                        child: Container(
+                          width: double.infinity,
+                          height: 140,
+                          padding: const EdgeInsets.all(16),
+                          decoration: ShapeDecoration(
+                            color: AppColors.textAccent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(50),
+                                topRight: Radius.circular(50),
+                              ),
                             ),
-                            textAlign: TextAlign.center,
+                            shadows: [_cardShadow],
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 20),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        '지현님이 선택한 루틴',
+                                        style: _bannerTitleStyle.copyWith(
+                                          fontSize: 20,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        '습도가 70%인 오늘,\n물청소를 완료해서 귀가 전 바닥 청소는는 생략합니다.',
+                                        style: _bannerTextStyle.copyWith(
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  left: 20,
+                                  right: 20,
+                                ),
+                                child: Container(
+                                  width: 67,
+                                  height: 67,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFFFE8E8),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: ClipOval(
+                                    child: Image.asset(
+                                      'assets/routine_screen/jiheon_human.png',
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      SizedBox(
-                        width: 5, // 오른쪽 공간 (화살표와 대칭)
                       ),
                     ],
                   ),
                 ),
 
-                // 보라색 배너
-                Padding(
-                  padding: const EdgeInsets.only(top: 38),
-                  child: Container(
-                    width: double.infinity,
-                    height: 116,
-                    padding: const EdgeInsets.all(16),
-                    decoration: ShapeDecoration(
-                      color: AppColors.textAccent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(50),
-                          topRight: Radius.circular(50),
-                        ),
-                      ),
-                      shadows: [_cardShadow],
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 20, top: 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('지현님이 선택한 루틴', style: _bannerTitleStyle),
-                                const SizedBox(height: 12),
-                                Text(
-                                  '습도가 70%인 오늘,\n물청소를 완료해서 귀가 전 바닥 청소를 넘어갑니다.',
-                                  style: _bannerTextStyle.copyWith(
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 10),
-                          child: Container(
-                            width: 67,
-                            height: 67,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFFFE8E8),
-                              shape: BoxShape.circle,
-                            ),
-                            child: ClipOval(
-                              child: Image.asset(
-                                'assets/routine_screen/jiheon_human.png',
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
                 // 루틴 리스트
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 20,
+                  child: Container(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.5,
                     ),
-                    child: Column(
-                      children: [
-                        _PriorityCard(
-                          title: '로봇청소기 물청소하기',
-                          time: '13:00(화, 목)',
-                          iconSize: 45,
-                          hasUrgentBadge: true,
-                          imagePath: 'assets/priority_screen/robot.png',
-                          arrowDirection: 'down',
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 20,
+                      ),
+                      child: ClipRect(
+                        child: ReorderableListView(
+                          physics: const ClampingScrollPhysics(),
+                          buildDefaultDragHandles: false,
+                          onReorder: (oldIndex, newIndex) {
+                            setState(() {
+                              // 인덱스 범위 검증
+                              if (oldIndex < 0 || oldIndex >= _routines.length)
+                                return;
+                              if (newIndex < 0) newIndex = 0;
+                              if (newIndex >= _routines.length)
+                                newIndex = _routines.length - 1;
+
+                              if (newIndex > oldIndex) {
+                                newIndex -= 1;
+                              }
+
+                              // 범위 재검증
+                              if (newIndex < 0) newIndex = 0;
+                              if (newIndex >= _routines.length)
+                                newIndex = _routines.length - 1;
+
+                              final item = _routines.removeAt(oldIndex);
+                              _routines.insert(newIndex, item);
+                            });
+                          },
+                          children: _routines.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final routine = entry.value;
+
+                            return Padding(
+                              key: routine['key'] as Key,
+                              padding: EdgeInsets.only(
+                                bottom: index < _routines.length - 1 ? 12 : 0,
+                              ),
+                              child: ReorderableDragStartListener(
+                                index: index,
+                                child: _PriorityCard(
+                                  title: routine['title'] as String,
+                                  time: routine['time'] as String,
+                                  iconSize: (routine['iconSize'] as num)
+                                      .toDouble(),
+                                  hasUrgentBadge:
+                                      routine['hasUrgentBadge'] as bool? ??
+                                      false,
+                                  imagePath: routine['imagePath'] as String,
+                                ),
+                              ),
+                            );
+                          }).toList(),
                         ),
-                        const SizedBox(height: 12),
-                        _PriorityCard(
-                          title: '세탁기',
-                          time: '2/4',
-                          iconSize: 40,
-                          imagePath: 'assets/priority_screen/.png',
-                          arrowDirection: 'up',
-                        ),
-                        const SizedBox(height: 12),
-                        _PriorityCard(
-                          title: '건조기 돌리기',
-                          time: '2/4',
-                          iconSize: 40,
-                          imagePath: 'assets/priority_screen/.png',
-                          arrowDirection: 'up',
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -246,7 +347,6 @@ class _PriorityCard extends StatelessWidget {
   final double iconSize;
   final bool hasUrgentBadge;
   final String imagePath;
-  final String arrowDirection; // 'up' or 'down'
 
   const _PriorityCard({
     required this.title,
@@ -254,7 +354,6 @@ class _PriorityCard extends StatelessWidget {
     required this.iconSize,
     this.hasUrgentBadge = false,
     required this.imagePath,
-    required this.arrowDirection,
   });
 
   @override
@@ -269,7 +368,7 @@ class _PriorityCard extends StatelessWidget {
           side: const BorderSide(width: 1, color: AppColors.backgroundGray),
           borderRadius: BorderRadius.circular(16),
         ),
-        shadows: [PriorityScreen._cardShadow],
+        shadows: [_PriorityScreenState._cardShadow],
       ),
       child: Row(
         children: [
@@ -301,12 +400,12 @@ class _PriorityCard extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: PriorityScreen._cardTitleStyle.copyWith(
+                        style: _PriorityScreenState._cardTitleStyle.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(time, style: PriorityScreen._cardTimeStyle),
+                      Text(time, style: _PriorityScreenState._cardTimeStyle),
                     ],
                   ),
                   if (hasUrgentBadge)
@@ -323,13 +422,12 @@ class _PriorityCard extends StatelessWidget {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
-                          shadows: [PriorityScreen._cardShadow],
+                          shadows: [_PriorityScreenState._cardShadow],
                         ),
                         child: Text(
                           '긴급',
-                          style: PriorityScreen._urgentBadgeStyle.copyWith(
-                            fontSize: 14,
-                          ),
+                          style: _PriorityScreenState._urgentBadgeStyle
+                              .copyWith(fontSize: 14),
                         ),
                       ),
                     ),
@@ -337,16 +435,12 @@ class _PriorityCard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 10), // 화살표와 긴급 배지 사이 간격
+          const SizedBox(width: 10), // 드래그 핸들과 긴급 배지 사이 간격
           Center(
-            child: Transform.rotate(
-              angle: arrowDirection == 'down'
-                  ? 1.57
-                  : -1.57, // 아래: 90도, 위: -90도
-              child: Text(
-                '>',
-                style: PriorityScreen._cardTimeStyle.copyWith(fontSize: 18),
-              ),
+            child: Icon(
+              Icons.drag_handle,
+              color: AppColors.textAccent,
+              size: 24,
             ),
           ),
         ],

@@ -7,6 +7,7 @@ import '../components/bottom_navigation.dart';
 import 'routine_screen.dart';
 import 'todo_screen.dart';
 import 'dashboard_screen.dart';
+import 'priority.dart';
 
 class ViewAllScreen extends StatefulWidget {
   const ViewAllScreen({super.key});
@@ -236,18 +237,7 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                     child: CustomTabBar(
                       selectedIndex: _selectedTabIndex,
                       onTabChanged: (index) {
-                        // 현재 선택된 탭을 다시 누르면 12일로 이동
-                        if (index == _selectedTabIndex) {
-                          setState(() {
-                            _selectedDateIndex = 15; // 12일 금요일 (인덱스 15)
-                          });
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            _scrollToSelectedDate(context);
-                          });
-                          return;
-                        }
-
-                        // 다른 탭 클릭 시 확인 다이얼로그 표시
+                        // 모든 탭 클릭 시 확인 다이얼로그 표시 (루틴 탭 포함)
                         _showConfirmDialog(
                           onConfirm: () {
                             if (index == 0) {
@@ -261,6 +251,23 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                                         animation,
                                         secondaryAnimation,
                                       ) => const TodoScreen(),
+                                  transitionDuration: Duration.zero,
+                                  reverseTransitionDuration: Duration.zero,
+                                ),
+                                (route) => false, // 모든 이전 화면 제거
+                              );
+                            } else if (index == 1) {
+                              // 루틴 탭 클릭 시 루틴 화면으로 이동 (날짜 리셋)
+                              resetRoutineScreenDate();
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                PageRouteBuilder(
+                                  pageBuilder:
+                                      (
+                                        context,
+                                        animation,
+                                        secondaryAnimation,
+                                      ) => const RoutineScreen(),
                                   transitionDuration: Duration.zero,
                                   reverseTransitionDuration: Duration.zero,
                                 ),
@@ -282,10 +289,6 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                                 ),
                                 (route) => false, // 모든 이전 화면 제거
                               );
-                            } else {
-                              setState(() {
-                                _selectedTabIndex = index;
-                              });
                             }
                           },
                         );
@@ -353,13 +356,13 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                   ),
                   child: GestureDetector(
                     onTap: () {
-                      // 선택 완료 로직 - 루틴 탭이 선택된 상태로 이동
+                      // 선택 완료 로직 - priority 화면으로 이동
                       Navigator.pushAndRemoveUntil(
                         context,
                         PageRouteBuilder(
                           pageBuilder:
                               (context, animation, secondaryAnimation) =>
-                                  const RoutineScreen(),
+                                  PriorityScreen(),
                           transitionDuration: Duration.zero,
                           reverseTransitionDuration: Duration.zero,
                         ),
