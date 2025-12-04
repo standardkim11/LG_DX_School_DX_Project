@@ -35,16 +35,16 @@ DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 EZCONNECT_DSN = os.getenv("DB_DSN")
 INSTANT_CLIENT_DIR = os.getenv("INSTANT_CLIENT_DIR")
-
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 # ============================================================
 #  🔹 3) Oracle Instant Client 초기화
 # ============================================================
 try:
     oracledb.init_oracle_client(lib_dir=INSTANT_CLIENT_DIR)
-    print("✓ Oracle Client initialized in THICK mode")
+    print("[OK] Oracle Client initialized in THICK mode")
 except Exception as e:
     print("\n" + "="*60)
-    print("❌ Oracle Instant Client를 찾을 수 없습니다!")
+    print("[ERROR] Oracle Instant Client를 찾을 수 없습니다!")
     print("="*60)
     print(f"설정된 경로: {INSTANT_CLIENT_DIR}")
     raise  # thick 모드 필수이므로 그대로 에러 발생
@@ -79,9 +79,9 @@ def create_app():
     with app.app_context():
         try:
             db.create_all()
-            print("✓ Database tables created successfully")
+            print("[OK] Database tables created successfully")
         except Exception as e:
-            print(f"⚠ Warning: Could not create tables: {e}")
+            print(f"[WARNING] Could not create tables: {e}")
 
     # ============================================================
     #  🔹 ML 모델 로딩
@@ -94,11 +94,11 @@ def create_app():
         app.model = joblib.load(model_path)  # type: ignore
         app.feature_cols = joblib.load(feature_path)  # type: ignore
 
-        print("✓ XGBoost 모델 및 feature 리스트 로딩 완료")
+        print("[OK] XGBoost 모델 및 feature 리스트 로딩 완료")
     except Exception as e:
         app.model = None  # type: ignore
         app.feature_cols = None  # type: ignore
-        print(f"⚠ Warning: Could not load ML model: {e}")
+        print(f"[WARNING] Could not load ML model: {e}")
 
     # ============================================================
     #  🔹 Blueprint 등록
@@ -111,7 +111,7 @@ def create_app():
     # 디버깅: 등록된 모든 라우트 출력
     if app.debug:
         print("\n" + "="*60)
-        print("📋 등록된 라우트 목록:")
+        print("[INFO] 등록된 라우트 목록:")
         print("="*60)
         for rule in app.url_map.iter_rules():
             print(f"  {rule.methods} {rule.rule}")

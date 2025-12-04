@@ -13,6 +13,67 @@ from .utils import distance_km, today_date, safe_commit, error_response
 
 recommend_bp = Blueprint("recommend", __name__)
 
+# =========================
+# 시간대 필터링 관련 상수 및 함수
+# =========================
+
+TIME_RANGE = {
+    "DAWN": (0, 5),
+    "MORNING": (6, 11),
+    "AFTERNOON": (12, 17),
+    "EVENING": (18, 23),
+    "ANY": (0, 23),
+}
+
+def is_time_match(preferred_time: str, now_hour: int) -> bool:
+    """
+    preferred_time과 현재 시간이 일치하는지 확인.
+    
+    Args:
+        preferred_time: 루틴의 preferred_time (예: "MORNING", "AFTERNOON", "07:00", "15:00")
+        now_hour: 현재 시간 (0-23)
+    
+    Returns:
+        시간대가 일치하면 True, 일치하지 않으면 False
+        preferred_time이 없거나 매핑되지 않으면 True (필터링하지 않음)
+    """
+    if not preferred_time:
+        return True
+    
+    preferred_time_upper = preferred_time.upper().strip()
+    
+    # TIME_RANGE에 직접 매핑되는 경우 (예: "MORNING", "AFTERNOON")
+    if preferred_time_upper in TIME_RANGE:
+        start_h, end_h = TIME_RANGE[preferred_time_upper]
+        return start_h <= now_hour <= end_h
+    
+    # 시간 형식인 경우 (예: "07:00", "15:00") - HH:MM 또는 HHMM 형식
+    # 시간 부분만 추출하여 시간대 범위와 비교
+    time_match = re.match(r"(\d{1,2})[:]?(\d{2})?", preferred_time)
+    if time_match:
+        hour_str = time_match.group(1)
+        try:
+            preferred_hour = int(hour_str)
+            if 0 <= preferred_hour <= 23:
+                # 시간대 범위에 해당하는지 확인
+                if 0 <= preferred_hour <= 5:
+                    # DAWN 시간대
+                    return TIME_RANGE["DAWN"][0] <= now_hour <= TIME_RANGE["DAWN"][1]
+                elif 6 <= preferred_hour <= 11:
+                    # MORNING 시간대
+                    return TIME_RANGE["MORNING"][0] <= now_hour <= TIME_RANGE["MORNING"][1]
+                elif 12 <= preferred_hour <= 17:
+                    # AFTERNOON 시간대
+                    return TIME_RANGE["AFTERNOON"][0] <= now_hour <= TIME_RANGE["AFTERNOON"][1]
+                elif 18 <= preferred_hour <= 23:
+                    # EVENING 시간대
+                    return TIME_RANGE["EVENING"][0] <= now_hour <= TIME_RANGE["EVENING"][1]
+        except ValueError:
+            pass
+    
+    # 매핑되지 않은 경우 필터링하지 않음 (기본적으로 포함)
+    return True
+
 
 @recommend_bp.route("/hello", methods=["GET"])
 def hello():
@@ -121,6 +182,7 @@ def context_event():
         }), 503
 
     routines = []
+    now_hour = now.hour
     for r in all_routines:
         if not is_scheduled_today(r, today):
             continue
@@ -128,6 +190,9 @@ def context_event():
             continue
         # 추천에서는 실패한 루틴 제외
         if is_failed_today(r, user_id, today):
+            continue
+        # 시간대 필터링: 현재 시간과 맞지 않는 루틴은 제외
+        if not is_time_match(r.preferred_time, now_hour):
             continue
         routines.append(r)
 
@@ -211,12 +276,12 @@ def context_event():
     TOP_K = 3
     top_df = df_sorted.head(TOP_K)
 
-    result = []
+    recommendations = []
     for _, row in df_sorted.iterrows():
         rt_code = int(row["ROUTINE_TYPE"])
         st_code = int(row["SCHEDULE_TYPE"])
 
-        result.append({
+        recommendations.append({
             "routine_id": int(row["ROUTINE_ID"]),
             "routine_name": normalize_routine_name(str(row["ROUTINE_NAME"])),
             "pred_priority_score": float(row["pred_priority_score"]),
@@ -301,6 +366,7 @@ def get_priority_today():
 
     # 🔹 오늘 스케줄 & 아직 완료 안 된 루틴만 후보로 필터링
     routines = []
+    now_hour = now.hour
     for r in all_routines:
         if not is_scheduled_today(r, today):
             continue
@@ -308,6 +374,9 @@ def get_priority_today():
             continue
         # 추천에서는 실패한 루틴 제외
         if is_failed_today(r, user_id, today):
+            continue
+        # 시간대 필터링: 현재 시간과 맞지 않는 루틴은 제외
+        if not is_time_match(r.preferred_time, now_hour):
             continue
         routines.append(r)
 
@@ -473,6 +542,38 @@ def update_routine(routine_id):
 
     if "is_active" in data:
         routine.is_active = 1 if data["is_active"] else 0
+
+    # 습관 목표 일수 업데이트
+    if "habit_goal_days" in data:
+        habit_goal_days = data["habit_goal_days"]
+        if habit_goal_days is None:
+            routine.habit_goal_days = None
+        else:
+            try:
+                routine.habit_goal_days = int(habit_goal_days)
+            except (ValueError, TypeError):
+                return jsonify({"error": "habit_goal_days must be an integer"}), 400
+
+    # 습관 시작 날짜 업데이트
+    if "habit_start_date" in data:
+        habit_start_date = data["habit_start_date"]
+        if habit_start_date is None:
+            routine.habit_start_date = None
+        else:
+            try:
+                # 문자열인 경우 파싱 (예: "2025-12-01" 또는 "2025-12-01T00:00:00")
+                if isinstance(habit_start_date, str):
+                    from datetime import datetime as dt
+                    # ISO 형식 또는 YYYY-MM-DD 형식 파싱
+                    if "T" in habit_start_date:
+                        routine.habit_start_date = dt.fromisoformat(habit_start_date.replace("Z", "+00:00")).date()
+                    else:
+                        routine.habit_start_date = dt.strptime(habit_start_date, "%Y-%m-%d").date()
+                else:
+                    # 이미 date 객체인 경우
+                    routine.habit_start_date = habit_start_date
+            except (ValueError, TypeError) as e:
+                return jsonify({"error": f"invalid habit_start_date format: {e}"}), 400
 
     db.session.commit()
     return jsonify({"status": "ok"})
@@ -707,12 +808,22 @@ def get_dashboard():
     )
 
     # status 값은 프로젝트에서 쓰는 규칙에 맞게 수정 가능
+    # STATUS 정의: 0=PENDING, 1=RUNNING, 2=DONE, 3=FAILED
     completed_count = sum(1 for log in logs if log.status == 2)  # DONE
     failed_count = sum(1 for log in logs if log.status == 3)     # FAILED
-
     
-    # 미룬 루틴 수(postponed)는 서비스 룰이 정해지면 여기서 계산 방식만 바꾸면 됨
+    # 미룬 루틴 수: PENDING 상태이면서 오늘 날짜가 지난 루틴
+    # 또는 특정 규칙에 따라 계산 (현재는 0으로 설정, 필요시 로직 추가)
     postponed_count = 0
+    
+    # 디버깅: 실제 로그 상태 확인
+    status_counts = {}
+    for log in logs:
+        status_counts[log.status] = status_counts.get(log.status, 0) + 1
+    current_app.logger.info(f"[DASHBOARD] user_id={user_id}, year={year}, month={month}")
+    current_app.logger.info(f"[DASHBOARD] 전체 로그 개수: {len(logs)}")
+    current_app.logger.info(f"[DASHBOARD] 상태별 개수: {status_counts}")
+    current_app.logger.info(f"[DASHBOARD] 완료(DONE=2): {completed_count}, 실패(FAILED=3): {failed_count}")
 
     denom = completed_count + failed_count + postponed_count
     success_rate = (completed_count / denom) if denom > 0 else None
@@ -739,21 +850,63 @@ def get_dashboard():
     }
 
     # 습관 트래킹 설정( habit_goal_days )이 된 루틴 중 하나 선택
+    # SQLAlchemy 세션 새로고침 (DB 변경사항 반영)
+    db.session.expire_all()
+    
+    # 디버깅: DB에서 직접 쿼리로 확인
+    from sqlalchemy import text
+    direct_query = text("SELECT id, name, HABIT_GOAL_DAYS, HABIT_START_DATE, is_active FROM routines WHERE user_id = :user_id")
+    direct_results = db.session.execute(direct_query, {"user_id": user_id}).fetchall()
+    current_app.logger.info(f"[DASHBOARD] DB 직접 조회 결과:")
+    for row in direct_results:
+        current_app.logger.info(f"[DASHBOARD]   ID={row[0]}, name={row[1]}, HABIT_GOAL_DAYS={row[2]}, HABIT_START_DATE={row[3]}, is_active={row[4]}")
+    
+    # 디버깅: 모든 루틴 확인 (ORM)
+    all_routines_debug = Routine.query.filter_by(user_id=user_id).all()
+    current_app.logger.info(f"[DASHBOARD] user_id={user_id}의 전체 루틴 개수 (ORM): {len(all_routines_debug)}")
+    for r in all_routines_debug:
+        # 세션 새로고침
+        db.session.refresh(r)
+        current_app.logger.info(f"[DASHBOARD] 루틴 ID={r.id}, name={r.name}, is_active={r.is_active} (type: {type(r.is_active)}), habit_goal_days={r.habit_goal_days}, habit_start_date={r.habit_start_date}")
+    
+    # is_active 필터링: Boolean True 또는 숫자 1 모두 체크
+    # SQLAlchemy에서 Boolean 컬럼이 숫자로 저장될 수 있음
+    from sqlalchemy import or_
     habit_routine = (
         Routine.query
         .filter(
             Routine.user_id == user_id,
-            Routine.is_active == True,
+            or_(Routine.is_active == True, Routine.is_active == 1),
             Routine.habit_goal_days.isnot(None),
         )
-        .order_by(Routine.habit_start_date.asc())
+        .order_by(Routine.habit_start_date.asc().nulls_last())
         .first()
     )
+    
+    # 결과가 없으면 세션을 새로고침하고 다시 시도
+    if not habit_routine:
+        db.session.expire_all()
+        habit_routine = (
+            Routine.query
+            .filter(
+                Routine.user_id == user_id,
+                or_(Routine.is_active == True, Routine.is_active == 1),
+                Routine.habit_goal_days.isnot(None),
+            )
+            .order_by(Routine.habit_start_date.asc().nulls_last())
+            .first()
+        )
+    
+    current_app.logger.info(f"[DASHBOARD] 습관 루틴 찾기 결과: {habit_routine.id if habit_routine else 'None (습관 루틴 없음)'}")
+    if habit_routine:
+        current_app.logger.info(f"[DASHBOARD] 습관 루틴 상세: id={habit_routine.id}, name={habit_routine.name}, goal_days={habit_routine.habit_goal_days}, start_date={habit_routine.habit_start_date}, is_active={habit_routine.is_active}")
 
     if habit_routine and habit_routine.habit_goal_days:
         goal_days = int(habit_routine.habit_goal_days)
         # 시작일 없으면 월 시작일로 대체
         start_date = habit_routine.habit_start_date or start_dt.date()
+        
+        current_app.logger.info(f"[DASHBOARD] 습관 루틴 처리 시작: id={habit_routine.id}, goal_days={goal_days}, start_date={start_date}")
 
         # 해당 루틴의 완료 로그에서 "완료한 날짜 수" 계산
         habit_logs = (
@@ -792,13 +945,17 @@ def get_dashboard():
             "progress_rate": progress_rate,
         })
 
-    return jsonify({
+    response_data = {
         "user_id": user_id,
         "year": year,
         "month": month,
         "monthly_summary": monthly_summary,
         "habit": habit_info,
-    })
+    }
+    
+    current_app.logger.info(f"[DASHBOARD] 최종 응답 데이터: habit.enabled={habit_info['enabled']}, habit.display_name={habit_info['display_name']}")
+    
+    return jsonify(response_data)
 
 
 # === 테스트용 더미 데이터 SEED 함수 ===
@@ -882,6 +1039,10 @@ def seed_demo_data(user_id: int = 1, target_date: date | None = None) -> None:
         created_at=base_created,
     )
     db.session.add(r_evening)
+    
+    # 습관 목표 설정: 아침 세탁기 돌리기(9001)를 21일 목표로 설정 (시연용)
+    r_morning.habit_goal_days = 21
+    r_morning.habit_start_date = target_date  # 시작일을 target_date로 설정
 
     db.session.flush()
 
@@ -940,49 +1101,74 @@ def seed_demo_data(user_id: int = 1, target_date: date | None = None) -> None:
     db.session.commit()
     current_app.logger.info("✅ seed_demo_data 완료(user_id=%s, date=%s)", user_id, target_date)
 
-
-
-@recommend_bp.route("/test-model", methods=["GET"])
-def test_model():
+@recommend_bp.route("/set-habit-goal", methods=["POST", "GET"])
+def set_habit_goal():
     """
-    XGBoost 모델이 정상 로딩되고 predict() 동작하는지 테스트.
-    실제 feature_cols 구조에 맞는 샘플 데이터를 사용함.
+    습관 목표를 설정하는 테스트 엔드포인트.
+    예: GET /api/recommend/set-habit-goal?routine_id=9001&goal_days=21&start_date=2025-12-01
     """
-    model = current_app.model  # type: ignore
-    feature_cols = current_app.feature_cols  # type: ignore
-
-    if model is None or feature_cols is None:
-        return jsonify({"error": "ML model not loaded"}), 500
-
-    # === 실제 모델 feature에 맞춘 테스트 샘플 ===
-    sample = {
-        "ROUTINE_TYPE": 1,         # AFTER_WORK
-        "SCHEDULE_TYPE": 1,        # DAILY
-        "PREFERRED_TIME": 19,      # 7 PM
-        "RUN_TIME": 30,
-        "EXEC_HOUR": 20,
-        "EXEC_DOW": 2,             # 화요일
-        "RUN_MINUTES": 30,
-        "RECOMMENDED_FLAG": 0,
-        "TEMPERATURE": 18.5,
-        "HUMIDITY": 55.0,
-        "WEATHER": 1,
-        "PM25": 28.0,
-        "PM10": 40.0,
-    }
-
-    df = pd.DataFrame([sample])
-
-    # 모델에서 요구하는 순서로 배치
-    X = df[feature_cols]
-
-    pred = float(model.predict(X)[0])
-
-    return jsonify({
-        "feature_order": feature_cols,
-        "input": sample,
-        "predicted_priority_score": pred
-    })
+    try:
+        # GET 파라미터에서 가져오기
+        routine_id = request.args.get("routine_id", type=int)
+        goal_days = request.args.get("goal_days", type=int)
+        start_date_str = request.args.get("start_date")
+        
+        # POST JSON에서 가져오기 (GET에 없으면)
+        if request.is_json:
+            data = request.get_json() or {}
+            routine_id = routine_id or data.get("routine_id")
+            goal_days = goal_days or data.get("goal_days")
+            start_date_str = start_date_str or data.get("start_date")
+        
+        current_app.logger.info(f"[SET_HABIT_GOAL] routine_id={routine_id}, goal_days={goal_days}, start_date={start_date_str}")
+        
+        if not routine_id or not goal_days:
+            return jsonify({"error": "routine_id and goal_days are required", "received": {"routine_id": routine_id, "goal_days": goal_days}}), 400
+        
+        routine = Routine.query.get(routine_id)
+        if not routine:
+            return jsonify({"error": "routine not found"}), 404
+        
+        # 직접 SQL로 업데이트 (SQLAlchemy ORM이 제대로 작동하지 않을 수 있음)
+        from sqlalchemy import text
+        if start_date_str:
+            update_sql = text("""
+                UPDATE routines 
+                SET HABIT_GOAL_DAYS = :goal_days,
+                    HABIT_START_DATE = TO_DATE(:start_date, 'YYYY-MM-DD')
+                WHERE id = :routine_id
+            """)
+            db.session.execute(update_sql, {
+                "goal_days": goal_days,
+                "start_date": start_date_str,
+                "routine_id": routine_id
+            })
+        else:
+            update_sql = text("""
+                UPDATE routines 
+                SET HABIT_GOAL_DAYS = :goal_days
+                WHERE id = :routine_id
+            """)
+            db.session.execute(update_sql, {
+                "goal_days": goal_days,
+                "routine_id": routine_id
+            })
+        
+        db.session.commit()
+        
+        # 업데이트 확인
+        check_sql = text("SELECT HABIT_GOAL_DAYS, HABIT_START_DATE FROM routines WHERE id = :routine_id")
+        result = db.session.execute(check_sql, {"routine_id": routine_id}).fetchone()
+        
+        return jsonify({
+            "status": "ok",
+            "routine_id": routine_id,
+            "habit_goal_days": result[0] if result else None,
+            "habit_start_date": str(result[1]) if result and result[1] else None,
+        })
+    except Exception as e:
+        current_app.logger.exception("set_habit_goal error")
+        return jsonify({"error": str(e)}), 500
 
 @recommend_bp.route("/seed-demo", methods=["POST", "GET"])
 def seed_demo_endpoint():
