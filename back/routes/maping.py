@@ -7,14 +7,25 @@ import re
 
 
 # ROUTINE_TYPE 코드
-# 0: MORNING, 1: AFTER_WORK, 2: CLEANING, 3: LAUNDRY, 4: HOUSEWORK, 5: ETC
+# 0: CLEANING, 1: LAUNDRY, 2 : , 3 : ,4: ETC
 ROUTINE_TYPE_MAP = {
-    "아침": 0, "모닝": 0, "morning": 0, "MORNING": 0,
-    "퇴근": 1, "퇴근후": 1, "저녁": 1, "afterwork": 1, "AFTER_WORK": 1,
-    "청소": 2, "바닥청소": 2, "cleaning": 2, "CLEANING": 2,
-    "빨래": 3, "세탁": 3, "laundry": 3, "LAUNDRY": 3,
-    "기타": 4, "etc": 4, "ETC": 4
+    # 0: 청소
+    "청소": 0, "바닥청소": 0, "cleaning": 0, "치우기": 0,
+
+    # 1: 빨래
+    "빨래": 1, "세탁": 1, "laundry": 1, "빨래하기": 1,
+
+    # 2: 설거지
+    "설거지": 2, "설거지하기": 2, "washing": 2, "dishwashing": 2,
+
+    # 3: 분리수거
+    "분리수거": 3, "분리수거하기": 3, "쓰레기버리기": 3, 
+    "separating": 3, "버리기": 3,
+
+    # 4: 기타
+    "기타": 4, "etc": 4
 }
+
 
 # SCHEDULE_TYPE 코드
 # 0: ADHOC, 1: DAILY, 2: WEEKLY, 3: MONTHLY, 4: CUSTOM
@@ -74,18 +85,28 @@ PREFERRED_TIME_MAP = {
 FAILED_STATUS = 3
 
 def encode_routine_type(value) -> int:
-    """DB 값이 숫자이든 문자열이든 ROUTINE_TYPE 정수 코드로 변환"""
+    """사용자 입력을 ROUTINE_TYPE 코드(0~4)로 변환한다."""
+    
+    # 숫자면 그대로 반환 (0~4)
     if isinstance(value, (int, float)):
         return int(value)
+    
+    # None -> 기타
     if value is None:
         return 4
-    key = str(value).replace(" ", "")        # '퇴근 후' -> '퇴근후'
-    key_lower = key.lower()
+
+    # 문자열 정규화
+    key = str(value).replace(" ", "")        # 공백 제거
+    key_lower = key.lower()                  # 대소문자 통일
+
+    # 매핑에 존재할 경우 → 정해진 코드 반환
     if key_lower in ROUTINE_TYPE_MAP:
         return ROUTINE_TYPE_MAP[key_lower]
-    if key in ROUTINE_TYPE_MAP:
-        return ROUTINE_TYPE_MAP[key]
-    return 4  # 기타
+
+    # ★ 그 외 모든 입력은 자동으로 '기타(4)' 처리 ★
+    return 4
+
+
 
 def encode_schedule_type(value) -> int:
     """DB 값이 숫자이든 문자열이든 SCHEDULE_TYPE 정수 코드로 변환"""
