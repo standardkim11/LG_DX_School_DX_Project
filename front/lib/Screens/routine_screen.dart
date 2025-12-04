@@ -9,6 +9,7 @@ import 'todo_screen.dart';
 import 'viewall_screen.dart';
 import 'dashboard_screen.dart';
 import 'chat_screen.dart';
+import '../Services/routine_service.dart';
 
 class RoutineScreen extends StatefulWidget {
   const RoutineScreen({super.key});
@@ -21,6 +22,7 @@ class RoutineScreen extends StatefulWidget {
 class _RoutineScreenStateManager {
   static int _selectedDateIndex = 15;
   static final Map<String, String> _checkStates = {}; // 체크 상태 저장
+  static Set<int> _selectedRoutineIds = {}; // VIEW ALL에서 선택된 루틴 ID들
 
   static int get selectedDateIndex => _selectedDateIndex;
   static set selectedDateIndex(int value) => _selectedDateIndex = value;
@@ -28,6 +30,16 @@ class _RoutineScreenStateManager {
   static String? getCheckState(String key) => _checkStates[key];
   static void setCheckState(String key, String value) =>
       _checkStates[key] = value;
+
+  // 선택된 루틴 ID들 관리
+  static Set<int> get selectedRoutineIds => Set<int>.from(_selectedRoutineIds);
+  static void setSelectedRoutineIds(Set<int> ids) {
+    _selectedRoutineIds = Set<int>.from(ids);
+  }
+
+  static void clearSelectedRoutineIds() {
+    _selectedRoutineIds.clear();
+  }
 
   // 날짜를 12일(금요일, 인덱스 15)로 리셋하는 메서드
   static void resetToDefaultDate() {
@@ -45,10 +57,26 @@ void setRoutineScreenDate(int dateIndex) {
   _RoutineScreenStateManager.selectedDateIndex = dateIndex;
 }
 
+// 외부에서 접근 가능한 선택된 루틴 ID 설정 함수
+void setSelectedRoutineIds(Set<int> routineIds) {
+  _RoutineScreenStateManager.setSelectedRoutineIds(routineIds);
+}
+
+// 외부에서 접근 가능한 선택된 루틴 ID 가져오기 함수
+Set<int> getSelectedRoutineIds() {
+  return _RoutineScreenStateManager.selectedRoutineIds;
+}
+
+// 외부에서 접근 가능한 선택된 루틴 ID 초기화 함수
+void clearSelectedRoutineIds() {
+  _RoutineScreenStateManager.clearSelectedRoutineIds();
+}
+
 class _RoutineScreenState extends State<RoutineScreen> {
   int _selectedTabIndex = 1; // routine 탭이 선택된 상태
   int _selectedDateIndex = _RoutineScreenStateManager.selectedDateIndex;
   late ScrollController _dateScrollController;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -112,6 +140,108 @@ class _RoutineScreenState extends State<RoutineScreen> {
     return '${todo['title']}_${todo['category']}';
   }
 
+  // 선택된 루틴 ID들로부터 루틴 데이터를 로드
+  Future<void> _loadSelectedRoutines(Set<int> routineIds) async {
+    if (routineIds.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // 전체 루틴 목록에서 선택된 ID들만 필터링
+      final allRoutines = await RoutineService.getAllRoutines();
+      final selectedRoutines = allRoutines
+          .where((r) => routineIds.contains(r.id))
+          .toList();
+
+      // 선택된 날짜의 키
+      final selectedDate = _getSelectedDate();
+      final dateKey = _formatDateKey(selectedDate);
+
+      // ViewAllRoutineItem을 화면에 표시할 형식으로 변환
+      final todos = selectedRoutines.map((routine) {
+        return {
+          'title': routine.name,
+          'category': routine.getTimeDisplay(),
+          'isHighlighted': true,
+          'checkType': routine.isDoneToday ? 'done' : 'none',
+          'routineId': routine.id,
+        };
+      }).toList();
+
+      setState(() {
+        _todosByDate[dateKey] = todos;
+        _isLoading = false;
+
+        // 저장된 체크 상태 복원
+        for (var todo in todos) {
+          final key = _getTodoKey(todo);
+          final savedState = _RoutineScreenStateManager.getCheckState(key);
+          if (savedState != null) {
+            todo['checkType'] = savedState;
+          }
+        }
+      });
+    } catch (e) {
+      print('Error loading selected routines: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // 특정 날짜의 루틴 데이터를 API에서 가져오기
+  Future<void> _loadRoutinesForDate(DateTime date) async {
+    final dateKey = _formatDateKey(date);
+
+    // 이미 로드된 데이터가 있으면 스킵
+    if (_todosByDate.containsKey(dateKey)) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final routines = await RoutineService.getRoutinesByDate(date: dateKey);
+
+      // RoutineItem을 화면에 표시할 형식으로 변환
+      final todos = routines.map((routine) {
+        return {
+          'title': routine.name,
+          'category': routine.getCategoryDisplay(),
+          'isHighlighted': true,
+          'checkType': routine.done ? 'done' : 'none',
+          'routineId': routine.routineId,
+        };
+      }).toList();
+
+      setState(() {
+        _todosByDate[dateKey] = todos;
+        _isLoading = false;
+
+        // 저장된 체크 상태 복원
+        for (var todo in todos) {
+          final key = _getTodoKey(todo);
+          final savedState = _RoutineScreenStateManager.getCheckState(key);
+          if (savedState != null) {
+            todo['checkType'] = savedState;
+          }
+        }
+      });
+    } catch (e) {
+      print('Error loading routines: $e');
+      setState(() {
+        _isLoading = false;
+        _todosByDate[dateKey] = []; // 에러 시 빈 리스트
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -120,70 +250,15 @@ class _RoutineScreenState extends State<RoutineScreen> {
     // 저장된 날짜 인덱스로 복원
     _selectedDateIndex = _RoutineScreenStateManager.selectedDateIndex;
 
-    // 12일 금요일의 날짜 계산
-    final now = DateTime.now();
-    final baseDate = DateTime(now.year, now.month, 12);
-    final currentWeekday = baseDate.weekday;
-    final daysUntilFriday = (5 - currentWeekday + 7) % 7;
-    final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
-    final date12 = referenceDate; // 기준일 (인덱스 15)
-    final dateKey12 = _formatDateKey(date12);
-
-    // 기존에 다른 날짜에 저장된 할 일들을 12일로 이동
-    // 모든 날짜 키를 확인하여 데이터가 있으면 12일로 이동
-    final allDateKeys = _todosByDate.keys.toList();
-    List<Map<String, dynamic>> allTodos = [];
-    for (var key in allDateKeys) {
-      if (key != dateKey12) {
-        allTodos.addAll(_todosByDate[key] ?? []);
-        _todosByDate.remove(key); // 기존 날짜 키 삭제
-      }
-    }
-
-    // 12일의 할 일 초기화 (기존 할 일들을 12일에 할당)
-    if (!_todosByDate.containsKey(dateKey12) || allTodos.isNotEmpty) {
-      // 기존 데이터가 있으면 사용, 없으면 기본 데이터 사용
-      if (allTodos.isNotEmpty) {
-        _todosByDate[dateKey12] = allTodos;
-      } else {
-        _todosByDate[dateKey12] = [
-          {
-            'title': '로봇청소기 물청소하기',
-            'category': '주 1회',
-            'isHighlighted': true,
-            'checkType': 'none',
-          },
-          {
-            'title': '이불 빨래 하기',
-            'category': '2주 1회',
-            'isHighlighted': true,
-            'checkType': 'none',
-          },
-          {
-            'title': '아침에 물 마시기',
-            'category': '8:00까지 완료하기',
-            'isHighlighted': true,
-            'checkType': 'none',
-          },
-        ];
-      }
-    }
-
-    // 저장된 체크 상태 복원
-    final selectedDate = _getSelectedDate();
-    final selectedDateKey = _formatDateKey(selectedDate);
-    final todos = _todosByDate[selectedDateKey] ?? [];
-    for (var todo in todos) {
-      final key = _getTodoKey(todo);
-      final savedState = _RoutineScreenStateManager.getCheckState(key);
-      if (savedState != null) {
-        todo['checkType'] = savedState;
-      }
-    }
-
     // 초기 스크롤 위치를 저장된 날짜 인덱스로 설정 (중앙에 오도록)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToSelectedDate(context);
+
+      // VIEW ALL에서 선택된 루틴 ID들이 있으면 해당 루틴들을 로드
+      final selectedIds = _RoutineScreenStateManager.selectedRoutineIds;
+      if (selectedIds.isNotEmpty) {
+        _loadSelectedRoutines(selectedIds);
+      }
     });
   }
 
@@ -215,9 +290,6 @@ class _RoutineScreenState extends State<RoutineScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // BottomNavigationBar 높이 (SafeArea 포함)
-    final bottomNavHeight = 60.0 + MediaQuery.of(context).padding.bottom;
-
     return Scaffold(
       backgroundColor: AppColors.backgroundGray,
       body: SafeArea(
@@ -430,14 +502,24 @@ class _RoutineScreenState extends State<RoutineScreen> {
           final isSelected = index == _selectedDateIndex;
           return GestureDetector(
             onTap: () {
+              // 날짜 인덱스 업데이트
               setState(() {
                 _selectedDateIndex = index;
                 _RoutineScreenStateManager.selectedDateIndex = index;
-                // 날짜 변경 시 해당 날짜의 할 일 목록으로 업데이트
-                // _todos getter가 자동으로 선택된 날짜의 할 일을 반환
               });
-              // 선택된 날짜를 중앙으로 스크롤
+
+              // 날짜 변경 시: 선택된 루틴이 있으면 선택된 루틴만 표시, 없으면 해당 날짜의 루틴 로드
               WidgetsBinding.instance.addPostFrameCallback((_) {
+                final selectedIds =
+                    _RoutineScreenStateManager.selectedRoutineIds;
+                if (selectedIds.isNotEmpty) {
+                  // 선택된 루틴이 있으면 선택된 루틴만 다시 표시
+                  _loadSelectedRoutines(selectedIds);
+                } else {
+                  // 선택된 루틴이 없으면 해당 날짜의 루틴 로드
+                  final selectedDate = _getSelectedDate();
+                  _loadRoutinesForDate(selectedDate);
+                }
                 _scrollToSelectedDate(context);
               });
             },
@@ -497,70 +579,84 @@ class _RoutineScreenState extends State<RoutineScreen> {
 
           // 할 일 리스트 (스크롤 가능)
           Expanded(
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.only(bottom: bottomPadding),
-              children: [
-                ..._sortedTodos.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final todo = entry.value;
-                  final isFirstChecked =
-                      index > 0 &&
-                      _sortedTodos[index - 1]['checkType'] != 'done' &&
-                      todo['checkType'] == 'done';
-
-                  // 원본 리스트에서의 인덱스 찾기
-                  final originalIndex = _todos.indexWhere(
-                    (t) =>
-                        t['title'] == todo['title'] &&
-                        t['category'] == todo['category'],
-                  );
-                  // 첫번째 카드: friends.png, 두번째 카드: friends1.png, 세번째 카드: friends2.png
-                  final friendIcons = [
-                    'assets/routine_screen/friends.png',
-                    'assets/routine_screen/friends1.png',
-                    'assets/routine_screen/friends2.png',
-                  ];
-                  final friendIcon =
-                      originalIndex < friendIcons.length && originalIndex >= 0
-                      ? friendIcons[originalIndex]
-                      : null;
-
-                  return AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    switchInCurve: Curves.easeOut,
-                    switchOutCurve: Curves.easeIn,
-                    transitionBuilder:
-                        (Widget child, Animation<double> animation) {
-                          return FadeTransition(
-                            opacity: animation,
-                            child: child,
-                          );
-                        },
-                    child: Padding(
-                      key: ValueKey('${todo['title']}_${todo['checkType']}'),
-                      padding: EdgeInsets.only(
-                        bottom: 12,
-                        top: isFirstChecked ? 20 : 0, // 체크된 항목 시작 부분에 여백 추가
-                      ),
-                      child: TodoItemCard(
-                        title: todo['title'] as String,
-                        category: todo['category'] as String,
-                        isHighlighted: todo['isHighlighted'] as bool,
-                        checkType: todo['checkType'] as String,
-                        friendIcon: friendIcon,
-                        friendIconSizes: {
-                          'assets/routine_screen/friends.png': 60,
-                          'assets/routine_screen/friends1.png': 40,
-                          'assets/routine_screen/friends2.png': 26,
-                        },
-                        onCheckChanged: () => _toggleCheck(originalIndex),
-                      ),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _sortedTodos.isEmpty
+                ? Center(
+                    child: Text(
+                      'VIEW ALL에서 루틴을 선택해주세요',
+                      style: AppTextStyles.todoCategory(context),
                     ),
-                  );
-                }),
-              ],
-            ),
+                  )
+                : ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.only(bottom: bottomPadding),
+                    children: [
+                      ..._sortedTodos.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final todo = entry.value;
+                        final isFirstChecked =
+                            index > 0 &&
+                            _sortedTodos[index - 1]['checkType'] != 'done' &&
+                            todo['checkType'] == 'done';
+
+                        // 원본 리스트에서의 인덱스 찾기
+                        final originalIndex = _todos.indexWhere(
+                          (t) =>
+                              t['title'] == todo['title'] &&
+                              t['category'] == todo['category'],
+                        );
+                        // 첫번째 카드: friends.png, 두번째 카드: friends1.png, 세번째 카드: friends2.png
+                        final friendIcons = [
+                          'assets/routine_screen/friends.png',
+                          'assets/routine_screen/friends1.png',
+                          'assets/routine_screen/friends2.png',
+                        ];
+                        final friendIcon =
+                            originalIndex < friendIcons.length &&
+                                originalIndex >= 0
+                            ? friendIcons[originalIndex]
+                            : null;
+
+                        return AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          switchInCurve: Curves.easeOut,
+                          switchOutCurve: Curves.easeIn,
+                          transitionBuilder:
+                              (Widget child, Animation<double> animation) {
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: child,
+                                );
+                              },
+                          child: Padding(
+                            key: ValueKey(
+                              '${todo['title']}_${todo['checkType']}',
+                            ),
+                            padding: EdgeInsets.only(
+                              bottom: 12,
+                              top: isFirstChecked
+                                  ? 20
+                                  : 0, // 체크된 항목 시작 부분에 여백 추가
+                            ),
+                            child: TodoItemCard(
+                              title: todo['title'] as String,
+                              category: todo['category'] as String,
+                              isHighlighted: todo['isHighlighted'] as bool,
+                              checkType: todo['checkType'] as String,
+                              friendIcon: friendIcon,
+                              friendIconSizes: {
+                                'assets/routine_screen/friends.png': 60,
+                                'assets/routine_screen/friends1.png': 40,
+                                'assets/routine_screen/friends2.png': 26,
+                              },
+                              onCheckChanged: () => _toggleCheck(originalIndex),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
           ),
         ],
       ),

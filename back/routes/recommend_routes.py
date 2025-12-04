@@ -684,15 +684,24 @@ def fail_routine(routine_id):
 @recommend_bp.route("/today-routines", methods=["GET"])
 def get_today_routines():
     """
-    오늘 해야 하는 루틴 리스트 API
-    GET /api/recommend/today-routines?user_id=1
+    특정 날짜의 루틴 리스트 API
+    GET /api/recommend/today-routines?user_id=1&date=2025-12-12
+    date 파라미터가 없으면 오늘 날짜 사용
     """
     user_id = request.args.get("user_id", type=int)
     if not user_id:
         return jsonify({"error": "user_id is required"}), 400
 
-    now = datetime.now()
-    today = now.date()
+    # 날짜 파라미터 처리
+    date_str = request.args.get("date")
+    if date_str:
+        try:
+            today = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+    else:
+        now = datetime.now()
+        today = now.date()
 
     # 1) 오늘 스케줄에 해당하며 active인 루틴 가져오기
     try:
@@ -986,11 +995,11 @@ def seed_demo_data(user_id: int = 1, target_date: date | None = None) -> None:
     if not weather:
         weather = WeatherInfo(  # type: ignore
             date=target_date,
-            temperature=20.0,
-            humidity=60.0,
+            temperature=1.0,
+            humidity=30.0,
             weather="맑음",   # 또는 "SUNNY"
-            pm25=30.0,
-            pm10=40.0,
+            pm25=10.5,
+            pm10=22.0,
         )
         db.session.add(weather)
         db.session.flush()
@@ -1001,7 +1010,7 @@ def seed_demo_data(user_id: int = 1, target_date: date | None = None) -> None:
     r_morning = Routine(  # type: ignore
         id=9001,
         user_id=user_id,
-        name="아침 세탁기 돌리기",
+        name="세탁기 돌리기",
         routine_type="LAUNDRY",
         serial_no="WM001",
         run_minutes=40,
@@ -1015,13 +1024,13 @@ def seed_demo_data(user_id: int = 1, target_date: date | None = None) -> None:
     r_noon = Routine(  # type: ignore
         id=9002,
         user_id=user_id,
-        name="낮에 바닥 청소하기",
+        name="바닥 청소하기",
         routine_type="CLEANING",
         serial_no="CL001",
-        run_minutes=30,
+        run_minutes=20,
         schedule_type="DAILY",
         is_active=True,
-        preferred_time="15:00",
+        preferred_time="11:00",
         created_at=base_created,
     )
     db.session.add(r_noon)
@@ -1029,19 +1038,19 @@ def seed_demo_data(user_id: int = 1, target_date: date | None = None) -> None:
     r_evening = Routine(  # type: ignore
         id=9003,
         user_id=user_id,
-        name="저녁에 건조기 돌리기",
+        name="설거지 하기",
         routine_type="LAUNDRY",
         serial_no="DR001",
-        run_minutes=50,
+        run_minutes=15,
         schedule_type="DAILY",
         is_active=True,
-        preferred_time="21:00",
+        preferred_time="19:00",
         created_at=base_created,
     )
     db.session.add(r_evening)
     
-    # 습관 목표 설정: 아침 세탁기 돌리기(9001)를 21일 목표로 설정 (시연용)
-    r_morning.habit_goal_days = 21
+    # 습관 목표 설정: 세탁기 돌리기(9001)를 21일 목표로 설정 (시연용)
+    r_morning.habit_goal_days = 28
     r_morning.habit_start_date = target_date  # 시작일을 target_date로 설정
 
     db.session.flush()
@@ -1173,7 +1182,7 @@ def set_habit_goal():
 @recommend_bp.route("/seed-demo", methods=["POST", "GET"])
 def seed_demo_endpoint():
     """
-    테스트용 더미 데이터(아침/낮/저녁 3개 루틴)를 생성하는 엔드포인트.
+    테스트용 더미 데이터를 생성하는 엔드포인트.
     예: GET /api/recommend/seed-demo?user_id=1
     """
     try:

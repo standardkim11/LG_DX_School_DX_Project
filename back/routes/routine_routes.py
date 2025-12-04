@@ -3,6 +3,7 @@ from datetime import datetime, date, timedelta
 
 from Project.extensions import db
 from models import User, Routine, RoutineExecution
+from routes.maping import normalize_routine_name, parse_preferred_time
 
 routine_bp = Blueprint("routine", __name__, url_prefix="/api")
 
@@ -14,7 +15,6 @@ def routine_to_dict(r: Routine) -> dict:
         "user_id": r.user_id,
         "name": r.name,
         "routine_type": r.routine_type,
-        "importance": r.importance,
         "run_minutes": r.run_minutes,
         "schedule_type": r.schedule_type,
         "preferred_time": r.preferred_time,
@@ -37,9 +37,14 @@ def execution_to_dict(e: RoutineExecution) -> dict:
     }
 
 
-# 1. 루틴 목록 조회 ------------------------------------
+# 1. 루틴 목록 조회 (집계 정보 포함) ------------------------------------
 @routine_bp.get("/routines")
 def list_routines():
+    """
+    전체 루틴 목록 조회 (VIEW ALL 화면용)
+    집계 정보(완료 횟수 등)를 포함하여 반환
+    GET /api/routines?user_id=1
+    """
     user_id = request.args.get("user_id", type=int, default=1)
 
     user = User.query.get(user_id)
@@ -47,12 +52,46 @@ def list_routines():
         return jsonify({"error": "user not found"}), 404
 
     routines = (
-        Routine.query.filter_by(user_id=user_id, is_active=1)
-        .order_by(Routine.importance.desc())
+        Routine.query.filter_by(user_id=user_id, is_active=True)
+        .order_by(Routine.created_at.desc())
         .all()
     )
 
-    return jsonify([routine_to_dict(r) for r in routines])
+    # 집계 정보 포함하여 반환
+    result = []
+    for r in routines:
+        # 완료 횟수 집계 (status가 "2" 또는 2인 것만 카운트)
+        # DB에서 status가 문자열로 저장될 수도 있고 숫자로 저장될 수도 있음
+        all_executions = (
+            RoutineExecution.query
+            .filter_by(user_id=user_id, routine_id=r.id)
+            .all()
+        )
+        
+        completed_count = 0
+        for exec in all_executions:
+            # status가 문자열 "2"이거나 숫자 2인 경우 모두 체크
+            if str(exec.status) == "2" or exec.status == 2:
+                completed_count += 1
+        
+        # 오늘 완료 여부 확인
+        today = date.today()
+        today_start = datetime.combine(today, datetime.min.time())
+        today_end = datetime.combine(today + timedelta(days=1), datetime.min.time())
+        
+        today_executions = [
+            exec for exec in all_executions
+            if exec.start_time and today_start <= exec.start_time < today_end
+            and (str(exec.status) == "2" or exec.status == 2)
+        ]
+        
+        routine_dict = routine_to_dict(r)
+        routine_dict["completed_count"] = completed_count
+        routine_dict["is_done_today"] = len(today_executions) > 0
+        
+        result.append(routine_dict)
+
+    return jsonify(result)
 
 
 # 2. 루틴 실행(완료/스킵) 기록 -------------------------------
@@ -120,8 +159,8 @@ def today_checklist():
     end = start + timedelta(days=1)
 
     routines = (
-        Routine.query.filter_by(user_id=user_id, is_active=1)
-        .order_by(Routine.importance.desc())
+        Routine.query.filter_by(user_id=user_id, is_active=True)
+        .order_by(Routine.created_at.desc())
         .all()
     )
 

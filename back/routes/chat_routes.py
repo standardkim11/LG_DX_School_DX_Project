@@ -116,7 +116,6 @@ def build_context_for_user(user_id: int) -> str:
     """
     우리 서비스 DB를 조회해서,
     - 오늘 해야 할 루틴 리스트 (완료되지 않고 실패하지 않은 루틴만)
-    - 이번 주 세탁기 완료 횟수
     를 텍스트로 정리해서 반환.
     """
     today = date.today()
@@ -125,40 +124,13 @@ def build_context_for_user(user_id: int) -> str:
     routines = Routine.query.filter_by(user_id=user_id, is_active=True).all()
     today_items: list[str] = []
     today_routine_ids = []  # 디버깅용
-    
-    # 디버깅: 필터링 과정 확인
-    total_routines = len(routines)
-    scheduled_count = 0
-    done_count = 0
-    failed_count = 0
-    included_count = 0
 
     for r in routines:
         if not is_scheduled_today(r, today):
             continue
-        scheduled_count += 1
-        
-        # 각 루틴의 최근 실행 기록 확인
-        last_log = (
-            RoutineExecution.query
-            .filter_by(user_id=user_id, routine_id=r.id)
-            .order_by(RoutineExecution.start_time.desc())
-            .first()
-        )
-        
-        if last_log and last_log.start_time:
-            log_date = last_log.start_time.date()
-            log_status = last_log.status
-            current_app.logger.info(
-                f"[CHAT build_context] Routine {r.id} ({r.name}): "
-                f"last_log date={log_date}, status={log_status}, today={today}"
-            )
-        
         if is_done_today(r, user_id, today):
-            done_count += 1
             continue
         if is_failed_today(r, user_id, today):
-            failed_count += 1
             continue
 
         # 원본 이름과 정규화된 이름 모두 로깅
@@ -169,46 +141,17 @@ def build_context_for_user(user_id: int) -> str:
         minutes = r.run_minutes or 0
         today_items.append(f"- {name} (예상 {minutes}분)")
         today_routine_ids.append(r.id)  # 디버깅용
-        included_count += 1
 
     if not today_items:
         today_text = "오늘 스케줄된 루틴은 없습니다."
     else:
         today_text = "\n".join(today_items)
-    
-    # 디버깅 로그
-    current_app.logger.info(
-        f"[CHAT build_context] 필터링 결과: "
-        f"전체={total_routines}, 오늘스케줄={scheduled_count}, "
-        f"완료={done_count}, 실패={failed_count}, 포함={included_count}"
-    )
-
-    # === 이번 주 세탁기 실행 횟수 ===
-    # 기준: 월요일~오늘까지, status=2(DONE), routine_type=LAUNDRY
-    start_of_week = today - timedelta(days=today.weekday())
-    start_dt = datetime.combine(start_of_week, time.min)
-    end_dt = datetime.combine(today, time.max)
-
-    laundry_count = (
-        RoutineExecution.query
-        .join(Routine, RoutineExecution.routine_id == Routine.id)
-        .filter(
-            RoutineExecution.user_id == user_id,
-            RoutineExecution.start_time >= start_dt,
-            RoutineExecution.start_time <= end_dt,
-            Routine.routine_type.in_(["LAUNDRY", "세탁", "빨래"]),
-            RoutineExecution.status == 2,       # DONE
-        )
-        .count()
-    )
 
     ctx_lines = [
         f"오늘 날짜: {today.isoformat()}",
         "",
         "[오늘 해야 할 루틴]",
         today_text,
-        "",
-        f"[이번 주 세탁기 완료 횟수] {laundry_count}회",
     ]
     context_str = "\n".join(ctx_lines)
     
@@ -371,39 +314,72 @@ def chat():
     if is_priority_request and priority_data and isinstance(priority_data, list) and len(priority_data) > 0:
         # 우선순위 요청: 우선순위 섹션만 사용
         today = date.today()
+        
+        # 날씨 정보 추가 (우선순위 추천 이유 설명에 필요)
+        weather_info_text = ""
+        try:
+            from models import WeatherInfo
+            weather = WeatherInfo.query.filter_by(date=today).first()
+            if weather:
+                temp = float(weather.temperature) if weather.temperature else None
+                humi = float(weather.humidity) if weather.humidity else None
+                weather_desc = weather.weather if weather.weather else None
+                
+                weather_parts = []
+                if weather_desc:
+                    weather_parts.append(f"날씨: {weather_desc}")
+                if temp is not None:
+                    weather_parts.append(f"기온: {temp}°C")
+                if humi is not None:
+                    weather_parts.append(f"습도: {humi}%")
+                
+                if weather_parts:
+                    weather_info_text = ", ".join(weather_parts)
+        except Exception as e:
+            current_app.logger.exception("날씨 정보 조회 오류")
+        
         context_lines = [
             f"오늘 날짜: {today.isoformat()}",
+        ]
+        
+        if weather_info_text:
+            context_lines.append(f"오늘의 날씨 정보: {weather_info_text}")
+        
+        context_lines.extend([
             "",
             "[우선순위 추천 (점수 높은 순)]",
-        ]
+        ])
+        
+        # 각 루틴의 최근 실행 기록 정보 추가
         for idx, item in enumerate(priority_data, 1):
             score = item.get('pred_priority_score', 0)
             name = item.get('routine_name', '알 수 없음')
             minutes = item.get('run_minutes', 30)
-            context_lines.append(f"{idx}. {name} (점수: {score:.2f}, 예상 {minutes}분)")
-        
-        # 이번 주 세탁기 완료 횟수 추가
-        try:
-            from models import WeatherInfo
-            start_of_week = today - timedelta(days=today.weekday())
-            start_dt = datetime.combine(start_of_week, time.min)
-            end_dt = datetime.combine(today, time.max)
-            laundry_count = (
-                RoutineExecution.query
-                .join(Routine, RoutineExecution.routine_id == Routine.id)
-                .filter(
-                    RoutineExecution.user_id == user_id,
-                    RoutineExecution.start_time >= start_dt,
-                    RoutineExecution.start_time <= end_dt,
-                    Routine.routine_type.in_(["LAUNDRY", "세탁", "빨래"]),
-                    RoutineExecution.status == 2,
-                )
-                .count()
-            )
-            context_lines.append("")
-            context_lines.append(f"[이번 주 세탁기 완료 횟수] {laundry_count}회")
-        except Exception as e:
-            current_app.logger.exception("세탁기 횟수 조회 오류")
+            routine_id = item.get('routine_id')
+            
+            # 최근 실행 기록 확인
+            last_exec_info = ""
+            if routine_id:
+                try:
+                    last_log = RoutineExecution.query.filter_by(
+                        user_id=user_id, routine_id=routine_id
+                    ).order_by(RoutineExecution.start_time.desc()).first()
+                    
+                    if last_log and last_log.start_time:
+                        last_date = last_log.start_time.date()
+                        days_ago = (today - last_date).days
+                        if days_ago == 0:
+                            last_exec_info = " (오늘 실행함)"
+                        elif days_ago == 1:
+                            last_exec_info = " (어제 실행함)"
+                        elif days_ago < 7:
+                            last_exec_info = f" ({days_ago}일 전 실행함)"
+                        else:
+                            last_exec_info = f" ({days_ago}일 전 실행함, 오래됨)"
+                except Exception:
+                    pass
+            
+            context_lines.append(f"{idx}. {name} (점수: {score:.2f}, 예상 {minutes}분{last_exec_info})")
         
         context = "\n".join(context_lines)
         
@@ -422,18 +398,17 @@ def chat():
     current_app.logger.info(f"[CHAT] 최종 컨텍스트 길이: {len(context)} 문자")
     current_app.logger.info(f"[CHAT] 최종 컨텍스트 (처음 500자): {context[:500]}")
 
-    # 4) Gemini에 넘길 프롬프트 구성
+     # 4) Gemini에 넘길 프롬프트 구성
     if is_priority_request:
         prompt = f"""
-너는 사용자의 생활 루틴과 가전 사용을 도와주는 한국어 어시스턴트야.
+당신은 사용자의 생활 루틴과 가전 사용을 도와주는 친근한 한국어 어시스턴트입니다.
 
-[절대 규칙 - 반드시 지켜야 함]
-1. '[우선순위 추천 (점수 높은 순)]' 섹션에 나열된 루틴만 사용해라.
-2. 정확히 그 목록에 적힌 루틴 개수만큼만 추천해라. (예: 3개면 정확히 3개만)
-3. 새로운 루틴을 만들어내거나 추가하지 마라. 정보에 없는 루틴은 절대 언급하지 마라.
-4. 각 루틴은 한 번씩만 언급해라. 같은 루틴을 여러 번 반복하지 마라.
-5. 루틴 이름은 정확히 '[우선순위 추천]'에 나온 이름 그대로 사용해라.
-6. 순서는 '[우선순위 추천]'에 나온 순서 그대로 따라라 (1번이 가장 먼저, 마지막 번호가 마지막).
+[중요 규칙]
+- '[우선순위 추천 (점수 높은 순)]' 섹션에 나열된 루틴만 사용하세요.
+- 목록에 있는 정확한 개수만큼만 추천하세요. (예: 3개면 3개, 5개면 5개)
+- 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하지 마세요.
+- 각 루틴은 한 번만 언급하고, 루틴 이름과 순서는 목록에 나온 그대로 따르세요.
+- 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
 
 [오늘의 정보]
 {context}
@@ -441,21 +416,48 @@ def chat():
 [사용자 질문]
 {user_message}
 
-위 정보를 바탕으로, '[우선순위 추천]' 섹션에 나온 루틴들을 순서대로 설명해줘.
-각 루틴의 예상 시간도 함께 언급하고, 마지막에 '참고로, 이번 주 세탁기 완료 횟수는 X회입니다.'를 추가해줘.
+위 정보를 바탕으로, '[우선순위 추천 (점수 높은 순)]' 섹션의 루틴들을 순서대로 설명해주세요.
+각 루틴에 대해 다음을 포함하세요:
+- 루틴 내용 (무엇을 하는지)
+- 예상 소요 시간 (예: "약 40분 정도 걸려요")
+- 추천 이유 (점수와 함께 구체적인 이유 설명)
+
+추천 이유를 설명할 때는 점수와 구체적인 이유를 한 문장으로 자연스럽게 함께 설명하세요:
+
+예시 (점수 + 이유를 자연스럽게 결합):
+- "점수가 4.44점으로 높아요. 날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 높게 나왔어요."
+- "날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 4.44점으로 높아요."
+- "점수가 2.13점으로 두 번째로 높아요. 오늘 습도가 높아서 건조기를 먼저 돌리는 게 좋겠어요."
+- "오늘 습도가 높아서 점수가 2.13점으로 두 번째로 높아요."
+- "점수가 1.62점으로 세 번째예요. 어제 이미 실행하셔서 점수가 낮지만, 오늘 해두시면 좋을 것 같아요."
+
+날씨 정보(맑음/비/습도/기온)와 최근 실행 기록(오래됨/어제/오늘)을 활용하여 점수와 함께 자연스럽게 설명하세요.
+가능하면 "날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 높아요"처럼 한 문장으로 표현하는 것을 권장합니다.
+
+'오늘의 정보'에 있는 날씨 정보, 최근 실행 기록 등의 실제 데이터를 활용하여 점수와 함께 자연스럽게 설명하세요.
+정보가 충분하지 않으면 "우선순위 점수가 높아서 먼저 추천드려요."처럼 간단히 언급하세요.
+
 """
     else:
         prompt = f"""
-너는 사용자의 생활 루틴과 가전 사용을 도와주는 한국어 어시스턴트야.
-주어진 '오늘의 정보'를 최대한 활용해서 사용자의 질문에 자연스럽게 답변해줘.
-숫자나 횟수는 정보에 있는 값만 사용하고, 모르는 건 모른다고 말해.
+당신은 사용자의 생활 루틴과 가전 사용을 도와주는 친근한 한국어 어시스턴트입니다.
+'오늘의 정보'를 최대한 활용하여 사용자의 질문에 자연스럽고 도움이 되는 답변을 제공하세요.
+
+[주의사항]
+- 모든 숫자, 횟수, 날짜, 시간은 '오늘의 정보'에 있는 값만 사용하세요.
+- 정보에 없는 내용은 지어내지 말고, 모른다고 솔직히 말씀하세요.
 
 [오늘의 정보]
 {context}
 
 [사용자 질문]
 {user_message}
+
+가능하다면 먼저 오늘 해야 할 루틴들을 간단히 정리해주시고, 각 루틴의 예상 소요 시간도 함께 알려주세요.
+답변 마지막에는 '오늘의 정보'에 포함된 정보를 한 문장으로 요약해주세요.
+
 """
+
 
 
     try:
