@@ -1,6 +1,8 @@
 // 일정 추가하기 모달
 
 import 'package:flutter/material.dart';
+import 'app_colors.dart';
+import 'app_text_styles.dart';
 
 class AddTodoModal extends StatefulWidget {
   const AddTodoModal({super.key});
@@ -23,92 +25,69 @@ class _AddTodoModalState extends State<AddTodoModal> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.75,
-      decoration: const ShapeDecoration(
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(30),
-            topRight: Radius.circular(30),
-          ),
+      height: MediaQuery.of(context).size.height * 0.6,
+      decoration: const BoxDecoration(
+        color: AppColors.backgroundGray,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(30),
+          topRight: Radius.circular(30),
         ),
       ),
       child: Column(
         children: [
           // 드래그 핸들
           Container(
-            margin: const EdgeInsets.only(top: 12, bottom: 16),
+            margin: const EdgeInsets.only(top: 12, bottom: 24),
             width: 82,
-            height: 1,
-            decoration: ShapeDecoration(
-              shape: RoundedRectangleBorder(
-                side: const BorderSide(
-                  width: 1,
-                  strokeAlign: BorderSide.strokeAlignCenter,
-                  color: Color(0xFFD9D9D9),
-                ),
-              ),
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.borderLight,
+              borderRadius: BorderRadius.circular(2),
             ),
           ),
 
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 새로운 일정 생성
+                  // 제목
                   Text(
                     '새로운 일정 생성',
-                    style: TextStyle(
-                      color: const Color(0xFF9B9BA1),
-                      fontSize: 10,
-                      fontFamily: 'LG Smart_H',
-                      fontWeight: FontWeight.w700,
-                      height: 1.60,
-                      letterSpacing: 1,
-                    ),
+                    style: AppTextStyles.sectionTitle(
+                      context,
+                    ).copyWith(fontSize: 18, fontWeight: FontWeight.w600),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 24),
 
                   // 일정 제목 입력 필드
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.only(
-                      top: 6,
-                      left: 3,
-                      right: 3,
-                      bottom: 2,
-                    ),
-                    decoration: ShapeDecoration(
-                      shape: RoundedRectangleBorder(
-                        side: const BorderSide(
-                          width: 2,
-                          color: Color(0xFF8863EF), // 컬러-서브-블루보라
-                        ),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.backgroundWhite,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.borderLight,
+                        width: 1,
                       ),
                     ),
                     child: TextField(
                       controller: _titleController,
-                      style: const TextStyle(
-                        color: Color(0xFF111111),
-                        fontSize: 14,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
                         fontFamily: 'LG Smart_H',
                         fontWeight: FontWeight.w400,
-                        height: 1.71,
+                        height: 1.43,
                       ),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.only(
-                          left: 0,
-                          right: 0,
-                          top: 0,
-                          bottom: 0,
-                        ),
                         hintText: '일정 제목을 입력하세요',
                         hintStyle: TextStyle(
-                          color: Color(0xFF9B9BA1),
-                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                          fontSize: 16,
                           fontFamily: 'LG Smart_H',
                           fontWeight: FontWeight.w400,
                         ),
@@ -116,21 +95,11 @@ class _AddTodoModalState extends State<AddTodoModal> {
                     ),
                   ),
 
-                  const SizedBox(height: 36),
+                  const SizedBox(height: 24),
 
                   // 시간 지정하기
-                  Text(
-                    '시간 지정하기',
-                    style: TextStyle(
-                      color: const Color(0xFF9B9BA1),
-                      fontSize: 10,
-                      fontFamily: 'LG Smart_H',
-                      fontWeight: FontWeight.w700,
-                      height: 1.60,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                  Text('시간 지정하기', style: AppTextStyles.sectionTitle(context)),
+                  const SizedBox(height: 12),
 
                   // 시간 선택 버튼
                   GestureDetector(
@@ -139,16 +108,14 @@ class _AddTodoModalState extends State<AddTodoModal> {
                     },
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 14,
-                      ),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
+                        color: AppColors.backgroundWhite,
                         border: Border.all(
-                          color: const Color(0xFFEAECF0),
+                          color: AppColors.borderLight,
                           width: 1,
                         ),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -157,38 +124,29 @@ class _AddTodoModalState extends State<AddTodoModal> {
                             _selectedTime ?? '시간 선택',
                             style: TextStyle(
                               color: _selectedTime != null
-                                  ? const Color(0xFF111111)
-                                  : const Color(0xFF9B9BA1),
-                              fontSize: 14,
+                                  ? AppColors.textPrimary
+                                  : AppColors.textSecondary,
+                              fontSize: 16,
                               fontFamily: 'LG Smart_H',
                               fontWeight: FontWeight.w400,
+                              height: 1.43,
                             ),
                           ),
-                          const Icon(
+                          Icon(
                             Icons.arrow_forward_ios,
-                            size: 12,
-                            color: Color(0xFF9B9BA1),
+                            size: 14,
+                            color: AppColors.textSecondary,
                           ),
                         ],
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 36),
+                  const SizedBox(height: 24),
 
                   // 카테고리
-                  Text(
-                    '카테고리',
-                    style: TextStyle(
-                      color: const Color(0xFF9B9BA1),
-                      fontSize: 10,
-                      fontFamily: 'LG Smart_H',
-                      fontWeight: FontWeight.w700,
-                      height: 1.60,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                  Text('카테고리', style: AppTextStyles.sectionTitle(context)),
+                  const SizedBox(height: 12),
 
                   // 카테고리 선택 버튼
                   GestureDetector(
@@ -197,16 +155,14 @@ class _AddTodoModalState extends State<AddTodoModal> {
                     },
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 14,
-                      ),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
+                        color: AppColors.backgroundWhite,
                         border: Border.all(
-                          color: const Color(0xFFEAECF0),
+                          color: AppColors.borderLight,
                           width: 1,
                         ),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -215,17 +171,18 @@ class _AddTodoModalState extends State<AddTodoModal> {
                             _selectedCategory ?? '카테고리 선택',
                             style: TextStyle(
                               color: _selectedCategory != null
-                                  ? const Color(0xFF111111)
-                                  : const Color(0xFF9B9BA1),
-                              fontSize: 14,
+                                  ? AppColors.textPrimary
+                                  : AppColors.textSecondary,
+                              fontSize: 16,
                               fontFamily: 'LG Smart_H',
                               fontWeight: FontWeight.w400,
+                              height: 1.43,
                             ),
                           ),
-                          const Icon(
+                          Icon(
                             Icons.arrow_forward_ios,
-                            size: 12,
-                            color: Color(0xFF9B9BA1),
+                            size: 14,
+                            color: AppColors.textSecondary,
                           ),
                         ],
                       ),
@@ -240,30 +197,12 @@ class _AddTodoModalState extends State<AddTodoModal> {
 
           // 일정 추가하기 버튼
           Container(
-            margin: const EdgeInsets.fromLTRB(7, 0, 7, 0),
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             width: double.infinity,
             height: 60,
-            decoration: ShapeDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment(-0.00, -1.44),
-                end: Alignment(1.07, 1.73),
-                colors: [
-                  Color(0xFFE756B3), // 컬러-서브-진달래
-                  Color(0xFF8863EF), // 컬러-서브-블루보라
-                  Color(0xFFFFE6CD), // 컬러-서브-아이보리
-                ],
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              shadows: const [
-                BoxShadow(
-                  color: Color(0x33000000),
-                  blurRadius: 3,
-                  offset: Offset(0, 1),
-                  spreadRadius: 0,
-                ),
-              ],
+            decoration: BoxDecoration(
+              color: AppColors.textAccent,
+              borderRadius: BorderRadius.circular(30),
             ),
             child: Material(
               color: Colors.transparent,
@@ -278,16 +217,16 @@ class _AddTodoModalState extends State<AddTodoModal> {
                     });
                   }
                 },
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(30),
                 child: const Center(
                   child: Text(
                     '일정 추가하기',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 14,
+                      fontSize: 17,
                       fontFamily: 'LG Smart_H',
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                       height: 1.43,
                     ),
                   ),

@@ -8,6 +8,7 @@ import '../components/habit_card.dart';
 import '../components/add_todo_modal.dart';
 import 'routine_screen.dart';
 import 'dashboard_screen.dart';
+import 'chat_screen.dart';
 
 class TodoScreen extends StatefulWidget {
   const TodoScreen({super.key});
@@ -377,10 +378,20 @@ class _TodoScreenState extends State<TodoScreen> {
                   ],
                 ),
                 child: Center(
-                  child: Image.asset(
-                    'assets/todo_screen/chat.png',
-                    width: 45,
-                    height: 45,
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ChatScreen(),
+                        ),
+                      );
+                    },
+                    child: Image.asset(
+                      'assets/todo_screen/chat.png',
+                      width: 45,
+                      height: 45,
+                    ),
                   ),
                 ),
               ),
