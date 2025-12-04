@@ -293,156 +293,162 @@ class _RoutineScreenState extends State<RoutineScreen> {
     return Scaffold(
       backgroundColor: AppColors.backgroundGray,
       body: SafeArea(
-        child: Stack(
-          children: [
-            // 메인 콘텐츠
-            Column(
-              children: [
-                // 상단 인사말
-                _buildGreeting(context),
-                const SizedBox(height: 10),
+        child: GestureDetector(
+          onTap: () {
+            // 화면 어디를 눌러도 스와이프 해제
+            SwipeStateManager().clearSwipedCard();
+          },
+          child: Stack(
+            children: [
+              // 메인 콘텐츠
+              Column(
+                children: [
+                  // 상단 인사말
+                  _buildGreeting(context),
+                  const SizedBox(height: 10),
 
-                // 탭 바
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 7),
-                  child: CustomTabBar(
-                    selectedIndex: _selectedTabIndex,
-                    onTabChanged: (index) {
-                      // 현재 선택된 탭을 다시 누르면 12일로 이동
-                      if (index == _selectedTabIndex) {
-                        setState(() {
-                          _selectedDateIndex = 15; // 12일 금요일 (인덱스 15)
-                          _RoutineScreenStateManager.selectedDateIndex = 15;
-                        });
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          _scrollToSelectedDate(context);
-                        });
-                        return;
-                      }
+                  // 탭 바
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 7),
+                    child: CustomTabBar(
+                      selectedIndex: _selectedTabIndex,
+                      onTabChanged: (index) {
+                        // 현재 선택된 탭을 다시 누르면 12일로 이동
+                        if (index == _selectedTabIndex) {
+                          setState(() {
+                            _selectedDateIndex = 15; // 12일 금요일 (인덱스 15)
+                            _RoutineScreenStateManager.selectedDateIndex = 15;
+                          });
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _scrollToSelectedDate(context);
+                          });
+                          return;
+                        }
 
-                      if (index == 0) {
-                        // to-do 탭 클릭 시 todo_screen으로 전환
-                        Navigator.pushReplacement(
-                          context,
-                          PageRouteBuilder(
-                            pageBuilder:
-                                (context, animation, secondaryAnimation) =>
-                                    const TodoScreen(),
-                            transitionDuration: Duration.zero,
-                            reverseTransitionDuration: Duration.zero,
-                          ),
-                        );
-                      } else if (index == 2) {
-                        // dashboard 탭 클릭 시 화면 전환
-                        Navigator.pushReplacement(
-                          context,
-                          PageRouteBuilder(
-                            pageBuilder:
-                                (context, animation, secondaryAnimation) =>
-                                    const DashboardScreen(),
-                            transitionDuration: Duration.zero,
-                            reverseTransitionDuration: Duration.zero,
-                          ),
-                        );
-                      } else {
-                        setState(() {
-                          _selectedTabIndex = index;
-                        });
-                      }
-                    },
+                        if (index == 0) {
+                          // to-do 탭 클릭 시 todo_screen으로 전환
+                          Navigator.pushReplacement(
+                            context,
+                            PageRouteBuilder(
+                              pageBuilder:
+                                  (context, animation, secondaryAnimation) =>
+                                      const TodoScreen(),
+                              transitionDuration: Duration.zero,
+                              reverseTransitionDuration: Duration.zero,
+                            ),
+                          );
+                        } else if (index == 2) {
+                          // dashboard 탭 클릭 시 화면 전환
+                          Navigator.pushReplacement(
+                            context,
+                            PageRouteBuilder(
+                              pageBuilder:
+                                  (context, animation, secondaryAnimation) =>
+                                      const DashboardScreen(),
+                              transitionDuration: Duration.zero,
+                              reverseTransitionDuration: Duration.zero,
+                            ),
+                          );
+                        } else {
+                          setState(() {
+                            _selectedTabIndex = index;
+                          });
+                        }
+                      },
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
+                  const SizedBox(height: 6),
 
-                // 날짜 캘린더
-                _buildDateCalendar(context),
-                const SizedBox(height: 10),
+                  // 날짜 캘린더
+                  _buildDateCalendar(context),
+                  const SizedBox(height: 10),
 
-                // 할 일 섹션
-                Expanded(child: _buildTodoSection(context)),
+                  // 할 일 섹션
+                  Expanded(child: _buildTodoSection(context)),
 
-                // 하단 네비게이션
-                const CustomBottomNavigation(currentScreen: 'routine'),
-              ],
-            ),
+                  // 하단 네비게이션
+                  const CustomBottomNavigation(currentScreen: 'routine'),
+                ],
+              ),
 
-            // 루틴 생성하기 바
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 60 + MediaQuery.of(context).padding.bottom,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                decoration: const BoxDecoration(
-                  color: AppColors.backgroundGray,
-                ),
+              // 루틴 생성하기 바
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 60 + MediaQuery.of(context).padding.bottom,
                 child: Container(
-                  height: 60,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
-                    image: const DecorationImage(
-                      image: AssetImage(
-                        'assets/routine_screen/routine_bar.png',
-                      ),
-                      fit: BoxFit.cover,
-                    ),
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                  child: const Text(
-                    '루틴 생성하기',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
+                  decoration: const BoxDecoration(
+                    color: AppColors.backgroundGray,
                   ),
-                ),
-              ),
-            ),
-
-            // chat.png 플로팅 버튼
-            Positioned(
-              right: 20,
-              bottom: 60 + MediaQuery.of(context).padding.bottom + 84 + 10,
-              child: Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const ChatScreen(),
+                  child: Container(
+                    height: 60,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(30),
+                      image: const DecorationImage(
+                        image: AssetImage(
+                          'assets/routine_screen/routine_bar.png',
                         ),
-                      );
-                    },
-                    child: Image.asset(
-                      'assets/todo_screen/chat.png',
-                      width: 45,
-                      height: 45,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    child: const Text(
+                      '루틴 생성하기',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+
+              // chat.png 플로팅 버튼
+              Positioned(
+                right: 20,
+                bottom: 60 + MediaQuery.of(context).padding.bottom + 84 + 10,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ChatScreen(),
+                          ),
+                        );
+                      },
+                      child: Image.asset(
+                        'assets/todo_screen/chat.png',
+                        width: 45,
+                        height: 45,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

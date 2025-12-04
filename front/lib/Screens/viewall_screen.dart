@@ -6,7 +6,11 @@ import '../components/bottom_navigation.dart';
 import 'routine_screen.dart';
 import 'todo_screen.dart';
 import 'dashboard_screen.dart';
+<<<<<<< HEAD
 import '../Services/routine_service.dart';
+=======
+import 'priority.dart';
+>>>>>>> f88ea853b1ceb2c48dc8e9bb9ece464569cc0281
 
 class ViewAllScreen extends StatefulWidget {
   const ViewAllScreen({super.key});
@@ -246,9 +250,13 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                     child: CustomTabBar(
                       selectedIndex: _selectedTabIndex,
                       onTabChanged: (index) {
+<<<<<<< HEAD
                         if (index == _selectedTabIndex) {
                           return;
                         }
+=======
+                        // 모든 탭 클릭 시 확인 다이얼로그 표시 (루틴 탭 포함)
+>>>>>>> f88ea853b1ceb2c48dc8e9bb9ece464569cc0281
                         _showConfirmDialog(
                           onConfirm: () {
                             if (index == 0) {
@@ -266,6 +274,23 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                                 ),
                                 (route) => false,
                               );
+                            } else if (index == 1) {
+                              // 루틴 탭 클릭 시 루틴 화면으로 이동 (날짜 리셋)
+                              resetRoutineScreenDate();
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                PageRouteBuilder(
+                                  pageBuilder:
+                                      (
+                                        context,
+                                        animation,
+                                        secondaryAnimation,
+                                      ) => const RoutineScreen(),
+                                  transitionDuration: Duration.zero,
+                                  reverseTransitionDuration: Duration.zero,
+                                ),
+                                (route) => false, // 모든 이전 화면 제거
+                              );
                             } else if (index == 2) {
                               Navigator.pushAndRemoveUntil(
                                 context,
@@ -281,10 +306,6 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                                 ),
                                 (route) => false,
                               );
-                            } else {
-                              setState(() {
-                                _selectedTabIndex = index;
-                              });
                             }
                           },
                         );
@@ -314,7 +335,24 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                     color: AppColors.backgroundGray,
                   ),
                   child: GestureDetector(
+<<<<<<< HEAD
                     onTap: _onSelectComplete,
+=======
+                    onTap: () {
+                      // 선택 완료 로직 - priority 화면으로 이동
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        PageRouteBuilder(
+                          pageBuilder:
+                              (context, animation, secondaryAnimation) =>
+                                  PriorityScreen(),
+                          transitionDuration: Duration.zero,
+                          reverseTransitionDuration: Duration.zero,
+                        ),
+                        (route) => false, // 모든 이전 화면 제거
+                      );
+                    },
+>>>>>>> f88ea853b1ceb2c48dc8e9bb9ece464569cc0281
                     child: Container(
                       height: 60,
                       alignment: Alignment.center,
