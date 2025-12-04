@@ -183,7 +183,7 @@ class PriorityScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
                         _PriorityCard(
-                          title: '세탁기 돌리기',
+                          title: '세탁기',
                           time: '2/4',
                           iconSize: 40,
                           imagePath: 'assets/priority_screen/.png',
