@@ -192,9 +192,16 @@ class _TodoScreenState extends State<TodoScreen> {
         // 일정 추가 로직
         final selectedDate = _getSelectedDate();
         final dateKey = _formatDateKey(selectedDate);
+        // 시간 정보 포함하여 제목 생성
+        String title = result['title'] as String;
+        final time = result['time'] as String?;
+        if (time != null && time.isNotEmpty) {
+          title = '$time $title';
+        }
+
         final newTodo = {
-          'title': result['title'] as String,
-          'category': result['category'] as String,
+          'title': title,
+          'category': result['category'] as String? ?? '기타',
           'isHighlighted': true,
           'checkType': 'none',
         };
@@ -307,7 +314,7 @@ class _TodoScreenState extends State<TodoScreen> {
 
                 // 날짜 캘린더
                 _buildDateCalendar(context),
-                const SizedBox(height: 15),
+                const SizedBox(height: 30),
 
                 // 할 일 섹션
                 Expanded(child: _buildTodoSection(context)),
@@ -483,62 +490,65 @@ class _TodoScreenState extends State<TodoScreen> {
   }
 
   Widget _buildTodoSection(BuildContext context) {
+    // 하단 네비게이션과 일정 추가하기 바 높이 계산
+    final bottomNavHeight = 60.0 + MediaQuery.of(context).padding.bottom;
+    final todoBarHeight = 84.0; // 일정 추가하기 바 높이 (60) + 패딩 (24)
+    final bottomPadding = bottomNavHeight + todoBarHeight + 10; // 여유 공간 추가
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 섹션 헤더
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 15),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // 할 일 리스트 (스크롤 가능)
+          Expanded(
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.only(bottom: bottomPadding),
               children: [
-                const SizedBox.shrink(), // 왼쪽 공간 (루틴과 동일한 구조)
-                Text('VIEW ALL', style: AppTextStyles.viewAll(context)),
+                ..._sortedTodos.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final todo = entry.value;
+                  final isFirstChecked =
+                      index > 0 &&
+                      _sortedTodos[index - 1]['checkType'] != 'done' &&
+                      todo['checkType'] == 'done';
+
+                  // 원본 리스트에서의 인덱스 찾기
+                  final originalIndex = _todos.indexWhere(
+                    (t) =>
+                        t['title'] == todo['title'] &&
+                        t['category'] == todo['category'],
+                  );
+                  return AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder:
+                        (Widget child, Animation<double> animation) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: child,
+                          );
+                        },
+                    child: Padding(
+                      key: ValueKey('${todo['title']}_${todo['checkType']}'),
+                      padding: EdgeInsets.only(
+                        bottom: 12,
+                        top: isFirstChecked ? 20 : 0, // 체크된 항목 시작 부분에 여백 추가
+                      ),
+                      child: TodoItemCard(
+                        title: todo['title'] as String,
+                        category: todo['category'] as String,
+                        isHighlighted: todo['isHighlighted'] as bool,
+                        checkType: todo['checkType'] as String,
+                        onCheckChanged: () => _toggleCheck(originalIndex),
+                      ),
+                    ),
+                  );
+                }).toList(),
               ],
             ),
-          ),
-
-          // 할 일 리스트 (스크롤 없음)
-          Column(
-            children: _sortedTodos.asMap().entries.map((entry) {
-              final index = entry.key;
-              final todo = entry.value;
-              final isFirstChecked =
-                  index > 0 &&
-                  _sortedTodos[index - 1]['checkType'] != 'done' &&
-                  todo['checkType'] == 'done';
-
-              // 원본 리스트에서의 인덱스 찾기
-              final originalIndex = _todos.indexWhere(
-                (t) =>
-                    t['title'] == todo['title'] &&
-                    t['category'] == todo['category'],
-              );
-              return AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                transitionBuilder: (Widget child, Animation<double> animation) {
-                  return FadeTransition(opacity: animation, child: child);
-                },
-                child: Padding(
-                  key: ValueKey('${todo['title']}_${todo['checkType']}'),
-                  padding: EdgeInsets.only(
-                    bottom: 12,
-                    top: isFirstChecked ? 20 : 0, // 체크된 항목 시작 부분에 여백 추가
-                  ),
-                  child: TodoItemCard(
-                    title: todo['title'] as String,
-                    category: todo['category'] as String,
-                    isHighlighted: todo['isHighlighted'] as bool,
-                    checkType: todo['checkType'] as String,
-                    onCheckChanged: () => _toggleCheck(originalIndex),
-                  ),
-                ),
-              );
-            }).toList(),
           ),
         ],
       ),
