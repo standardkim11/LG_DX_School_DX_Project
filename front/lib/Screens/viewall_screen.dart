@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import '../components/app_colors.dart';
 import '../components/app_text_styles.dart';
-import '../components/routine_card.dart';
 import '../components/tab_bar.dart';
 import '../components/date_card.dart';
 import '../components/bottom_navigation.dart';
 import 'routine_screen.dart';
+import 'todo_screen.dart';
+import 'dashboard_screen.dart';
 
 class ViewAllScreen extends StatefulWidget {
   const ViewAllScreen({super.key});
@@ -61,99 +62,140 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: AppColors.backgroundWhite,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '선택을 완료하시겠습니까?',
-                  style: AppTextStyles.sectionTitle(
-                    context,
-                  ).copyWith(fontSize: 18, fontWeight: FontWeight.w600),
-                  textAlign: TextAlign.center,
+        bool? selectedButton; // null: 아무것도 선택 안됨, true: YES, false: NO
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.backgroundWhite,
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 아니요 버튼
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => Navigator.of(context).pop(false),
-                        child: Container(
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: AppColors.backgroundGray,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            '아니요',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 16,
-                              fontFamily: 'LG Smart_H',
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
+                    Text(
+                      '선택을 그만하시겠습니까?',
+                      style: AppTextStyles.sectionTitle(
+                        context,
+                      ).copyWith(fontSize: 18, fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(width: 12),
-                    // 네 버튼
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          Navigator.of(context).pop(true);
-                          if (onConfirm != null) {
-                            onConfirm();
-                          } else {
-                            // viewall 화면에서 루틴 탭이 선택된 상태로 이동
-                            Navigator.pushAndRemoveUntil(
-                              context,
-                              PageRouteBuilder(
-                                pageBuilder:
-                                    (context, animation, secondaryAnimation) =>
-                                        const RoutineScreen(),
-                                transitionDuration: Duration.zero,
-                                reverseTransitionDuration: Duration.zero,
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // YES 버튼
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedButton = true;
+                              });
+                              // 색상 변경을 보여주기 위해 약간의 지연 후 닫기
+                              Future.delayed(
+                                const Duration(milliseconds: 150),
+                                () {
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop(true);
+                                    if (onConfirm != null) {
+                                      onConfirm();
+                                    } else {
+                                      // viewall 화면에서 루틴 탭이 선택된 상태로 이동
+                                      Navigator.pushAndRemoveUntil(
+                                        context,
+                                        PageRouteBuilder(
+                                          pageBuilder:
+                                              (
+                                                context,
+                                                animation,
+                                                secondaryAnimation,
+                                              ) => const RoutineScreen(),
+                                          transitionDuration: Duration.zero,
+                                          reverseTransitionDuration:
+                                              Duration.zero,
+                                        ),
+                                        (route) => false, // 모든 이전 화면 제거
+                                      );
+                                    }
+                                  }
+                                },
+                              );
+                            },
+                            child: Container(
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: selectedButton == true
+                                    ? AppColors.textAccent
+                                    : AppColors.backgroundGray,
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              (route) => false, // 모든 이전 화면 제거
-                            );
-                          }
-                        },
-                        child: Container(
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: AppColors.textAccent,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          alignment: Alignment.center,
-                          child: const Text(
-                            '네',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontFamily: 'LG Smart_H',
-                              fontWeight: FontWeight.w600,
+                              alignment: Alignment.center,
+                              child: Text(
+                                'YES',
+                                style: TextStyle(
+                                  color: selectedButton == true
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
+                                  fontSize: 16,
+                                  fontFamily: 'LG Smart_H',
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 12),
+                        // NO 버튼
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedButton = false;
+                              });
+                              // 색상 변경을 보여주기 위해 약간의 지연 후 닫기
+                              Future.delayed(
+                                const Duration(milliseconds: 150),
+                                () {
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop(false);
+                                  }
+                                },
+                              );
+                            },
+                            child: Container(
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: selectedButton == false
+                                    ? AppColors.textAccent
+                                    : AppColors.backgroundGray,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'NO',
+                                style: TextStyle(
+                                  color: selectedButton == false
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
+                                  fontSize: 16,
+                                  fontFamily: 'LG Smart_H',
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -209,22 +251,7 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                         _showConfirmDialog(
                           onConfirm: () {
                             if (index == 0) {
-                              Navigator.pushReplacement(
-                                context,
-                                PageRouteBuilder(
-                                  pageBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                      ) => const RoutineScreen(),
-                                  transitionDuration: Duration.zero,
-                                  reverseTransitionDuration: Duration.zero,
-                                ),
-                              );
-                            } else if (index == 2) {
-                              // dashboard 탭 클릭 시 루틴 화면으로 이동 (날짜 리셋)
-                              resetRoutineScreenDate();
+                              // 투두 탭 클릭 시 투두 화면으로 이동
                               Navigator.pushAndRemoveUntil(
                                 context,
                                 PageRouteBuilder(
@@ -233,7 +260,23 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                                         context,
                                         animation,
                                         secondaryAnimation,
-                                      ) => const RoutineScreen(),
+                                      ) => const TodoScreen(),
+                                  transitionDuration: Duration.zero,
+                                  reverseTransitionDuration: Duration.zero,
+                                ),
+                                (route) => false, // 모든 이전 화면 제거
+                              );
+                            } else if (index == 2) {
+                              // dashboard 탭 클릭 시 대시보드 화면으로 이동
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                PageRouteBuilder(
+                                  pageBuilder:
+                                      (
+                                        context,
+                                        animation,
+                                        secondaryAnimation,
+                                      ) => const DashboardScreen(),
                                   transitionDuration: Duration.zero,
                                   reverseTransitionDuration: Duration.zero,
                                 ),
@@ -264,15 +307,16 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                         decoration: const BoxDecoration(
                           color: AppColors.backgroundGray,
                         ),
-                        child: SizedBox(
-                          height: 700,
-                          child: Stack(
-                            clipBehavior: Clip.none,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               // 섹션 제목
-                              Positioned(
-                                left: 9,
-                                top: 0,
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 15,
+                                ),
                                 child: Text(
                                   '나의 루틴 목록',
                                   style: AppTextStyles.sectionTitle(context),
@@ -405,10 +449,11 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
             onTap: () {
               // 다른 날짜 선택 시 확인 다이얼로그 표시
               if (index != _selectedDateIndex) {
+                final selectedIndex = index; // 클로저에서 사용하기 위해 변수에 저장
                 _showConfirmDialog(
                   onConfirm: () {
-                    // 날짜를 12일(금요일, 인덱스 15)로 리셋하고 루틴 화면으로 이동
-                    resetRoutineScreenDate();
+                    // 선택한 날짜로 설정하고 루틴 화면으로 이동
+                    setRoutineScreenDate(selectedIndex);
                     Navigator.pushAndRemoveUntil(
                       context,
                       PageRouteBuilder(
@@ -446,53 +491,168 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
   List<Widget> _buildRoutineCards() {
     return [
       // 첫 번째 행
-      RoutineCard(
-        title: '귀가 전 바닥 청소하기',
-        time: '17:30',
-        bottomBadgeText: '사용자 수정',
-        bottomBadgeColor: const Color(0xFF4B57BB),
-        left: 9,
-        top: 36,
-        isChecked: true,
+      Row(
+        children: [
+          Expanded(
+            child: _buildRoutineCard(
+              title: '귀가 전 바닥 청소하기',
+              time: '17:30',
+              bottomBadgeText: '수정',
+              bottomBadgeColor: const Color(0xFF4B57BB),
+              isChecked: true,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildRoutineCard(
+              title: '아침에 물 마시기',
+              time: '8시까지 완료하기',
+              bottomBadgeText: '수정',
+              bottomBadgeColor: const Color(0xFF4B57BB),
+              isChecked: false,
+            ),
+          ),
+        ],
       ),
-      RoutineCard(
-        title: '아침에 물 마시기',
-        time: '8시까지 완료하기',
-        bottomBadgeText: '사용자 수정',
-        bottomBadgeColor: const Color(0xFF4B57BB),
-        left: 182,
-        top: 36,
-        isChecked: false,
-      ),
+      const SizedBox(height: 12),
       // 두 번째 행
-      RoutineCard(
-        title: '로봇청소기 물청소하기',
-        time: '13:00(화, 목)',
-        bottomBadgeText: '사용자 수정',
-        bottomBadgeColor: const Color(0xFF4B57BB),
-        left: 9,
-        top: 145,
-        isChecked: true,
+      Row(
+        children: [
+          Expanded(
+            child: _buildRoutineCard(
+              title: '로봇청소기 물청소하기',
+              time: '13:00(화, 목)',
+              bottomBadgeText: '수정',
+              bottomBadgeColor: const Color(0xFF4B57BB),
+              isChecked: true,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildRoutineCard(
+              title: '건조기 돌리기',
+              time: '2/4',
+              bottomBadgeText: '수정',
+              bottomBadgeColor: const Color(0xFF4B57BB),
+              isChecked: true,
+            ),
+          ),
+        ],
       ),
-      RoutineCard(
-        title: '건조기 돌리기',
-        time: '2/4',
-        bottomBadgeText: '사용자 수정',
-        bottomBadgeColor: const Color(0xFF4B57BB),
-        left: 182,
-        top: 145,
-        isChecked: true,
-      ),
+      const SizedBox(height: 12),
       // 세 번째 행
-      RoutineCard(
-        title: '세탁기 돌리기',
-        time: '2/4',
-        bottomBadgeText: '사용자 수정',
-        bottomBadgeColor: const Color(0xFF4B57BB),
-        left: 9,
-        top: 254,
-        isChecked: true,
+      Row(
+        children: [
+          Expanded(
+            child: _buildRoutineCard(
+              title: '세탁기 돌리기',
+              time: '2/4',
+              bottomBadgeText: '수정',
+              bottomBadgeColor: const Color(0xFF4B57BB),
+              isChecked: true,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Expanded(child: SizedBox()), // 빈 공간
+        ],
       ),
     ];
+  }
+
+  Widget _buildRoutineCard({
+    required String title,
+    required String time,
+    String? bottomBadgeText,
+    Color? bottomBadgeColor,
+    required bool isChecked,
+  }) {
+    return Container(
+      width: double.infinity,
+      height: 88,
+      decoration: ShapeDecoration(
+        color: AppColors.backgroundWhite,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(17, 17, 17, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 16,
+                      height: 16,
+                      decoration: ShapeDecoration(
+                        color: isChecked
+                            ? AppColors.textAccent
+                            : Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          side: BorderSide(
+                            width: isChecked ? 0 : 1,
+                            color: isChecked
+                                ? AppColors.textAccent
+                                : AppColors.textUnselected,
+                          ),
+                        ),
+                      ),
+                      child: isChecked
+                          ? const Center(
+                              child: Icon(
+                                Icons.check,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: AppTextStyles.todoTitle(context),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Padding(
+                  padding: const EdgeInsets.only(left: 26),
+                  child: Text(time, style: AppTextStyles.todoCategory(context)),
+                ),
+              ],
+            ),
+          ),
+          if (bottomBadgeText != null)
+            Positioned(
+              right: 8,
+              bottom: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: ShapeDecoration(
+                  color: bottomBadgeColor ?? const Color(0xFF6065BB),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                child: Text(
+                  bottomBadgeText,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontFamily: 'LG Smart_H',
+                    fontWeight: FontWeight.w400,
+                    height: 2.50,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

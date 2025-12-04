@@ -40,6 +40,11 @@ void resetRoutineScreenDate() {
   _RoutineScreenStateManager.resetToDefaultDate();
 }
 
+// 외부에서 접근 가능한 날짜 설정 함수
+void setRoutineScreenDate(int dateIndex) {
+  _RoutineScreenStateManager.selectedDateIndex = dateIndex;
+}
+
 class _RoutineScreenState extends State<RoutineScreen> {
   int _selectedTabIndex = 1; // routine 탭이 선택된 상태
   int _selectedDateIndex = _RoutineScreenStateManager.selectedDateIndex;
@@ -279,7 +284,7 @@ class _RoutineScreenState extends State<RoutineScreen> {
 
                 // 날짜 캘린더
                 _buildDateCalendar(context),
-                const SizedBox(height: 15),
+                const SizedBox(height: 10),
 
                 // 할 일 섹션
                 Expanded(child: _buildTodoSection(context)),
