@@ -206,18 +206,7 @@ def context_event():
     df_sorted = df.sort_values(
         ["pred_priority_score", "RUN_MINUTES"],
         ascending=[False, True]
-    )        # 오늘 완료 여부 체크
-        last_log = (
-            RoutineExecution.query
-            .filter_by(user_id=user_id, routine_id=r.id)
-            .order_by(RoutineExecution.start_time.desc())
-            .first()
-        )
-
-        done = False
-        if last_log and last_log.start_time and last_log.start_time.date() == today:
-            done = (last_log.status == 2)  # DONE
-
+    )
 
     TOP_K = 3
     top_df = df_sorted.head(TOP_K)
