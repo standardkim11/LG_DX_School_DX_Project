@@ -317,8 +317,8 @@ class _HabitCardState extends State<HabitCard> {
                         }
                       }
                       // 드래그 오프셋 제한 (왼쪽으로 더 많이 이동 가능하도록)
-                      if (_dragOffset < -180) {
-                        _dragOffset = -180;
+                      if (_dragOffset < -200) {
+                        _dragOffset = -200;
                       } else if (_dragOffset > 80) {
                         _dragOffset = 80;
                       }
@@ -335,7 +335,7 @@ class _HabitCardState extends State<HabitCard> {
                       SwipeStateManager().setSwipedCard(widget.cardKey);
                     } else if (_swipeState == 'left') {
                       setState(() {
-                        _dragOffset = -180; // Fail/Skip 버튼이 완전히 드러나도록
+                        _dragOffset = -200; // Fail/Skip 버튼이 완전히 드러나도록
                       });
                       SwipeStateManager().setSwipedCard(widget.cardKey);
                     } else {
@@ -349,14 +349,14 @@ class _HabitCardState extends State<HabitCard> {
             child: ClipRect(
               child: Transform.translate(
                 offset: widget.enableSwipe
-                    ? Offset(_dragOffset.clamp(-180.0, 80.0), 0)
+                    ? Offset(_dragOffset.clamp(-200.0, 80.0), 0)
                     : Offset.zero,
                 child: Container(
                   width: widget.enableSwipe && _dragOffset < 0
                       ? MediaQuery.of(context).size.width -
                             24 +
                             _dragOffset.clamp(
-                              -180.0,
+                              -200.0,
                               0.0,
                             ) // 왼쪽 스와이프 시 너비 조정 (Fail+Skip 버튼 공간 확보)
                       : MediaQuery.of(context).size.width - 24, // 전체 너비 - 좌우 패딩

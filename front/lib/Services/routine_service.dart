@@ -102,6 +102,59 @@ class RoutineService {
       return [];
     }
   }
+
+  /// 새 루틴을 생성합니다
+  /// Returns: 생성된 루틴 정보
+  static Future<Map<String, dynamic>?> createRoutine({
+    required String name,
+    required String scheduleType,
+    String? preferredTime,
+    int? runMinutes,
+    String routineType = 'ETC',
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/routines');
+
+      final body = jsonEncode({
+        'user_id': userId,
+        'name': name,
+        'routine_type': routineType,
+        'schedule_type': scheduleType,
+        'preferred_time': preferredTime,
+        'run_minutes': runMinutes,
+      });
+
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: body,
+          )
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              throw Exception('요청 시간 초과');
+            },
+          );
+
+      if (response.statusCode == 201) {
+        final data =
+            jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        return data;
+      } else {
+        print(
+          'Create Routine API Error: ${response.statusCode} - ${response.body}',
+        );
+        return null;
+      }
+    } catch (e) {
+      print('Create Routine Service Error: $e');
+      return null;
+    }
+  }
 }
 
 class RoutineItem {
