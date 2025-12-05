@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import '../Services/config.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -19,18 +20,13 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isLoading = false;
 
   // API 베이스 URL
-  // 모바일/에뮬레이터: Android는 10.0.2.2, iOS 시뮬레이터는 localhost, 실제 기기는 컴퓨터 IP 사용
   static String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:8088/api';
-    } else if (Platform.isAndroid) {
-      // Android 에뮬레이터는 10.0.2.2 사용 (실제 기기는 컴퓨터의 로컬 IP 주소 사용)
-      return 'http://10.0.2.2:8088/api';
-    } else if (Platform.isIOS) {
-      // iOS 시뮬레이터는 localhost 사용 (실제 기기는 컴퓨터의 로컬 IP 주소 사용)
-      return 'http://localhost:8088/api';
-    }
-    return 'http://localhost:8088/api';
+    // config.dart에서 설정된 IP 주소 사용
+    return ApiConfig.getBaseUrl(
+      isWeb: kIsWeb,
+      isAndroid: Platform.isAndroid,
+      isIOS: Platform.isIOS,
+    );
   }
 
   static const int userId = 1; // 실제로는 사용자 인증에서 가져와야 함

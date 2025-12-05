@@ -186,7 +186,12 @@ class _TodoScreenState extends State<TodoScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => const AddTodoModal(),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: const AddTodoModal(),
+      ),
     ).then((result) {
       if (result != null) {
         // 일정 추가 로직

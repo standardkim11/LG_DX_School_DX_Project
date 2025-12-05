@@ -11,8 +11,12 @@ class HabitInfo {
   });
 
   factory HabitInfo.fromJson(Map<String, dynamic> json) {
-    // 백엔드는 'display_name'을 보냄, 'name'은 없을 수 있음
-    final displayName = json['display_name'] as String? ?? json['name'] as String? ?? '';
+    // 백엔드는 'display_name', 'title', 'name' 중 하나를 보낼 수 있음
+    final displayName =
+        json['display_name'] as String? ??
+        json['title'] as String? ??
+        json['name'] as String? ??
+        '';
     return HabitInfo(
       name: displayName,
       progressRate: (json['progress_rate'] as num?)?.toDouble() ?? 0.0,
@@ -49,7 +53,7 @@ class DashboardResponse {
     final monthlySummary = json['monthly_summary'] as Map<String, dynamic>?;
     // 백엔드는 'habit' 키를 사용 (not 'main_habit')
     final habitData = json['habit'] as Map<String, dynamic>?;
-    
+
     return DashboardResponse(
       successRate: (monthlySummary?['success_rate'] as num?)?.toDouble() ?? 0.0,
       completedCount: monthlySummary?['completed_count'] as int? ?? 0,
@@ -72,4 +76,3 @@ class DashboardResponse {
     };
   }
 }
-

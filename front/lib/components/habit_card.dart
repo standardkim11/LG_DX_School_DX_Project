@@ -40,6 +40,7 @@ class HabitCard extends StatefulWidget {
   final double progress; // 0~1
   final String runnerIcon;
   final String cardKey; // 고유 키
+  final bool enableSwipe; // 스와이프 활성화 여부
 
   const HabitCard({
     super.key,
@@ -48,6 +49,7 @@ class HabitCard extends StatefulWidget {
     required this.progress,
     this.runnerIcon = 'assets/routine_screen/human.png',
     String? cardKey,
+    this.enableSwipe = true, // 기본값은 true (기존 동작 유지)
   }) : cardKey = cardKey ?? 'habit_${title}_${subtitle}';
 
   @override
@@ -85,18 +87,22 @@ class _HabitCardState extends State<HabitCard> {
 
   @override
   Widget build(BuildContext context) {
-    final cardColor = _swipeState == 'right'
-        ? const Color(0xFFFE3C7B) // 핑크
-        : _swipeState == 'left'
-        ? const Color(0xFF4B57BB) // 보라
-        : AppColors.backgroundWhite; // 원래
+    final cardColor = widget.enableSwipe
+        ? (_swipeState == 'right'
+              ? const Color(0xFFFE3C7B) // 핑크
+              : _swipeState == 'left'
+              ? const Color(0xFF4B57BB) // 보라
+              : AppColors.backgroundWhite) // 원래
+        : AppColors.backgroundWhite; // 스와이프 비활성화 시 항상 원래 색상
 
-    final textColor = _swipeState != null ? Colors.white : null;
+    final textColor = widget.enableSwipe && _swipeState != null
+        ? Colors.white
+        : null;
 
     return GestureDetector(
       onTap: () {
         // 배경 탭 시 원래 상태로 복귀
-        if (_swipeState != null) {
+        if (widget.enableSwipe && _swipeState != null) {
           setState(() {
             _swipeState = null;
             _dragOffset = 0.0;
@@ -107,17 +113,19 @@ class _HabitCardState extends State<HabitCard> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // 배경 버튼들
-          if (_swipeState == 'right')
+          // 배경 버튼들 (카드 뒤에 배치 - 먼저 선언)
+          if (widget.enableSwipe && _swipeState == 'right')
             // 오른쪽 스와이프: View 버튼 (왼쪽)
             Positioned(
-              left: 8,
+              left: 8, // 카드가 이동하면 드러남
               top: 0,
               bottom: 0,
+              width: 72, // 버튼 너비 고정 (padding 16*2 + 내용)
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Container(
                   height: 88,
+                  width: 72,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
@@ -148,6 +156,13 @@ class _HabitCardState extends State<HabitCard> {
                         width: 20,
                         height: 20,
                         fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.visibility,
+                            size: 20,
+                            color: Color(0xFF9B9BA1),
+                          );
+                        },
                       ),
                       const SizedBox(height: 4),
                       const Text(
@@ -166,10 +181,10 @@ class _HabitCardState extends State<HabitCard> {
                 ),
               ),
             ),
-          if (_swipeState == 'left')
+          if (widget.enableSwipe && _swipeState == 'left')
             // 왼쪽 스와이프: Fail, Skip 버튼 (오른쪽)
             Positioned(
-              right: 8,
+              right: 8, // 카드가 이동하면 드러남
               top: 0,
               bottom: 0,
               child: Align(
@@ -179,6 +194,9 @@ class _HabitCardState extends State<HabitCard> {
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 148, // Fail(56) + 간격(20) + Skip(56) + 패딩(16)
                   ),
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -198,13 +216,12 @@ class _HabitCardState extends State<HabitCard> {
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       // Fail 버튼
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
+                      SizedBox(
+                        width: 56, // 고정 너비
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -238,13 +255,10 @@ class _HabitCardState extends State<HabitCard> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 12), // 버튼 사이 여백
+                      const SizedBox(width: 20), // 버튼 사이 여백 증가
                       // Skip 버튼
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
+                      SizedBox(
+                        width: 56, // 고정 너비
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -285,289 +299,132 @@ class _HabitCardState extends State<HabitCard> {
             ),
           // 카드
           GestureDetector(
-            onHorizontalDragUpdate: (details) {
-              setState(() {
-                _dragOffset += details.delta.dx;
-                // 스와이프 임계값 설정
-                if (_dragOffset > 80) {
-                  _swipeState = 'right';
-                  SwipeStateManager().setSwipedCard(widget.cardKey);
-                } else if (_dragOffset < -80) {
-                  _swipeState = 'left';
-                  SwipeStateManager().setSwipedCard(widget.cardKey);
-                } else {
-                  _swipeState = null;
-                  if (SwipeStateManager().isSwiped(widget.cardKey)) {
-                    SwipeStateManager().clearSwipedCard();
+            onHorizontalDragUpdate: widget.enableSwipe
+                ? (details) {
+                    setState(() {
+                      _dragOffset += details.delta.dx;
+                      // 스와이프 임계값 설정
+                      if (_dragOffset > 80) {
+                        _swipeState = 'right';
+                        SwipeStateManager().setSwipedCard(widget.cardKey);
+                      } else if (_dragOffset < -80) {
+                        _swipeState = 'left';
+                        SwipeStateManager().setSwipedCard(widget.cardKey);
+                      } else {
+                        _swipeState = null;
+                        if (SwipeStateManager().isSwiped(widget.cardKey)) {
+                          SwipeStateManager().clearSwipedCard();
+                        }
+                      }
+                      // 드래그 오프셋 제한 (왼쪽으로 더 많이 이동 가능하도록)
+                      if (_dragOffset < -180) {
+                        _dragOffset = -180;
+                      } else if (_dragOffset > 80) {
+                        _dragOffset = 80;
+                      }
+                    });
                   }
-                }
-              });
-            },
-            onHorizontalDragEnd: (details) {
-              // 드래그 종료 시 스냅
-              if (_swipeState == 'right') {
-                setState(() {
-                  _dragOffset = 80;
-                });
-                SwipeStateManager().setSwipedCard(widget.cardKey);
-              } else if (_swipeState == 'left') {
-                setState(() {
-                  _dragOffset = -80;
-                });
-                SwipeStateManager().setSwipedCard(widget.cardKey);
-              } else {
-                setState(() {
-                  _dragOffset = 0.0;
-                });
-                SwipeStateManager().clearSwipedCard();
-              }
-            },
-            child: Transform.translate(
-              offset: Offset(_dragOffset.clamp(-80.0, 80.0), 0),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                constraints: const BoxConstraints(
-                  minHeight: 88,
-                ), // TodoItemCard와 높이 통일
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    width: 1,
-                    color: _swipeState != null
-                        ? Colors.transparent
-                        : AppColors.borderLight,
+                : null,
+            onHorizontalDragEnd: widget.enableSwipe
+                ? (details) {
+                    // 드래그 종료 시 스냅
+                    if (_swipeState == 'right') {
+                      setState(() {
+                        _dragOffset = 80;
+                      });
+                      SwipeStateManager().setSwipedCard(widget.cardKey);
+                    } else if (_swipeState == 'left') {
+                      setState(() {
+                        _dragOffset = -180; // Fail/Skip 버튼이 완전히 드러나도록
+                      });
+                      SwipeStateManager().setSwipedCard(widget.cardKey);
+                    } else {
+                      setState(() {
+                        _dragOffset = 0.0;
+                      });
+                      SwipeStateManager().clearSwipedCard();
+                    }
+                  }
+                : null,
+            child: ClipRect(
+              child: Transform.translate(
+                offset: widget.enableSwipe
+                    ? Offset(_dragOffset.clamp(-180.0, 80.0), 0)
+                    : Offset.zero,
+                child: Container(
+                  width: widget.enableSwipe && _dragOffset < 0
+                      ? MediaQuery.of(context).size.width -
+                            24 +
+                            _dragOffset.clamp(
+                              -180.0,
+                              0.0,
+                            ) // 왼쪽 스와이프 시 너비 조정 (Fail+Skip 버튼 공간 확보)
+                      : MediaQuery.of(context).size.width - 24, // 전체 너비 - 좌우 패딩
+                  padding: const EdgeInsets.all(16),
+                  constraints: const BoxConstraints(
+                    minHeight: 88,
+                  ), // TodoItemCard와 높이 통일
+                  decoration: BoxDecoration(
+                    color: cardColor, // 항상 불투명한 배경으로 버튼 가리기
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      width: 1,
+                      color: _swipeState != null
+                          ? Colors.transparent
+                          : AppColors.borderLight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0x0F222C5C),
+                        blurRadius: 68,
+                        offset: const Offset(58, 26),
+                        spreadRadius: 0,
+                      ),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0x0F222C5C),
-                      blurRadius: 68,
-                      offset: const Offset(58, 26),
-                      spreadRadius: 0,
-                    ),
-                  ],
-                ),
-                child: Stack(
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                widget.subtitle,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w400,
-                                  color: textColor ?? const Color(0xFF9FA7B9),
+                  child: Stack(
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  widget.subtitle,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w400,
+                                    color: textColor ?? const Color(0xFF9FA7B9),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                widget.title,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: textColor ?? AppColors.textAccent,
+                                const SizedBox(height: 4),
+                                Text(
+                                  widget.title,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: textColor ?? AppColors.textAccent,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 32), // 제목과 progress bar 사이 여백 증가 (24 -> 32)
-                              _buildProgressBar(widget.progress),
-                            ],
+                                const SizedBox(
+                                  height: 32,
+                                ), // 제목과 progress bar 사이 여백 증가 (24 -> 32)
+                                _buildProgressBar(widget.progress),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                      ],
-                    ),
-                  ],
+                          const SizedBox(width: 12),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-          // 배경 버튼들 (카드 위에 표시되도록 나중에 선언)
-          if (_swipeState == 'right')
-            // 오른쪽 스와이프: View 버튼 (왼쪽)
-            Positioned(
-              left: 8,
-              top: 0,
-              bottom: 0,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  height: 88,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      width: 1,
-                      color: const Color(0xFFEAECF0),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0x0F222C5C),
-                        blurRadius: 68,
-                        offset: const Offset(58, 26),
-                        spreadRadius: 0,
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'assets/viewsave_screen/View_icon.png',
-                        width: 20,
-                        height: 20,
-                        fit: BoxFit.contain,
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'View',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Color(0xFF9B9BA1),
-                          fontSize: 12,
-                          fontFamily: 'LG Smart_H',
-                          fontWeight: FontWeight.w400,
-                          height: 1.33,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          if (_swipeState == 'left')
-            // 왼쪽 스와이프: Fail, Skip 버튼 (오른쪽)
-            Positioned(
-              right:
-                  8 +
-                  (-_dragOffset.clamp(
-                    -80.0,
-                    0.0,
-                  )), // 카드가 왼쪽으로 이동한 만큼 버튼도 오른쪽으로 이동
-              top: 0,
-              bottom: 0,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Container(
-                  height: 88,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      width: 1,
-                      color: const Color(0xFFEAECF0),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0x0F222C5C),
-                        blurRadius: 68,
-                        offset: const Offset(58, 26),
-                        spreadRadius: 0,
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Fail 버튼
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Icon(
-                                Icons.close,
-                                size: 14,
-                                color: Colors.red,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Fail',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Color(0xFF9B9BA1),
-                                fontSize: 12,
-                                fontFamily: 'LG Smart_H',
-                                fontWeight: FontWeight.w400,
-                                height: 1.33,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12), // 버튼 사이 여백
-                      // Skip 버튼
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Icon(
-                                Icons.arrow_forward,
-                                size: 14,
-                                color: Color(0xFF9B9BA1),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Skip',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Color(0xFF9B9BA1),
-                                fontSize: 12,
-                                fontFamily: 'LG Smart_H',
-                                fontWeight: FontWeight.w400,
-                                height: 1.33,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -784,7 +641,7 @@ class _TodoItemCardState extends State<TodoItemCard> {
           if (_swipeState == 'right')
             // 오른쪽 스와이프: View 버튼 (왼쪽)
             Positioned(
-              left: 8,
+              left: 8, // 고정 위치 (카드가 이동하면 드러남)
               top: 0,
               bottom: 0,
               child: Align(
@@ -821,6 +678,13 @@ class _TodoItemCardState extends State<TodoItemCard> {
                         width: 20,
                         height: 20,
                         fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.visibility,
+                            size: 20,
+                            color: Color(0xFF9B9BA1),
+                          );
+                        },
                       ),
                       const SizedBox(height: 4),
                       const Text(
@@ -842,12 +706,7 @@ class _TodoItemCardState extends State<TodoItemCard> {
           if (_swipeState == 'left')
             // 왼쪽 스와이프: Fail, Skip 버튼 (오른쪽)
             Positioned(
-              right:
-                  8 +
-                  (-_dragOffset.clamp(
-                    -80.0,
-                    0.0,
-                  )), // 카드가 왼쪽으로 이동한 만큼 버튼도 오른쪽으로 이동
+              right: 8, // 고정 위치 (카드가 이동하면 드러남)
               top: 0,
               bottom: 0,
               child: Align(
@@ -876,6 +735,8 @@ class _TodoItemCardState extends State<TodoItemCard> {
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       // Fail 버튼
                       Container(
@@ -916,7 +777,7 @@ class _TodoItemCardState extends State<TodoItemCard> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 12), // 버튼 사이 여백
+                      const SizedBox(width: 16), // 버튼 사이 여백 증가
                       // Skip 버튼
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -1079,187 +940,6 @@ class _TodoItemCardState extends State<TodoItemCard> {
               ),
             ),
           ),
-          // 배경 버튼들 (카드 위에 표시되도록 나중에 선언)
-          if (_swipeState == 'right')
-            // 오른쪽 스와이프: View 버튼 (왼쪽)
-            Positioned(
-              left: 8,
-              top: 0,
-              bottom: 0,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  height: 88,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      width: 1,
-                      color: const Color(0xFFEAECF0),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0x0F222C5C),
-                        blurRadius: 68,
-                        offset: const Offset(58, 26),
-                        spreadRadius: 0,
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'assets/viewsave_screen/View_icon.png',
-                        width: 20,
-                        height: 20,
-                        fit: BoxFit.contain,
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'View',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Color(0xFF9B9BA1),
-                          fontSize: 12,
-                          fontFamily: 'LG Smart_H',
-                          fontWeight: FontWeight.w400,
-                          height: 1.33,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          if (_swipeState == 'left')
-            // 왼쪽 스와이프: Fail, Skip 버튼 (오른쪽)
-            Positioned(
-              right:
-                  8 +
-                  (-_dragOffset.clamp(
-                    -80.0,
-                    0.0,
-                  )), // 카드가 왼쪽으로 이동한 만큼 버튼도 오른쪽으로 이동
-              top: 0,
-              bottom: 0,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Container(
-                  height: 88,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      width: 1,
-                      color: const Color(0xFFEAECF0),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0x0F222C5C),
-                        blurRadius: 68,
-                        offset: const Offset(58, 26),
-                        spreadRadius: 0,
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Fail 버튼
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Icon(
-                                Icons.close,
-                                size: 14,
-                                color: Colors.red,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Fail',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Color(0xFF9B9BA1),
-                                fontSize: 12,
-                                fontFamily: 'LG Smart_H',
-                                fontWeight: FontWeight.w400,
-                                height: 1.33,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12), // 버튼 사이 여백
-                      // Skip 버튼
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Icon(
-                                Icons.arrow_forward,
-                                size: 14,
-                                color: Color(0xFF9B9BA1),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Skip',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Color(0xFF9B9BA1),
-                                fontSize: 12,
-                                fontFamily: 'LG Smart_H',
-                                fontWeight: FontWeight.w400,
-                                height: 1.33,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

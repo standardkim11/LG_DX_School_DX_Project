@@ -2,42 +2,68 @@ import 'package:flutter/material.dart';
 import '../components/app_colors.dart';
 import '../components/app_text_styles.dart';
 import '../components/bottom_navigation.dart';
+import '../Services/routine_service.dart';
 import 'viewall_screen.dart';
+import 'routine_screen.dart';
 
 class PriorityScreen extends StatefulWidget {
-  const PriorityScreen({super.key});
+  final List<ViewAllRoutineItem> selectedRoutines;
+  final String? selectedDateKey; // 선택된 날짜 키 (YYYY-MM-DD 형식)
+
+  const PriorityScreen({
+    super.key,
+    required this.selectedRoutines,
+    this.selectedDateKey,
+  });
 
   @override
   State<PriorityScreen> createState() => _PriorityScreenState();
 }
 
 class _PriorityScreenState extends State<PriorityScreen> {
-  List<Map<String, dynamic>> _routines = [
-    {
-      'key': ValueKey('routine_0'),
-      'title': '로봇청소기 물청소하기',
-      'time': '13:00(화, 목)',
-      'iconSize': 45.0,
-      'hasUrgentBadge': true,
-      'imagePath': 'assets/priority_screen/robot.png',
-    },
-    {
-      'key': ValueKey('routine_1'),
-      'title': '세탁기',
-      'time': '2/4',
-      'iconSize': 40.0,
-      'hasUrgentBadge': false,
-      'imagePath': 'assets/priority_screen/washing.png',
-    },
-    {
-      'key': ValueKey('routine_2'),
-      'title': '건조기 돌리기',
-      'time': '2/4',
-      'iconSize': 40.0,
-      'hasUrgentBadge': false,
-      'imagePath': 'assets/priority_screen/washing.png',
-    },
-  ];
+  late List<Map<String, dynamic>> _routines;
+
+  @override
+  void initState() {
+    super.initState();
+    // 전달받은 루틴들을 화면에서 사용할 형식으로 변환
+    _routines = widget.selectedRoutines.asMap().entries.map((entry) {
+      final routine = entry.value;
+      return {
+        'key': ValueKey('routine_${routine.id}'), // routineId 기반 key로 변경
+        'title': routine.name,
+        'time': routine.getTimeDisplay(),
+        'iconSize': _getIconSize(routine.routineType),
+        'hasUrgentBadge': false, // 필요시 로직 추가
+        'imagePath': _getImagePath(routine.routineType),
+        'routineId': routine.id,
+      };
+    }).toList();
+  }
+
+  /// 루틴 타입에 따른 아이콘 크기 반환
+  double _getIconSize(String routineType) {
+    // 루틴 타입에 따라 다른 크기 반환 가능
+    if (routineType.toLowerCase().contains('robot')) {
+      return 45.0;
+    }
+    return 40.0;
+  }
+
+  /// 루틴 타입에 따른 이미지 경로 반환
+  String _getImagePath(String routineType) {
+    // 루틴 타입에 따라 다른 이미지 반환
+    final type = routineType.toLowerCase();
+    if (type.contains('robot') || type.contains('로봇')) {
+      return 'assets/priority_screen/robot.png';
+    } else if (type.contains('wash') ||
+        type.contains('세탁') ||
+        type.contains('건조')) {
+      return 'assets/priority_screen/washing.png';
+    }
+    // 기본 이미지
+    return 'assets/priority_screen/washing.png';
+  }
 
   static const _cardShadow = BoxShadow(
     color: Color(0x0F222C5C),
@@ -293,6 +319,7 @@ class _PriorityScreenState extends State<PriorityScreen> {
                                       routine['hasUrgentBadge'] as bool? ??
                                       false,
                                   imagePath: routine['imagePath'] as String,
+                                  orderNumber: index + 1,
                                 ),
                               ),
                             );
@@ -306,24 +333,99 @@ class _PriorityScreenState extends State<PriorityScreen> {
                 // 우선순위 설정 버튼
                 Padding(
                   padding: const EdgeInsets.all(20),
-                  child: Container(
-                    width: double.infinity,
-                    height: 50,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 15,
-                    ),
-                    decoration: ShapeDecoration(
-                      color: AppColors.textAccent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(40),
+                  child: GestureDetector(
+                    onTap: () {
+                      // 현재 순서대로 루틴 ID 순서 저장
+                      final routineOrder = _routines
+                          .map((r) => r['routineId'] as int)
+                          .toList();
+
+                      final selectedRoutineIds = widget.selectedRoutines
+                          .map((r) => r.id)
+                          .toSet();
+
+                      // 날짜별로 저장
+                      if (widget.selectedDateKey != null) {
+                        setPriorityOrderForDate(
+                          widget.selectedDateKey!,
+                          routineOrder,
+                        );
+                        setSelectedRoutinesForDate(
+                          widget.selectedDateKey!,
+                          selectedRoutineIds,
+                        );
+                      } else {
+                        // 날짜 정보가 없으면 기존 방식 사용
+                        setPriorityOrder(routineOrder);
+                        setSelectedRoutineIds(selectedRoutineIds);
+                      }
+
+                      // 날짜가 있으면 날짜 인덱스 복원
+                      if (widget.selectedDateKey != null) {
+                        // dateKey를 DateTime으로 파싱하여 날짜 인덱스 계산
+                        try {
+                          final parts = widget.selectedDateKey!.split('-');
+                          if (parts.length == 3) {
+                            final date = DateTime(
+                              int.parse(parts[0]),
+                              int.parse(parts[1]),
+                              int.parse(parts[2]),
+                            );
+
+                            // 날짜 인덱스 계산: 기준일(12일 금요일)로부터의 차이
+                            final now = DateTime.now();
+                            final baseDate = DateTime(now.year, now.month, 12);
+                            final currentWeekday = baseDate.weekday;
+                            final daysUntilFriday =
+                                (5 - currentWeekday + 7) % 7;
+                            final referenceDate = baseDate.add(
+                              Duration(days: daysUntilFriday),
+                            );
+                            final daysDiff = date
+                                .difference(referenceDate)
+                                .inDays;
+                            final dateIndex = 15 + daysDiff; // 15는 기준 인덱스
+
+                            // 날짜 인덱스 저장
+                            setRoutineScreenDate(dateIndex.clamp(0, 30));
+                          }
+                        } catch (e) {
+                          print('Error parsing dateKey: $e');
+                        }
+                      }
+
+                      // RoutineScreen으로 이동
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        PageRouteBuilder(
+                          pageBuilder:
+                              (context, animation, secondaryAnimation) =>
+                                  const RoutineScreen(),
+                          transitionDuration: Duration.zero,
+                          reverseTransitionDuration: Duration.zero,
+                        ),
+                        (route) => false,
+                      );
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      height: 50,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 15,
                       ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        '우선순위 설정',
-                        style: _buttonTextStyle.copyWith(
-                          fontWeight: FontWeight.w700,
+                      decoration: ShapeDecoration(
+                        color: AppColors.textAccent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(40),
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          '우선순위 설정',
+                          style: _buttonTextStyle.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ),
@@ -347,6 +449,7 @@ class _PriorityCard extends StatelessWidget {
   final double iconSize;
   final bool hasUrgentBadge;
   final String imagePath;
+  final int orderNumber; // 순서 번호 추가
 
   const _PriorityCard({
     required this.title,
@@ -354,6 +457,7 @@ class _PriorityCard extends StatelessWidget {
     required this.iconSize,
     this.hasUrgentBadge = false,
     required this.imagePath,
+    required this.orderNumber,
   });
 
   @override
@@ -372,19 +476,23 @@ class _PriorityCard extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // 순서 번호 배지
           Container(
-            width: 50,
-            height: 55,
-            decoration: const ShapeDecoration(
-              color: AppColors.backgroundGray,
-              shape: OvalBorder(),
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.textAccent.withOpacity(0.1),
+              shape: BoxShape.circle,
             ),
             child: Center(
-              child: Image.asset(
-                imagePath,
-                width: iconSize,
-                height: iconSize,
-                fit: BoxFit.contain,
+              child: Text(
+                '$orderNumber',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textAccent,
+                  fontFamily: 'LG Smart_H',
+                ),
               ),
             ),
           ),

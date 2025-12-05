@@ -2,23 +2,22 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'config.dart';
 
 class ContextEventService {
   static String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:8088/api';
-    } else if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8088/api';
-    } else if (Platform.isIOS) {
-      return 'http://localhost:8088/api';
-    }
-    return 'http://localhost:8088/api';
+    // config.dart에서 설정된 IP 주소 사용
+    return ApiConfig.getBaseUrl(
+      isWeb: kIsWeb,
+      isAndroid: Platform.isAndroid,
+      isIOS: Platform.isIOS,
+    );
   }
 
   static const int userId = 1; // 테스트용 고정 user_id
 
   /// context_event API를 호출하여 귀가 시점 추천 정보를 가져옵니다.
-  /// 
+  ///
   /// [currentLat] 현재 위치 위도
   /// [currentLng] 현재 위치 경도
   /// Returns: context_event 응답 데이터
@@ -51,10 +50,13 @@ class ContextEventService {
           );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        final data =
+            jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
         return data;
       } else {
-        print('Context Event API Error: ${response.statusCode} - ${response.body}');
+        print(
+          'Context Event API Error: ${response.statusCode} - ${response.body}',
+        );
         return null;
       }
     } catch (e) {
@@ -63,4 +65,3 @@ class ContextEventService {
     }
   }
 }
-

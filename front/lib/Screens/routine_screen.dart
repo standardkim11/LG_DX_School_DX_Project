@@ -9,6 +9,7 @@ import 'todo_screen.dart';
 import 'viewall_screen.dart';
 import 'dashboard_screen.dart';
 import 'chat_screen.dart';
+import 'routinesave_screen.dart';
 import '../Services/routine_service.dart';
 
 class RoutineScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class _RoutineScreenStateManager {
   static int _selectedDateIndex = 15;
   static final Map<String, String> _checkStates = {}; // 체크 상태 저장
   static Set<int> _selectedRoutineIds = {}; // VIEW ALL에서 선택된 루틴 ID들
+  static List<int> _priorityOrder = []; // 우선순위 순서 (루틴 ID 리스트)
 
   static int get selectedDateIndex => _selectedDateIndex;
   static set selectedDateIndex(int value) => _selectedDateIndex = value;
@@ -40,6 +42,43 @@ class _RoutineScreenStateManager {
   static void clearSelectedRoutineIds() {
     _selectedRoutineIds.clear();
   }
+
+  // 우선순위 순서 관리 (날짜별)
+  static final Map<String, List<int>> _priorityOrdersByDate = {}; // 날짜별 우선순위 순서
+  static final Map<String, Set<int>> _selectedRoutinesByDate =
+      {}; // 날짜별 선택된 루틴 ID들
+
+  static List<int> get priorityOrder => List<int>.from(_priorityOrder);
+  static void setPriorityOrder(List<int> order) {
+    _priorityOrder = List<int>.from(order);
+  }
+
+  // 날짜별 우선순위 순서 관리
+  static List<int>? getPriorityOrderForDate(String dateKey) {
+    return _priorityOrdersByDate[dateKey] != null
+        ? List<int>.from(_priorityOrdersByDate[dateKey]!)
+        : null;
+  }
+
+  static void setPriorityOrderForDate(String dateKey, List<int> order) {
+    _priorityOrdersByDate[dateKey] = List<int>.from(order);
+  }
+
+  // 날짜별 선택된 루틴 ID 관리
+  static Set<int>? getSelectedRoutinesForDate(String dateKey) {
+    return _selectedRoutinesByDate[dateKey] != null
+        ? Set<int>.from(_selectedRoutinesByDate[dateKey]!)
+        : null;
+  }
+
+  static void setSelectedRoutinesForDate(String dateKey, Set<int> routineIds) {
+    _selectedRoutinesByDate[dateKey] = Set<int>.from(routineIds);
+  }
+
+  // 필요시 우선순위 순서 초기화
+  // static void clearPriorityOrder() {
+  //   _priorityOrder.clear();
+  // }
 
   // 날짜를 12일(금요일, 인덱스 15)로 리셋하는 메서드
   static void resetToDefaultDate() {
@@ -70,6 +109,36 @@ Set<int> getSelectedRoutineIds() {
 // 외부에서 접근 가능한 선택된 루틴 ID 초기화 함수
 void clearSelectedRoutineIds() {
   _RoutineScreenStateManager.clearSelectedRoutineIds();
+}
+
+// 외부에서 접근 가능한 우선순위 순서 설정 함수
+void setPriorityOrder(List<int> order) {
+  _RoutineScreenStateManager.setPriorityOrder(order);
+}
+
+// 외부에서 접근 가능한 우선순위 순서 가져오기 함수
+List<int> getPriorityOrder() {
+  return _RoutineScreenStateManager.priorityOrder;
+}
+
+// 외부에서 접근 가능한 날짜별 우선순위 순서 설정 함수
+void setPriorityOrderForDate(String dateKey, List<int> order) {
+  _RoutineScreenStateManager.setPriorityOrderForDate(dateKey, order);
+}
+
+// 외부에서 접근 가능한 날짜별 우선순위 순서 가져오기 함수
+List<int>? getPriorityOrderForDate(String dateKey) {
+  return _RoutineScreenStateManager.getPriorityOrderForDate(dateKey);
+}
+
+// 외부에서 접근 가능한 날짜별 선택된 루틴 ID 설정 함수
+void setSelectedRoutinesForDate(String dateKey, Set<int> routineIds) {
+  _RoutineScreenStateManager.setSelectedRoutinesForDate(dateKey, routineIds);
+}
+
+// 외부에서 접근 가능한 날짜별 선택된 루틴 ID 가져오기 함수
+Set<int>? getSelectedRoutinesForDate(String dateKey) {
+  return _RoutineScreenStateManager.getSelectedRoutinesForDate(dateKey);
 }
 
 class _RoutineScreenState extends State<RoutineScreen> {
@@ -162,7 +231,7 @@ class _RoutineScreenState extends State<RoutineScreen> {
       final dateKey = _formatDateKey(selectedDate);
 
       // ViewAllRoutineItem을 화면에 표시할 형식으로 변환
-      final todos = selectedRoutines.map((routine) {
+      var todos = selectedRoutines.map((routine) {
         return {
           'title': routine.name,
           'category': routine.getTimeDisplay(),
@@ -171,6 +240,26 @@ class _RoutineScreenState extends State<RoutineScreen> {
           'routineId': routine.id,
         };
       }).toList();
+
+      // 우선순위 순서가 있으면 그 순서대로 정렬 (날짜별 우선순위 사용)
+      final datePriorityOrder =
+          _RoutineScreenStateManager.getPriorityOrderForDate(dateKey);
+      final priorityOrder =
+          datePriorityOrder ??
+          _RoutineScreenStateManager.priorityOrder; // 날짜별이 없으면 전역 사용
+      if (priorityOrder.isNotEmpty) {
+        todos.sort((a, b) {
+          final aIndex = priorityOrder.indexOf(a['routineId'] as int);
+          final bIndex = priorityOrder.indexOf(b['routineId'] as int);
+
+          // 우선순위 순서에 없는 항목은 뒤로
+          if (aIndex == -1 && bIndex == -1) return 0;
+          if (aIndex == -1) return 1;
+          if (bIndex == -1) return -1;
+
+          return aIndex.compareTo(bIndex);
+        });
+      }
 
       setState(() {
         _todosByDate[dateKey] = todos;
@@ -202,44 +291,19 @@ class _RoutineScreenState extends State<RoutineScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    // 해당 날짜에 선택된 루틴이 있으면 선택된 루틴을 로드
+    final dateSelectedRoutines =
+        _RoutineScreenStateManager.getSelectedRoutinesForDate(dateKey);
 
-    try {
-      final routines = await RoutineService.getRoutinesByDate(date: dateKey);
-
-      // RoutineItem을 화면에 표시할 형식으로 변환
-      final todos = routines.map((routine) {
-        return {
-          'title': routine.name,
-          'category': routine.getCategoryDisplay(),
-          'isHighlighted': true,
-          'checkType': routine.done ? 'done' : 'none',
-          'routineId': routine.routineId,
-        };
-      }).toList();
-
-      setState(() {
-        _todosByDate[dateKey] = todos;
-        _isLoading = false;
-
-        // 저장된 체크 상태 복원
-        for (var todo in todos) {
-          final key = _getTodoKey(todo);
-          final savedState = _RoutineScreenStateManager.getCheckState(key);
-          if (savedState != null) {
-            todo['checkType'] = savedState;
-          }
-        }
-      });
-    } catch (e) {
-      print('Error loading routines: $e');
-      setState(() {
-        _isLoading = false;
-        _todosByDate[dateKey] = []; // 에러 시 빈 리스트
-      });
+    if (dateSelectedRoutines != null && dateSelectedRoutines.isNotEmpty) {
+      await _loadSelectedRoutines(dateSelectedRoutines);
+      return;
     }
+
+    // viewall에서 설정한 적 없는 날짜는 빈 상태로 설정 (API 호출하지 않음)
+    setState(() {
+      _todosByDate[dateKey] = [];
+    });
   }
 
   @override
@@ -254,16 +318,86 @@ class _RoutineScreenState extends State<RoutineScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToSelectedDate(context);
 
-      // VIEW ALL에서 선택된 루틴 ID들이 있으면 해당 루틴들을 로드
-      final selectedIds = _RoutineScreenStateManager.selectedRoutineIds;
-      if (selectedIds.isNotEmpty) {
-        _loadSelectedRoutines(selectedIds);
+      // 현재 선택된 날짜에 저장된 선택된 루틴이 있는지 확인
+      final selectedDate = _getSelectedDate();
+      final dateKey = _formatDateKey(selectedDate);
+
+      final dateSelectedRoutines =
+          _RoutineScreenStateManager.getSelectedRoutinesForDate(dateKey);
+
+      if (dateSelectedRoutines != null && dateSelectedRoutines.isNotEmpty) {
+        // 해당 날짜에 선택된 루틴이 있으면 로드
+        _loadSelectedRoutines(dateSelectedRoutines);
+      } else {
+        // viewall에서 설정한 적 없는 날짜는 빈 상태 (API 호출하지 않음)
+        _loadRoutinesForDate(selectedDate);
       }
     });
   }
 
-  // 체크된 항목을 하단으로 정렬
+  // 체크된 항목을 하단으로 정렬 (우선순위 순서 고려)
   List<Map<String, dynamic>> get _sortedTodos {
+    final selectedDate = _getSelectedDate();
+    final dateKey = _formatDateKey(selectedDate);
+
+    // 날짜별 우선순위 순서 사용, 없으면 전역 우선순위 사용
+    final priorityOrder =
+        _RoutineScreenStateManager.getPriorityOrderForDate(dateKey) ??
+        _RoutineScreenStateManager.priorityOrder;
+
+    // 우선순위 순서가 있으면 그 순서를 기준으로 정렬
+    if (priorityOrder.isNotEmpty) {
+      final todosList = List<Map<String, dynamic>>.from(_todos);
+
+      // 우선순위 순서로 정렬
+      todosList.sort((a, b) {
+        final aRoutineId = a['routineId'] as int?;
+        final bRoutineId = b['routineId'] as int?;
+
+        // routineId가 없으면 기본 정렬 (체크 상태 기준)
+        if (aRoutineId == null || bRoutineId == null) {
+          final aDone = a['checkType'] == 'done';
+          final bDone = b['checkType'] == 'done';
+          if (aDone == bDone) return 0;
+          return aDone ? 1 : -1;
+        }
+
+        final aIndex = priorityOrder.indexOf(aRoutineId);
+        final bIndex = priorityOrder.indexOf(bRoutineId);
+
+        // 우선순위 순서에 없는 항목은 뒤로
+        if (aIndex == -1 && bIndex == -1) {
+          final aDone = a['checkType'] == 'done';
+          final bDone = b['checkType'] == 'done';
+          if (aDone == bDone) return 0;
+          return aDone ? 1 : -1;
+        }
+        if (aIndex == -1) return 1;
+        if (bIndex == -1) return -1;
+
+        // 같은 우선순위 내에서는 체크 상태 기준 정렬
+        if (aIndex == bIndex) {
+          final aDone = a['checkType'] == 'done';
+          final bDone = b['checkType'] == 'done';
+          if (aDone == bDone) return 0;
+          return aDone ? 1 : -1;
+        }
+
+        return aIndex.compareTo(bIndex);
+      });
+
+      // 체크된 항목을 하단으로 이동 (우선순위 순서는 유지)
+      final unchecked = todosList
+          .where((todo) => todo['checkType'] != 'done')
+          .toList();
+      final checked = todosList
+          .where((todo) => todo['checkType'] == 'done')
+          .toList();
+
+      return [...unchecked, ...checked];
+    }
+
+    // 우선순위 순서가 없으면 기존 로직 사용
     final unchecked = _todos
         .where((todo) => todo['checkType'] != 'done')
         .toList();
@@ -286,6 +420,134 @@ class _RoutineScreenState extends State<RoutineScreen> {
       final key = _getTodoKey(todos[index]);
       _RoutineScreenStateManager.setCheckState(key, newState);
     });
+  }
+
+  // 확인 팝업 표시 (viewall_screen과 동일한 스타일)
+  Future<bool> _showConfirmDialog(
+    String message, {
+    VoidCallback? onConfirm,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (BuildContext context) {
+        bool? selectedButton;
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.backgroundWhite,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      message,
+                      style: AppTextStyles.sectionTitle(
+                        context,
+                      ).copyWith(fontSize: 18, fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedButton = true;
+                              });
+                              Future.delayed(
+                                const Duration(milliseconds: 150),
+                                () {
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop(true);
+                                    if (onConfirm != null) {
+                                      onConfirm();
+                                    }
+                                  }
+                                },
+                              );
+                            },
+                            child: Container(
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: selectedButton == true
+                                    ? AppColors.textAccent
+                                    : AppColors.backgroundGray,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'YES',
+                                style: TextStyle(
+                                  color: selectedButton == true
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
+                                  fontSize: 16,
+                                  fontFamily: 'LG Smart_H',
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedButton = false;
+                              });
+                              Future.delayed(
+                                const Duration(milliseconds: 150),
+                                () {
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop(false);
+                                  }
+                                },
+                              );
+                            },
+                            child: Container(
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: selectedButton == false
+                                    ? AppColors.textAccent
+                                    : AppColors.backgroundGray,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'NO',
+                                style: TextStyle(
+                                  color: selectedButton == false
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
+                                  fontSize: 16,
+                                  fontFamily: 'LG Smart_H',
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    return result ?? false;
   }
 
   @override
@@ -385,25 +647,35 @@ class _RoutineScreenState extends State<RoutineScreen> {
                   decoration: const BoxDecoration(
                     color: AppColors.backgroundGray,
                   ),
-                  child: Container(
-                    height: 60,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(30),
-                      image: const DecorationImage(
-                        image: AssetImage(
-                          'assets/routine_screen/routine_bar.png',
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ViewSaveScreen(),
                         ),
-                        fit: BoxFit.cover,
+                      );
+                    },
+                    child: Container(
+                      height: 60,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(30),
+                        image: const DecorationImage(
+                          image: AssetImage(
+                            'assets/routine_screen/routine_bar.png',
+                          ),
+                          fit: BoxFit.cover,
+                        ),
                       ),
-                    ),
-                    child: const Text(
-                      '루틴 생성하기',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                      child: const Text(
+                        '루틴 생성하기',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -514,16 +786,23 @@ class _RoutineScreenState extends State<RoutineScreen> {
                 _RoutineScreenStateManager.selectedDateIndex = index;
               });
 
-              // 날짜 변경 시: 선택된 루틴이 있으면 선택된 루틴만 표시, 없으면 해당 날짜의 루틴 로드
+              // 날짜 변경 시: 해당 날짜의 선택된 루틴이 있으면 로드, 없으면 API에서 로드
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                final selectedIds =
-                    _RoutineScreenStateManager.selectedRoutineIds;
-                if (selectedIds.isNotEmpty) {
-                  // 선택된 루틴이 있으면 선택된 루틴만 다시 표시
-                  _loadSelectedRoutines(selectedIds);
+                final selectedDate = _getSelectedDate();
+                final dateKey = _formatDateKey(selectedDate);
+
+                // 해당 날짜에 저장된 선택된 루틴이 있는지 확인
+                final dateSelectedRoutines =
+                    _RoutineScreenStateManager.getSelectedRoutinesForDate(
+                      dateKey,
+                    );
+
+                if (dateSelectedRoutines != null &&
+                    dateSelectedRoutines.isNotEmpty) {
+                  // 해당 날짜에 선택된 루틴이 있으면 로드
+                  _loadSelectedRoutines(dateSelectedRoutines);
                 } else {
-                  // 선택된 루틴이 없으면 해당 날짜의 루틴 로드
-                  final selectedDate = _getSelectedDate();
+                  // 선택된 루틴이 없으면 해당 날짜의 루틴을 API에서 로드
                   _loadRoutinesForDate(selectedDate);
                 }
                 _scrollToSelectedDate(context);
@@ -564,15 +843,49 @@ class _RoutineScreenState extends State<RoutineScreen> {
                 const SizedBox.shrink(), // 왼쪽 공간 (투두와 동일한 구조)
                 GestureDetector(
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (context, animation, secondaryAnimation) =>
-                            const ViewAllScreen(),
-                        transitionDuration: Duration.zero,
-                        reverseTransitionDuration: Duration.zero,
-                      ),
-                    );
+                    // 현재 선택된 날짜 정보를 ViewAllScreen에 전달
+                    final selectedDate = _getSelectedDate();
+                    final dateKey = _formatDateKey(selectedDate);
+
+                    // 이미 등록된 일정이 있는지 확인
+                    final dateSelectedRoutines =
+                        _RoutineScreenStateManager.getSelectedRoutinesForDate(
+                          dateKey,
+                        );
+                    final hasRoutines =
+                        dateSelectedRoutines != null &&
+                        dateSelectedRoutines.isNotEmpty;
+
+                    if (hasRoutines) {
+                      // 등록된 일정이 있으면 확인 팝업 표시
+                      _showConfirmDialog(
+                        '루틴을 다시 선택하시겠습니까?',
+                        onConfirm: () {
+                          Navigator.push(
+                            context,
+                            PageRouteBuilder(
+                              pageBuilder:
+                                  (context, animation, secondaryAnimation) =>
+                                      ViewAllScreen(selectedDateKey: dateKey),
+                              transitionDuration: Duration.zero,
+                              reverseTransitionDuration: Duration.zero,
+                            ),
+                          );
+                        },
+                      );
+                    } else {
+                      // 등록된 일정이 없으면 바로 ViewAllScreen으로 이동
+                      Navigator.push(
+                        context,
+                        PageRouteBuilder(
+                          pageBuilder:
+                              (context, animation, secondaryAnimation) =>
+                                  ViewAllScreen(selectedDateKey: dateKey),
+                          transitionDuration: Duration.zero,
+                          reverseTransitionDuration: Duration.zero,
+                        ),
+                      );
+                    }
                   },
                   child: Text(
                     'VIEW ALL',
@@ -588,10 +901,14 @@ class _RoutineScreenState extends State<RoutineScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _sortedTodos.isEmpty
-                ? Center(
-                    child: Text(
-                      'VIEW ALL에서 루틴을 선택해주세요',
-                      style: AppTextStyles.todoCategory(context),
+                ? Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 30),
+                      child: Text(
+                        'VIEW ALL에서 루틴을 선택해주세요',
+                        style: AppTextStyles.todoCategory(context),
+                      ),
                     ),
                   )
                 : ListView(

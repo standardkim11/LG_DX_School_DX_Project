@@ -49,8 +49,36 @@ class _AddTodoModalState extends State<AddTodoModal> {
   @override
   void initState() {
     super.initState();
-    _titleFocusNode.addListener(() => setState(() {}));
+    _titleFocusNode.addListener(() {
+      setState(() {});
+      // 키보드가 올라올 때 입력 필드가 보이도록 스크롤
+      if (_titleFocusNode.hasFocus) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToField(_titleFocusNode);
+        });
+      }
+    });
+    _categoryFocusNode.addListener(() {
+      setState(() {});
+      // 키보드가 올라올 때 입력 필드가 보이도록 스크롤
+      if (_categoryFocusNode.hasFocus) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToField(_categoryFocusNode);
+        });
+      }
+    });
     _titleController.addListener(() => setState(() {}));
+  }
+
+  void _scrollToField(FocusNode focusNode) {
+    final context = focusNode.context;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   @override
@@ -87,6 +115,12 @@ class _AddTodoModalState extends State<AddTodoModal> {
 
   @override
   Widget build(BuildContext context) {
+    // 키보드 높이 감지 (스크롤 패딩용)
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    // 모달 높이는 고정 (Padding으로 키보드 위로 올라가므로 높이는 변경하지 않음)
+    final screenHeight = MediaQuery.of(context).size.height;
+    final modalHeight = screenHeight * 0.35;
+
     return GestureDetector(
       onTap: () {
         // 모달 외부 클릭 시 드롭다운 닫고 뒤로가기
@@ -115,7 +149,7 @@ class _AddTodoModalState extends State<AddTodoModal> {
             }
           },
           child: Container(
-            height: MediaQuery.of(context).size.height * 0.35,
+            height: modalHeight,
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.only(
@@ -142,10 +176,10 @@ class _AddTodoModalState extends State<AddTodoModal> {
                     children: [
                       SingleChildScrollView(
                         controller: _scrollController,
-                        padding: const EdgeInsets.only(
+                        padding: EdgeInsets.only(
                           left: 14,
                           right: 14,
-                          bottom: 80, // 저장 버튼 공간 확보
+                          bottom: 80 + keyboardHeight, // 저장 버튼 공간 + 키보드 높이
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,

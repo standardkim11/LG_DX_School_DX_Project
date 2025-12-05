@@ -2,17 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'config.dart';
 
 class RoutineService {
   static String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:8088/api';
-    } else if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8088/api';
-    } else if (Platform.isIOS) {
-      return 'http://localhost:8088/api';
-    }
-    return 'http://localhost:8088/api';
+    // config.dart에서 설정된 IP 주소 사용
+    return ApiConfig.getBaseUrl(
+      isWeb: kIsWeb,
+      isAndroid: Platform.isAndroid,
+      isIOS: Platform.isIOS,
+    );
   }
 
   static const int userId = 1; // 테스트용 고정 user_id
@@ -22,10 +21,9 @@ class RoutineService {
   /// Returns: 전체 루틴 목록 리스트
   static Future<List<ViewAllRoutineItem>> getAllRoutines() async {
     try {
-      final uri = Uri.parse('$baseUrl/routines')
-          .replace(queryParameters: {
-        'user_id': userId.toString(),
-      });
+      final uri = Uri.parse(
+        '$baseUrl/routines',
+      ).replace(queryParameters: {'user_id': userId.toString()});
 
       final response = await http
           .get(
@@ -44,7 +42,12 @@ class RoutineService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
-        return data.map((item) => ViewAllRoutineItem.fromJson(item as Map<String, dynamic>)).toList();
+        return data
+            .map(
+              (item) =>
+                  ViewAllRoutineItem.fromJson(item as Map<String, dynamic>),
+            )
+            .toList();
       } else {
         print('Routine API Error: ${response.statusCode} - ${response.body}');
         return [];
@@ -56,18 +59,19 @@ class RoutineService {
   }
 
   /// 특정 날짜의 루틴 목록을 가져옵니다.
-  /// 
+  ///
   /// [date] 조회할 날짜 (YYYY-MM-DD 형식)
   /// Returns: 루틴 목록 리스트
   static Future<List<RoutineItem>> getRoutinesByDate({
     required String date, // YYYY-MM-DD 형식
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/recommend/today-routines')
-          .replace(queryParameters: {
-        'user_id': userId.toString(),
-        'date': date, // 날짜 파라미터 추가
-      });
+      final uri = Uri.parse('$baseUrl/recommend/today-routines').replace(
+        queryParameters: {
+          'user_id': userId.toString(),
+          'date': date, // 날짜 파라미터 추가
+        },
+      );
 
       final response = await http
           .get(
@@ -86,7 +90,9 @@ class RoutineService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
-        return data.map((item) => RoutineItem.fromJson(item as Map<String, dynamic>)).toList();
+        return data
+            .map((item) => RoutineItem.fromJson(item as Map<String, dynamic>))
+            .toList();
       } else {
         print('Routine API Error: ${response.statusCode} - ${response.body}');
         return [];
@@ -246,4 +252,3 @@ class ViewAllRoutineItem {
     return scheduleType;
   }
 }
-
