@@ -216,10 +216,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       print('[Dashboard] API 호출 시작...');
       final data = await DashboardService.getDashboardData().timeout(
-        const Duration(seconds: 15),
+        const Duration(seconds: 35),
         onTimeout: () {
-          print('[Dashboard] 타임아웃 발생 (15초 초과)');
-          throw Exception('요청 시간 초과 - 네트워크 연결을 확인해주세요');
+          print('[Dashboard] 타임아웃 발생 (35초 초과)');
+          throw Exception('요청 시간 초과 - 백엔드 서버가 실행 중인지 확인해주세요');
         },
       );
 

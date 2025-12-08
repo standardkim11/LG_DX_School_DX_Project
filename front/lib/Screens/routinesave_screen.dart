@@ -893,9 +893,6 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
         preferredTime: preferredTime,
         runMinutes: goalValue,
         routineType: 'CLEANING', // 로봇청소기이므로 CLEANING
-        selectedDays: _isNotificationEnabled && _selectedDays.isNotEmpty
-            ? _selectedDays
-            : null,
       );
 
       // 로딩 닫기
@@ -939,9 +936,17 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
       }
 
       // 에러 메시지 표시
+      String errorMessage = '루틴 저장에 실패했습니다.';
+      if (e.toString().contains('요청 시간 초과') || e.toString().contains('타임아웃')) {
+        errorMessage = '요청 시간이 초과되었습니다.\n백엔드 서버가 실행 중인지 확인해주세요.';
+      } else if (e.toString().contains('SocketException') ||
+          e.toString().contains('네트워크')) {
+        errorMessage = '네트워크 연결 오류가 발생했습니다.\n인터넷 연결을 확인해주세요.';
+      } else {
+        errorMessage = e.toString().replaceAll('Exception: ', '');
+      }
 
       if (mounted) {
-        final errorMessage = e.toString().replaceAll('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),

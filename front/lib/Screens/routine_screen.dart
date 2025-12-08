@@ -141,7 +141,8 @@ Set<int>? getSelectedRoutinesForDate(String dateKey) {
   return _RoutineScreenStateManager.getSelectedRoutinesForDate(dateKey);
 }
 
-class _RoutineScreenState extends State<RoutineScreen> {
+class _RoutineScreenState extends State<RoutineScreen>
+    with WidgetsBindingObserver {
   int _selectedTabIndex = 1; // routine 탭이 선택된 상태
   int _selectedDateIndex = _RoutineScreenStateManager.selectedDateIndex;
   late ScrollController _dateScrollController;
@@ -149,6 +150,7 @@ class _RoutineScreenState extends State<RoutineScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _dateScrollController.dispose();
     super.dispose();
   }
@@ -210,7 +212,10 @@ class _RoutineScreenState extends State<RoutineScreen> {
   }
 
   // 선택된 루틴 ID들로부터 루틴 데이터를 로드
-  Future<void> _loadSelectedRoutines(Set<int> routineIds) async {
+  Future<void> _loadSelectedRoutines(
+    Set<int> routineIds, {
+    bool forceRefresh = false,
+  }) async {
     if (routineIds.isEmpty) {
       return;
     }
@@ -222,15 +227,52 @@ class _RoutineScreenState extends State<RoutineScreen> {
     try {
       // 전체 루틴 목록에서 선택된 ID들만 필터링
       final allRoutines = await RoutineService.getAllRoutines();
+
+      print('[RoutineScreen] API에서 받은 전체 루틴 수: ${allRoutines.length}');
+      print(
+        '[RoutineScreen] API에서 받은 루틴 ID들: ${allRoutines.map((r) => r.id).toList()}',
+      );
+      print('[RoutineScreen] 선택된 루틴 ID들: $routineIds');
+
+      // 실제로 존재하는 루틴 ID만 필터링 (DB에서 삭제된 루틴 제외)
+      final existingRoutineIds = allRoutines.map((r) => r.id).toSet();
+      final validRoutineIds = routineIds
+          .where((id) => existingRoutineIds.contains(id))
+          .toSet();
+
+      print('[RoutineScreen] 유효한 루틴 ID들: $validRoutineIds');
+      print(
+        '[RoutineScreen] 삭제된 루틴 ID들: ${routineIds.difference(validRoutineIds)}',
+      );
+
+      // 유효하지 않은 루틴 ID가 있으면 상태에서 제거
+      if (validRoutineIds.length != routineIds.length) {
+        final selectedDate = _getSelectedDate();
+        final dateKey = _formatDateKey(selectedDate);
+        _RoutineScreenStateManager.setSelectedRoutinesForDate(
+          dateKey,
+          validRoutineIds,
+        );
+        print(
+          '[RoutineScreen] 상태에서 삭제된 루틴 ID 제거: ${routineIds.difference(validRoutineIds)}',
+        );
+      }
+
       final selectedRoutines = allRoutines
-          .where((r) => routineIds.contains(r.id))
+          .where((r) => validRoutineIds.contains(r.id))
           .toList();
+
+      print('[RoutineScreen] 최종 표시할 루틴 수: ${selectedRoutines.length}');
+      print(
+        '[RoutineScreen] 최종 표시할 루틴 이름들: ${selectedRoutines.map((r) => r.name).toList()}',
+      );
 
       // 선택된 날짜의 키
       final selectedDate = _getSelectedDate();
       final dateKey = _formatDateKey(selectedDate);
 
       // ViewAllRoutineItem을 화면에 표시할 형식으로 변환
+      // MONTHLY 루틴은 맨 뒤로 정렬
       var todos = selectedRoutines.map((routine) {
         return {
           'title': routine.name,
@@ -238,8 +280,20 @@ class _RoutineScreenState extends State<RoutineScreen> {
           'isHighlighted': true,
           'checkType': routine.isDoneToday ? 'done' : 'none',
           'routineId': routine.id,
+          'scheduleType': routine.scheduleType, // 정렬을 위해 추가
         };
       }).toList();
+
+      // MONTHLY 루틴을 맨 뒤로 정렬
+      todos.sort((a, b) {
+        final aIsMonthly =
+            (a['scheduleType'] as String? ?? '').toUpperCase() == 'MONTHLY';
+        final bIsMonthly =
+            (b['scheduleType'] as String? ?? '').toUpperCase() == 'MONTHLY';
+        if (aIsMonthly && !bIsMonthly) return 1; // MONTHLY는 뒤로
+        if (!aIsMonthly && bIsMonthly) return -1; // 일반 루틴은 앞으로
+        return 0; // 같은 타입이면 순서 유지
+      });
 
       // 우선순위 순서가 있으면 그 순서대로 정렬 (날짜별 우선순위 사용)
       final datePriorityOrder =
@@ -259,6 +313,24 @@ class _RoutineScreenState extends State<RoutineScreen> {
 
           return aIndex.compareTo(bIndex);
         });
+      }
+
+      // 유효하지 않은 루틴이 있으면 빈 배열로 설정
+      if (selectedRoutines.isEmpty && routineIds.isNotEmpty) {
+        print('[RoutineScreen] 경고: 선택된 루틴 ID가 있지만 API에서 반환된 루틴이 없음');
+        print('[RoutineScreen] 선택된 루틴 ID들: $routineIds');
+        print(
+          '[RoutineScreen] API에서 받은 루틴 ID들: ${allRoutines.map((r) => r.id).toList()}',
+        );
+
+        // 상태에서도 완전히 제거
+        _RoutineScreenStateManager.setSelectedRoutinesForDate(dateKey, <int>{});
+
+        setState(() {
+          _todosByDate[dateKey] = [];
+          _isLoading = false;
+        });
+        return;
       }
 
       setState(() {
@@ -283,11 +355,14 @@ class _RoutineScreenState extends State<RoutineScreen> {
   }
 
   // 특정 날짜의 루틴 데이터를 API에서 가져오기
-  Future<void> _loadRoutinesForDate(DateTime date) async {
+  Future<void> _loadRoutinesForDate(
+    DateTime date, {
+    bool forceRefresh = false,
+  }) async {
     final dateKey = _formatDateKey(date);
 
-    // 이미 로드된 데이터가 있으면 스킵
-    if (_todosByDate.containsKey(dateKey)) {
+    // 이미 로드된 데이터가 있고 강제 새로고침이 아니면 스킵
+    if (_todosByDate.containsKey(dateKey) && !forceRefresh) {
       return;
     }
 
@@ -296,20 +371,63 @@ class _RoutineScreenState extends State<RoutineScreen> {
         _RoutineScreenStateManager.getSelectedRoutinesForDate(dateKey);
 
     if (dateSelectedRoutines != null && dateSelectedRoutines.isNotEmpty) {
-      await _loadSelectedRoutines(dateSelectedRoutines);
+      await _loadSelectedRoutines(
+        dateSelectedRoutines,
+        forceRefresh: forceRefresh,
+      );
       return;
     }
 
-    // viewall에서 설정한 적 없는 날짜는 빈 상태로 설정 (API 호출하지 않음)
+    // viewall에서 설정한 적 없는 날짜는 API에서 해당 날짜의 루틴을 가져옴
     setState(() {
-      _todosByDate[dateKey] = [];
+      _isLoading = true;
     });
+
+    try {
+      final dateStr = dateKey; // 이미 YYYY-MM-DD 형식
+      final routines = await RoutineService.getRoutinesByDate(date: dateStr);
+
+      // RoutineItem을 화면에 표시할 형식으로 변환
+      var todos = routines.map((routine) {
+        return {
+          'title': routine.name,
+          'category': routine.getCategoryDisplay(),
+          'isHighlighted': true,
+          'checkType': routine.done ? 'done' : 'none',
+          'routineId': routine.routineId,
+          'scheduleType': routine.scheduleType, // 정렬을 위해 추가
+        };
+      }).toList();
+
+      // MONTHLY 루틴을 맨 뒤로 정렬
+      todos.sort((a, b) {
+        final aIsMonthly =
+            (a['scheduleType'] as String? ?? '').toUpperCase() == 'MONTHLY';
+        final bIsMonthly =
+            (b['scheduleType'] as String? ?? '').toUpperCase() == 'MONTHLY';
+        if (aIsMonthly && !bIsMonthly) return 1; // MONTHLY는 뒤로
+        if (!aIsMonthly && bIsMonthly) return -1; // 일반 루틴은 앞으로
+        return 0; // 같은 타입이면 순서 유지
+      });
+
+      setState(() {
+        _todosByDate[dateKey] = todos;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading routines for date: $e');
+      setState(() {
+        _todosByDate[dateKey] = [];
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   void initState() {
     super.initState();
     _dateScrollController = ScrollController();
+    WidgetsBinding.instance.addObserver(this); // 생명주기 관찰자 등록
 
     // 저장된 날짜 인덱스로 복원
     _selectedDateIndex = _RoutineScreenStateManager.selectedDateIndex;
@@ -317,22 +435,41 @@ class _RoutineScreenState extends State<RoutineScreen> {
     // 초기 스크롤 위치를 저장된 날짜 인덱스로 설정 (중앙에 오도록)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToSelectedDate(context);
-
-      // 현재 선택된 날짜에 저장된 선택된 루틴이 있는지 확인
-      final selectedDate = _getSelectedDate();
-      final dateKey = _formatDateKey(selectedDate);
-
-      final dateSelectedRoutines =
-          _RoutineScreenStateManager.getSelectedRoutinesForDate(dateKey);
-
-      if (dateSelectedRoutines != null && dateSelectedRoutines.isNotEmpty) {
-        // 해당 날짜에 선택된 루틴이 있으면 로드
-        _loadSelectedRoutines(dateSelectedRoutines);
-      } else {
-        // viewall에서 설정한 적 없는 날짜는 빈 상태 (API 호출하지 않음)
-        _loadRoutinesForDate(selectedDate);
-      }
+      _refreshCurrentDate();
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 앱이 다시 활성화될 때 데이터 새로고침
+    if (state == AppLifecycleState.resumed) {
+      _refreshCurrentDate();
+    }
+  }
+
+  /// 현재 날짜의 데이터를 강제로 새로고침
+  void _refreshCurrentDate() {
+    final selectedDate = _getSelectedDate();
+    final dateKey = _formatDateKey(selectedDate);
+
+    print('[RoutineScreen] _refreshCurrentDate 호출: $dateKey');
+
+    // 캐시된 데이터 완전히 삭제
+    _todosByDate.remove(dateKey);
+    print('[RoutineScreen] 캐시 삭제 완료');
+
+    final dateSelectedRoutines =
+        _RoutineScreenStateManager.getSelectedRoutinesForDate(dateKey);
+
+    print('[RoutineScreen] 저장된 선택된 루틴 ID들: $dateSelectedRoutines');
+
+    if (dateSelectedRoutines != null && dateSelectedRoutines.isNotEmpty) {
+      print('[RoutineScreen] 선택된 루틴이 있음, _loadSelectedRoutines 호출');
+      _loadSelectedRoutines(dateSelectedRoutines, forceRefresh: true);
+    } else {
+      print('[RoutineScreen] 선택된 루틴이 없음, _loadRoutinesForDate 호출');
+      _loadRoutinesForDate(selectedDate, forceRefresh: true);
+    }
   }
 
   // 체크된 항목을 하단으로 정렬 (우선순위 순서 고려)
@@ -966,25 +1103,11 @@ class _RoutineScreenState extends State<RoutineScreen> {
                 _RoutineScreenStateManager.selectedDateIndex = index;
               });
 
-              // 날짜 변경 시: 해당 날짜의 선택된 루틴이 있으면 로드, 없으면 API에서 로드
+              // 날짜 변경 시 즉시 새로고침 (캐시 삭제 후 최신 데이터 로드)
+              _refreshCurrentDate();
+
+              // 선택된 날짜를 중앙으로 스크롤
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                final selectedDate = _getSelectedDate();
-                final dateKey = _formatDateKey(selectedDate);
-
-                // 해당 날짜에 저장된 선택된 루틴이 있는지 확인
-                final dateSelectedRoutines =
-                    _RoutineScreenStateManager.getSelectedRoutinesForDate(
-                      dateKey,
-                    );
-
-                if (dateSelectedRoutines != null &&
-                    dateSelectedRoutines.isNotEmpty) {
-                  // 해당 날짜에 선택된 루틴이 있으면 로드
-                  _loadSelectedRoutines(dateSelectedRoutines);
-                } else {
-                  // 선택된 루틴이 없으면 해당 날짜의 루틴을 API에서 로드
-                  _loadRoutinesForDate(selectedDate);
-                }
                 _scrollToSelectedDate(context);
               });
             },

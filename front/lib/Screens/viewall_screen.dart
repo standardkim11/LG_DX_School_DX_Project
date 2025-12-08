@@ -19,7 +19,8 @@ class ViewAllScreen extends StatefulWidget {
   State<ViewAllScreen> createState() => _ViewAllScreenState();
 }
 
-class _ViewAllScreenState extends State<ViewAllScreen> {
+class _ViewAllScreenState extends State<ViewAllScreen>
+    with WidgetsBindingObserver {
   int _selectedTabIndex = 1; // routine 탭이 선택된 상태
   bool _isLoading = true;
   List<ViewAllRoutineItem> _allRoutines = [];
@@ -31,19 +32,45 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
     _loadAllRoutines();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 앱이 다시 활성화될 때 데이터 새로고침
+    if (state == AppLifecycleState.resumed) {
+      print('[ViewAllScreen] 앱이 다시 활성화됨, 루틴 목록 새로고침');
+      _loadAllRoutines();
+    }
+  }
+
   Future<void> _loadAllRoutines() async {
+    print('[ViewAllScreen] _loadAllRoutines 호출');
     setState(() {
       _isLoading = true;
     });
 
     try {
       final routines = await RoutineService.getAllRoutines();
+      print('[ViewAllScreen] API에서 받은 루틴 수: ${routines.length}');
+      print(
+        '[ViewAllScreen] API에서 받은 루틴 ID들: ${routines.map((r) => r.id).toList()}',
+      );
+      print(
+        '[ViewAllScreen] API에서 받은 루틴 이름들: ${routines.map((r) => r.name).toList()}',
+      );
+
       setState(() {
         _allRoutines = routines;
         _isLoading = false;
       });
+
+      print('[ViewAllScreen] 화면 업데이트 완료, 표시할 루틴 수: ${_allRoutines.length}');
     } catch (e) {
-      print('Error loading all routines: $e');
+      print('[ViewAllScreen] Error loading all routines: $e');
       setState(() {
         _isLoading = false;
       });
@@ -218,10 +245,12 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
         .toList();
 
     // 세탁기 관련 루틴이 있는지 확인
-    final hasWashingRoutine = selectedRoutines.any((routine) =>
-        routine.name.toLowerCase().contains('세탁') ||
-        routine.name.toLowerCase().contains('빨래') ||
-        routine.routineType.toLowerCase().contains('wash'));
+    final hasWashingRoutine = selectedRoutines.any(
+      (routine) =>
+          routine.name.toLowerCase().contains('세탁') ||
+          routine.name.toLowerCase().contains('빨래') ||
+          routine.routineType.toLowerCase().contains('wash'),
+    );
 
     // 세탁기 관련 루틴이 있으면 팝업 표시
     if (hasWashingRoutine) {
@@ -254,10 +283,9 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                   children: [
                     Text(
                       '비가 예정된 오늘,\n세탁기를 돌리실 건가요?',
-                      style: AppTextStyles.sectionTitle(context).copyWith(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: AppTextStyles.sectionTitle(
+                        context,
+                      ).copyWith(fontSize: 18, fontWeight: FontWeight.w600),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
@@ -316,13 +344,24 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                                   if (context.mounted) {
                                     Navigator.pop(context);
                                     // NO: 세탁기 관련 루틴 제외
-                                    final routinesWithoutWashing = selectedRoutines
-                                        .where((routine) =>
-                                            !routine.name.toLowerCase().contains('세탁') &&
-                                            !routine.name.toLowerCase().contains('빨래') &&
-                                            !routine.routineType.toLowerCase().contains('wash'))
-                                        .toList();
-                                    _navigateToPriorityScreen(routinesWithoutWashing);
+                                    final routinesWithoutWashing =
+                                        selectedRoutines
+                                            .where(
+                                              (routine) =>
+                                                  !routine.name
+                                                      .toLowerCase()
+                                                      .contains('세탁') &&
+                                                  !routine.name
+                                                      .toLowerCase()
+                                                      .contains('빨래') &&
+                                                  !routine.routineType
+                                                      .toLowerCase()
+                                                      .contains('wash'),
+                                            )
+                                            .toList();
+                                    _navigateToPriorityScreen(
+                                      routinesWithoutWashing,
+                                    );
                                   }
                                 },
                               );
@@ -743,7 +782,10 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) {
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: ShapeDecoration(
                         color: const Color(0xFF4B57BB),
                         shape: RoundedRectangleBorder(

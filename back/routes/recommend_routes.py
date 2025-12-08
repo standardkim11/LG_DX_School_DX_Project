@@ -471,6 +471,156 @@ def get_priority_today():
         })
 
     return jsonify(result)
+
+@recommend_bp.route("/priority/selected", methods=["POST"])
+def get_priority_for_selected_routines():
+    """
+    선택된 루틴들의 우선순위 점수를 계산하는 API
+    POST /api/recommend/priority/selected
+    Body: {
+        "user_id": 1,
+        "routine_ids": [9001, 9002, 9003],
+        "date": "2025-12-12"  # optional, 오늘 날짜 사용
+    }
+    """
+    model = current_app.model  # type: ignore
+    feature_cols = current_app.feature_cols  # type: ignore
+
+    if model is None or feature_cols is None:
+        return jsonify({"error": "ML model not loaded"}), 500
+
+    data = request.get_json() or {}
+    user_id = data.get("user_id", 1)
+    routine_ids = data.get("routine_ids", [])
+    date_str = data.get("date")
+
+    if not routine_ids:
+        return jsonify({"error": "routine_ids required"}), 400
+
+    try:
+        user = User.query.get(user_id)
+    except DatabaseError as e:
+        error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+        return jsonify({
+            "error": "Database connection failed",
+            "message": "Unable to connect to the database.",
+            "details": error_msg,
+        }), 503
+    
+    if not user:
+        return jsonify({"error": "user not found"}), 404
+
+    # 날짜 파싱
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+    else:
+        target_date = date.today()
+
+    now = datetime.now()
+    exec_hour = now.hour
+    exec_dow = now.weekday()
+
+    # 선택된 루틴들 조회
+    try:
+        routines = Routine.query.filter(
+            Routine.id.in_(routine_ids),
+            Routine.user_id == user_id,
+            Routine.is_active == True
+        ).all()
+    except DatabaseError as e:
+        error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+        return jsonify({
+            "error": "Database query failed",
+            "message": "Unable to query routines from the database.",
+            "details": error_msg
+        }), 503
+
+    if not routines:
+        return jsonify([])
+
+    # 날씨 가져오기
+    weather = WeatherInfo.query.filter_by(date=target_date).first()
+    temp = float(weather.temperature) if weather and weather.temperature else 20.0
+    humi = float(weather.humidity) if weather and weather.humidity else 60.0
+    weather_code = encode_weather(weather.weather) if weather and weather.weather is not None else 0
+    pm25 = float(weather.pm25) if weather and weather.pm25 else 40.0
+    pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
+
+    rows = []
+    for r in routines:
+        rt = encode_routine_type(r.routine_type)
+        st = encode_schedule_type(r.schedule_type)
+        preferred_hour = parse_preferred_time(r.preferred_time)
+
+        last_log = RoutineExecution.query.filter_by(
+            user_id=user_id, routine_id=r.id
+        ).order_by(RoutineExecution.start_time.desc()).first()
+
+        if last_log:
+            run_time = int(last_log.run_time or r.run_minutes or 30)
+            recommended_flag = int(bool(last_log.recommended_flag))
+        else:
+            run_time = int(r.run_minutes or 30)
+            recommended_flag = 0
+
+        rows.append({
+            "ROUTINE_ID": r.id,
+            "ROUTINE_NAME": r.name,
+            "ROUTINE_TYPE": rt,
+            "SCHEDULE_TYPE": st,
+            "PREFERRED_TIME": preferred_hour,
+            "RUN_TIME": run_time,
+            "EXEC_HOUR": exec_hour,
+            "EXEC_DOW": exec_dow,
+            "RUN_MINUTES": int(r.run_minutes or 30),
+            "RECOMMENDED_FLAG": recommended_flag,
+            "TEMPERATURE": temp,
+            "HUMIDITY": humi,
+            "WEATHER": weather_code,
+            "PM25": pm25,
+            "PM10": pm10,
+        })
+
+    df = pd.DataFrame(rows)
+
+    # feature 순서 맞추기
+    missing = [c for c in feature_cols if c not in df.columns]
+    if missing:
+        return jsonify({"error": "missing features", "missing": missing}), 500
+
+    X = df[feature_cols]
+    preds = model.predict(X)
+    df["pred_priority_score"] = preds
+
+    # routine_ids 순서 유지하면서 점수 추가
+    # MONTHLY 루틴은 우선순위에서 제외하거나 맨 뒤로 보냄
+    result = []
+    monthly_routines = []
+    routine_id_to_score = dict(zip(df["ROUTINE_ID"], df["pred_priority_score"]))
+    
+    for routine_id in routine_ids:
+        if routine_id in routine_id_to_score:
+            routine = next((r for r in routines if r.id == routine_id), None)
+            if routine:
+                score_data = {
+                    "routine_id": int(routine_id),
+                    "routine_name": routine.name,
+                    "pred_priority_score": float(routine_id_to_score[routine_id]),
+                }
+                # MONTHLY 루틴은 별도로 분리
+                if (routine.schedule_type or "").upper() == "MONTHLY":
+                    monthly_routines.append(score_data)
+                else:
+                    result.append(score_data)
+    
+    # MONTHLY 루틴을 맨 뒤에 추가 (점수 기준 정렬)
+    monthly_routines.sort(key=lambda x: x["pred_priority_score"], reverse=True)
+    result.extend(monthly_routines)
+
+    return jsonify(result)
     
 @recommend_bp.route("/routines", methods=["POST"])
 def create_routine():
@@ -756,6 +906,68 @@ def get_today_routines():
 
     return jsonify(today_list)
 
+@recommend_bp.route("/weather", methods=["GET"])
+def get_weather():
+    """오늘의 날씨 정보 반환
+    GET /api/recommend/weather?date=2025-01-15 (옵션: 없으면 오늘)
+    """
+    date_str = request.args.get("date")
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+    else:
+        target_date = today_date()
+    
+    weather = WeatherInfo.query.filter_by(date=target_date).first()
+    
+    # 날씨 정보가 없으면 기본값으로 "맑음" 사용
+    if not weather:
+        weather_code = 0  # 맑음
+        weather_label = "맑음"
+        pm25 = None
+        pm10 = None
+    else:
+        weather_code = encode_weather(weather.weather) if weather.weather else 0
+        weather_label = REVERSE_WEATHER.get(weather_code, "맑음")
+        pm25 = float(weather.pm25) if weather.pm25 else None
+        pm10 = float(weather.pm10) if weather.pm10 else None
+    
+    # 날씨 기반 추천 메시지 생성
+    recommendation_messages = []
+    
+    if weather_code == 2:  # 비
+        recommendation_messages.append("비가 예정된 오늘, 세탁기 돌리고 건조기 돌리는 것을 추천드려요.")
+    elif weather_code == 3:  # 눈
+        recommendation_messages.append("눈이 예정된 오늘, 외출 시 주의하세요.")
+    elif weather_code == 1:  # 흐림
+        recommendation_messages.append("흐린 날씨예요. 실내 활동을 추천드립니다.")
+    else:  # 맑음 (0)
+        recommendation_messages.append("맑은 날씨예요. 세탁기 돌리는건 어떠세요?")
+    
+    # 미세먼지 수치 확인 (pm25: 35 이상, pm10: 75 이상이면 나쁨)
+    if pm25 is not None and pm25 >= 35:
+        recommendation_messages.append("미세먼지 수치가 높아요. 외출 시 주의하세요.")
+    elif pm10 is not None and pm10 >= 75:
+        recommendation_messages.append("미세먼지 수치가 높아요. 외출 시 주의하세요.")
+    
+    # 메시지들을 줄바꿈으로 연결
+    recommendation_message = "\n".join(recommendation_messages) if recommendation_messages else None
+    
+    return jsonify({
+        "date": target_date.isoformat(),
+        "weather": weather.weather if weather else "맑음",
+        "weather_code": weather_code,
+        "weather_label": weather_label,
+        "temperature": float(weather.temperature) if weather and weather.temperature else None,
+        "humidity": float(weather.humidity) if weather and weather.humidity else None,
+        "pm25": pm25,
+        "pm10": pm10,
+        "recommendation_message": recommendation_message,
+    }), 200
+
+
 @recommend_bp.route("/dashboard", methods=["GET"])
 def get_dashboard():
     """대시보드 화면용 요약 API.
@@ -1039,7 +1251,7 @@ def seed_demo_data(user_id: int = 1, target_date: date | None = None) -> None:
         id=9003,
         user_id=user_id,
         name="설거지 하기",
-        routine_type="LAUNDRY",
+        routine_type="washing",
         serial_no="DR001",
         run_minutes=15,
         schedule_type="DAILY",
