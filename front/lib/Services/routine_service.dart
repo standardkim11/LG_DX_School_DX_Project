@@ -103,44 +103,26 @@ class RoutineService {
     }
   }
 
-  /// 루틴을 생성합니다.
-  ///
-  /// [name] 루틴명
-  /// [scheduleType] 스케줄 타입 (DAILY, WEEKLY, MONTHLY)
-  /// [preferredTime] 선호 시간 (HH:MM 형식, 선택사항)
-  /// [runMinutes] 목표 횟수
-  /// [routineType] 루틴 타입 (CLEANING 등)
-  /// Returns: 생성된 루틴 정보 또는 null (실패 시)
+  /// 새 루틴을 생성합니다
+  /// Returns: 생성된 루틴 정보
   static Future<Map<String, dynamic>?> createRoutine({
     required String name,
     required String scheduleType,
     String? preferredTime,
-    required int runMinutes,
-    required String routineType,
-    List<String>? selectedDays,
+    int? runMinutes,
+    String routineType = 'ETC',
   }) async {
-    late final Uri uri;
     try {
-      uri = Uri.parse('$baseUrl/routines');
+      final uri = Uri.parse('$baseUrl/routines');
 
-      final requestBody = {
+      final body = jsonEncode({
         'user_id': userId,
         'name': name,
-        'schedule_type': scheduleType,
-        'run_minutes': runMinutes,
         'routine_type': routineType,
-      };
-
-      if (preferredTime != null) {
-        requestBody['preferred_time'] = preferredTime;
-      }
-
-      if (selectedDays != null && selectedDays.isNotEmpty) {
-        requestBody['selected_days'] = selectedDays;
-      }
-
-      print('[RoutineService] HTTP POST 요청 시작: $uri');
-      print('[RoutineService] Request Body: $requestBody');
+        'schedule_type': scheduleType,
+        'preferred_time': preferredTime,
+        'run_minutes': runMinutes,
+      });
 
       final response = await http
           .post(
@@ -149,37 +131,29 @@ class RoutineService {
               'Content-Type': 'application/json',
               'Accept': 'application/json',
             },
-            body: jsonEncode(requestBody),
+            body: body,
           )
           .timeout(
-            const Duration(seconds: 12),
+            const Duration(seconds: 30),
             onTimeout: () {
+              print('[RoutineService] Create Routine 타임아웃 발생: $uri');
               throw Exception('요청 시간 초과 - 백엔드 서버가 실행 중인지 확인해주세요');
             },
           );
 
-      print('[RoutineService] HTTP 응답 수신 완료: ${response.statusCode}');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      if (response.statusCode == 201) {
         final data =
             jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
         return data;
       } else {
         print(
-          'Routine Create API Error: ${response.statusCode} - ${response.body}',
+          'Create Routine API Error: ${response.statusCode} - ${response.body}',
         );
         return null;
       }
-    } on SocketException catch (e) {
-      final errorMessage =
-          '네트워크 연결 오류: 백엔드 서버($baseUrl)에 연결할 수 없습니다.\n\n해결 방법:\n1. 백엔드 서버가 실행 중인지 확인 (back/Project/app.py)\n2. PC와 휴대폰이 같은 Wi-Fi에 연결되어 있는지 확인\n3. 방화벽에서 포트 8088을 허용했는지 확인\n4. 휴대폰 브라우저에서 http://192.168.0.34:8088/api/routines 접속 테스트\n\n오류 상세: $e';
-      print('[RoutineService] SocketException 발생: $e');
-      print('[RoutineService] 시도한 URL: $uri');
-      print('[RoutineService] Base URL: $baseUrl');
-      throw Exception(errorMessage);
     } catch (e) {
-      print('Routine Create Service Error: $e');
-      throw Exception('루틴 생성 중 오류가 발생했습니다: $e');
+      print('Create Routine Service Error: $e');
+      return null;
     }
   }
 }

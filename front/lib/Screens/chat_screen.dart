@@ -35,6 +35,25 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Map<String, dynamic>> _messages = [];
 
   @override
+  void initState() {
+    super.initState();
+    // 화면이 열리면 자동으로 키보드 표시
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && _messageFocusNode.canRequestFocus) {
+          _messageFocusNode.requestFocus();
+          // 키보드 강제 표시 (에뮬레이터용)
+          Future.delayed(const Duration(milliseconds: 200), () {
+            if (mounted) {
+              SystemChannels.textInput.invokeMethod('TextInput.show');
+            }
+          });
+        }
+      });
+    });
+  }
+
+  @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
@@ -65,44 +84,118 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      // API 호출 - 경로: /api/chat/chat (url_prefix="/api/chat" + route="/chat")
-      // 모바일/에뮬레이터에서는 localhost 대신 10.0.2.2 (Android 에뮬레이터) 또는 실제 IP 사용
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/chat/chat'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: jsonEncode({'user_id': userId, 'message': messageText}),
-          )
-          .timeout(
-            const Duration(seconds: 30),
-            onTimeout: () {
-              throw Exception('요청 시간 초과');
-            },
-          );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final reply = data['reply'] as String? ?? '응답을 받지 못했습니다.';
-
-        setState(() {
-          _messages.add({'text': reply, 'isUser': false});
-          _isLoading = false;
-        });
+      // Android인 경우 여러 URL 시도 (에뮬레이터와 실제 기기 모두 지원)
+      List<String> urlsToTry = [baseUrl];
+      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+        // 자동 감지 모드: 에뮬레이터와 실제 기기 모두 시도
+        urlsToTry = ApiConfig.getAndroidBaseUrls();
+        print('[ChatService] Android 자동 감지 모드: ${urlsToTry.length}개 URL 시도');
       } else {
-        final errorBody = response.body;
-        throw Exception('서버 오류: ${response.statusCode}\n$errorBody');
+        print('[ChatService] 단일 URL 사용: $baseUrl');
       }
+
+      Exception? lastException;
+      for (final url in urlsToTry) {
+        try {
+          // API 호출 - 경로: /api/chat/chat (url_prefix="/api/chat" + route="/chat")
+          final fullUrl = '$url/chat/chat';
+          print('[ChatService] 연결 시도: $fullUrl');
+
+          final response = await http
+              .post(
+                Uri.parse(fullUrl),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+                body: jsonEncode({'user_id': userId, 'message': messageText}),
+              )
+              .timeout(
+                const Duration(seconds: 10), // 각 URL당 10초 타임아웃 (더 빠른 실패 감지)
+                onTimeout: () {
+                  print('[ChatService] 타임아웃 발생: $fullUrl');
+                  throw Exception('요청 시간 초과');
+                },
+              );
+
+          print('[ChatService] 응답 상태 코드: ${response.statusCode}');
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final reply = data['reply'] as String? ?? '응답을 받지 못했습니다.';
+
+            print('[ChatService] ✅ 성공! 응답 받음');
+            setState(() {
+              _messages.add({'text': reply, 'isUser': false});
+              _isLoading = false;
+            });
+            _scrollToBottom();
+            return; // 성공하면 종료
+          } else {
+            // 서버가 응답했지만 에러 상태 코드인 경우
+            print('[ChatService] ⚠️ 서버 오류: ${response.statusCode}');
+            try {
+              final errorData = jsonDecode(response.body);
+              final errorMsg =
+                  errorData['message'] as String? ??
+                  errorData['error'] as String?;
+              print('[ChatService] 서버 에러 메시지: $errorMsg');
+
+              // 500 에러는 서버 내부 오류이므로 즉시 사용자에게 표시 (다른 URL 시도 안 함)
+              if (response.statusCode == 500) {
+                String userMessage = '서버 내부 오류가 발생했습니다.';
+                if (errorMsg != null) {
+                  if (errorMsg.contains('GEMINI_API_KEY')) {
+                    userMessage =
+                        'Google Gemini API 키가 설정되지 않았습니다.\n서버 관리자에게 문의해주세요.';
+                  } else {
+                    userMessage = errorMsg;
+                  }
+                }
+                setState(() {
+                  _messages.add({'text': userMessage, 'isUser': false});
+                  _isLoading = false;
+                });
+                _scrollToBottom();
+                return; // 즉시 종료
+              }
+            } catch (e) {
+              // JSON 파싱 실패 시
+              print('[ChatService] JSON 파싱 실패: $e');
+            }
+
+            // 500이 아닌 다른 에러는 다음 URL 시도
+            lastException = Exception('서버 오류: ${response.statusCode}');
+            continue;
+          }
+        } catch (e) {
+          print('[ChatService] $url 연결 실패: $e');
+          print('[ChatService] 에러 타입: ${e.runtimeType}');
+          if (e is http.ClientException) {
+            print('[ChatService] ClientException 상세: ${e.message}');
+          }
+          lastException = e is Exception ? e : Exception(e.toString());
+          // 다음 URL 시도
+          continue;
+        }
+      }
+
+      // 모든 URL 시도 실패
+      final errorMessage = lastException != null
+          ? '모든 연결 시도 실패: ${lastException.toString()}'
+          : '모든 연결 시도 실패';
+      throw Exception(errorMessage);
     } catch (e) {
       String errorMessage = '죄송합니다. 연결에 문제가 발생했습니다.';
 
       if (e.toString().contains('Failed host lookup') ||
-          e.toString().contains('Connection refused')) {
+          e.toString().contains('Connection refused') ||
+          e.toString().contains('모든 연결 시도 실패')) {
         errorMessage = '서버에 연결할 수 없습니다.\n백엔드 서버가 실행 중인지 확인해주세요.';
       } else if (e.toString().contains('요청 시간 초과')) {
-        errorMessage = '요청 시간이 초과되었습니다.\n잠시 후 다시 시도해주세요.';
+        errorMessage = '요청 시간이 초과되었습니다.\n네트워크 연결을 확인해주세요.';
+      } else if (e.toString().contains('서버 내부 오류')) {
+        errorMessage = '서버 내부 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.';
       } else if (e.toString().contains('서버 오류')) {
         errorMessage = '서버 오류가 발생했습니다.\n관리자에게 문의해주세요.';
       }
@@ -217,10 +310,18 @@ class _ChatScreenState extends State<ChatScreen> {
                       child: TextField(
                         controller: _messageController,
                         focusNode: _messageFocusNode,
+                        autofocus: true, // 자동 포커스 활성화
+                        readOnly: false, // 읽기 전용 아님
+                        enabled: true, // 활성화됨
                         maxLines: 1,
-                        keyboardType: TextInputType.text,
+                        keyboardType:
+                            TextInputType.multiline, // 한글 입력을 위해 multiline 사용
                         textInputAction: TextInputAction.send,
                         enableInteractiveSelection: true,
+                        enableSuggestions: true, // 제안 활성화
+                        autocorrect: true, // 자동 수정 활성화
+                        textCapitalization:
+                            TextCapitalization.none, // 대문자 자동 변환 비활성화
                         style: const TextStyle(
                           color: Color(0xFF606D80),
                           fontSize: 14,
@@ -239,6 +340,18 @@ class _ChatScreenState extends State<ChatScreen> {
                             height: 1.43,
                           ),
                         ),
+                        onTap: () {
+                          // TextField를 직접 탭했을 때도 포커스 요청
+                          if (!_messageFocusNode.hasFocus) {
+                            _messageFocusNode.requestFocus();
+                          }
+                          // 키보드 강제 표시 (에뮬레이터용)
+                          Future.delayed(const Duration(milliseconds: 100), () {
+                            SystemChannels.textInput.invokeMethod(
+                              'TextInput.show',
+                            );
+                          });
+                        },
                         onSubmitted: (text) {
                           if (text.trim().isNotEmpty && !_isLoading) {
                             _sendMessage();
