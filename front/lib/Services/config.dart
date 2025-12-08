@@ -25,7 +25,7 @@ class ApiConfig {
   // - null: 자동 감지 (에뮬레이터와 실제 기기 모두 지원)
   // - true: 에뮬레이터 강제 사용 (10.0.2.2 사용)
   // - false: 실제 기기 강제 사용 (localNetworkIp 사용)
-  static const bool? useEmulator = null; // null = 자동 감지
+  static const bool? useEmulator = false; // 실제 휴대폰 사용 시 false로 설정
 
   static String getBaseUrl({
     required bool isWeb,

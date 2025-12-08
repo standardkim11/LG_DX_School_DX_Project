@@ -182,9 +182,9 @@ class _HabitCardState extends State<HabitCard> {
               ),
             ),
           if (widget.enableSwipe && _swipeState == 'left')
-            // 왼쪽 스와이프: Fail, Skip 버튼 (오른쪽)
+            // 왼쪽 스와이프: Fail, Delete 버튼 (오른쪽)
             Positioned(
-              right: 8, // 카드가 이동하면 드러남
+              right: 8, // 카드가 이동하면 드러남 (View 버튼과 동일한 간격)
               top: 0,
               bottom: 0,
               child: Align(
@@ -196,7 +196,8 @@ class _HabitCardState extends State<HabitCard> {
                     vertical: 12,
                   ),
                   constraints: const BoxConstraints(
-                    minWidth: 148, // Fail(56) + 간격(20) + Skip(56) + 패딩(16)
+                    minWidth:
+                        100, // Fail(56) + 간격(8) + Delete(56) = 약 120, 하지만 사용자 설정 100 유지
                   ),
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -255,8 +256,8 @@ class _HabitCardState extends State<HabitCard> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 20), // 버튼 사이 여백 증가
-                      // Skip 버튼
+                      const SizedBox(width: 8), // 버튼 사이 여백 (20 -> 8로 축소)
+                      // Delete 버튼
                       SizedBox(
                         width: 56, // 고정 너비
                         child: Column(
@@ -272,14 +273,14 @@ class _HabitCardState extends State<HabitCard> {
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: const Icon(
-                                Icons.arrow_forward,
+                                Icons.delete_outline,
                                 size: 14,
                                 color: Color(0xFF9B9BA1),
                               ),
                             ),
                             const SizedBox(height: 4),
                             const Text(
-                              'Skip',
+                              'Delete',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Color(0xFF9B9BA1),
@@ -317,8 +318,8 @@ class _HabitCardState extends State<HabitCard> {
                         }
                       }
                       // 드래그 오프셋 제한 (왼쪽으로 더 많이 이동 가능하도록)
-                      if (_dragOffset < -200) {
-                        _dragOffset = -200;
+                      if (_dragOffset < -110) {
+                        _dragOffset = -110; // Fail/Delete 버튼 너비에 맞게 조정
                       } else if (_dragOffset > 80) {
                         _dragOffset = 80;
                       }
@@ -335,7 +336,7 @@ class _HabitCardState extends State<HabitCard> {
                       SwipeStateManager().setSwipedCard(widget.cardKey);
                     } else if (_swipeState == 'left') {
                       setState(() {
-                        _dragOffset = -200; // Fail/Skip 버튼이 완전히 드러나도록
+                        _dragOffset = -110; // Fail/Delete 버튼이 완전히 드러나도록
                       });
                       SwipeStateManager().setSwipedCard(widget.cardKey);
                     } else {
@@ -346,81 +347,81 @@ class _HabitCardState extends State<HabitCard> {
                     }
                   }
                 : null,
-            child: ClipRect(
-              child: Transform.translate(
-                offset: widget.enableSwipe
-                    ? Offset(_dragOffset.clamp(-200.0, 80.0), 0)
-                    : Offset.zero,
-                child: Container(
-                  width: widget.enableSwipe && _dragOffset < 0
-                      ? MediaQuery.of(context).size.width -
-                            24 +
-                            _dragOffset.clamp(
-                              -200.0,
-                              0.0,
-                            ) // 왼쪽 스와이프 시 너비 조정 (Fail+Skip 버튼 공간 확보)
-                      : MediaQuery.of(context).size.width - 24, // 전체 너비 - 좌우 패딩
-                  padding: const EdgeInsets.all(16),
-                  constraints: const BoxConstraints(
-                    minHeight: 88,
-                  ), // TodoItemCard와 높이 통일
-                  decoration: BoxDecoration(
-                    color: cardColor, // 항상 불투명한 배경으로 버튼 가리기
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      width: 1,
-                      color: _swipeState != null
-                          ? Colors.transparent
-                          : AppColors.borderLight,
+            child: Transform.translate(
+              offset: widget.enableSwipe
+                  ? Offset(_dragOffset.clamp(-110.0, 80.0), 0)
+                  : Offset.zero,
+              child: Container(
+                width: widget.enableSwipe && _dragOffset < 0
+                    ? MediaQuery.of(context).size.width -
+                          24 -
+                          8 - // Fail/Delete 버튼(right: 8)과의 간격
+                          100 - // Fail/Delete 버튼 너비(minWidth: 100)
+                          (-_dragOffset.clamp(
+                            -110.0,
+                            0.0,
+                          )) // 카드가 왼쪽으로 이동한 만큼 너비 감소
+                    : MediaQuery.of(context).size.width - 24, // 전체 너비 - 좌우 패딩
+                padding: const EdgeInsets.all(16),
+                constraints: const BoxConstraints(
+                  minHeight: 88,
+                ), // TodoItemCard와 높이 통일
+                decoration: BoxDecoration(
+                  color: cardColor, // 항상 불투명한 배경으로 버튼 가리기
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    width: 1,
+                    color: _swipeState != null
+                        ? Colors.transparent
+                        : AppColors.borderLight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0x0F222C5C),
+                      blurRadius: 68,
+                      offset: const Offset(58, 26),
+                      spreadRadius: 0,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0x0F222C5C),
-                        blurRadius: 68,
-                        offset: const Offset(58, 26),
-                        spreadRadius: 0,
-                      ),
-                    ],
-                  ),
-                  child: Stack(
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  widget.subtitle,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w400,
-                                    color: textColor ?? const Color(0xFF9FA7B9),
-                                  ),
+                  ],
+                ),
+                child: Stack(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                widget.subtitle,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                  color: textColor ?? const Color(0xFF9FA7B9),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  widget.title,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: textColor ?? AppColors.textAccent,
-                                  ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                widget.title,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: textColor ?? AppColors.textAccent,
                                 ),
-                                const SizedBox(
-                                  height: 32,
-                                ), // 제목과 progress bar 사이 여백 증가 (24 -> 32)
-                                _buildProgressBar(widget.progress),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(
+                                height: 32,
+                              ), // 제목과 progress bar 사이 여백 증가 (24 -> 32)
+                              _buildProgressBar(widget.progress),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                        ],
-                      ),
-                    ],
-                  ),
+                        ),
+                        const SizedBox(width: 12),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -704,9 +705,9 @@ class _TodoItemCardState extends State<TodoItemCard> {
               ),
             ),
           if (_swipeState == 'left')
-            // 왼쪽 스와이프: Fail, Skip 버튼 (오른쪽)
+            // 왼쪽 스와이프: Fail, Delete 버튼 (오른쪽)
             Positioned(
-              right: 8, // 고정 위치 (카드가 이동하면 드러남)
+              right: 8, // 고정 위치 (카드가 이동하면 드러남) (View 버튼과 동일한 간격)
               top: 0,
               bottom: 0,
               child: Align(
@@ -756,7 +757,7 @@ class _TodoItemCardState extends State<TodoItemCard> {
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(16),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.close,
                                 size: 14,
                                 color: Colors.red,
@@ -777,8 +778,8 @@ class _TodoItemCardState extends State<TodoItemCard> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 16), // 버튼 사이 여백 증가
-                      // Skip 버튼
+                      const SizedBox(width: 8), // 버튼 사이 여백 (16 -> 8로 축소)
+                      // Delete 버튼
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -796,15 +797,15 @@ class _TodoItemCardState extends State<TodoItemCard> {
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(16),
                               ),
-                              child: const Icon(
-                                Icons.arrow_forward,
+                              child: Icon(
+                                Icons.delete_outline,
                                 size: 14,
-                                color: Color(0xFF9B9BA1),
+                                color: const Color(0xFF9B9BA1),
                               ),
                             ),
                             const SizedBox(height: 4),
                             const Text(
-                              'Skip',
+                              'Delete',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Color(0xFF9B9BA1),
@@ -840,6 +841,12 @@ class _TodoItemCardState extends State<TodoItemCard> {
                     SwipeStateManager().clearSwipedCard();
                   }
                 }
+                // 드래그 오프셋 제한
+                if (_dragOffset < -200) {
+                  _dragOffset = -200;
+                } else if (_dragOffset > 80) {
+                  _dragOffset = 80;
+                }
               });
             },
             onHorizontalDragEnd: (details) {
@@ -851,7 +858,7 @@ class _TodoItemCardState extends State<TodoItemCard> {
                 SwipeStateManager().setSwipedCard(widget.cardKey);
               } else if (_swipeState == 'left') {
                 setState(() {
-                  _dragOffset = -80;
+                  _dragOffset = -200; // Fail/Delete 버튼이 완전히 드러나도록
                 });
                 SwipeStateManager().setSwipedCard(widget.cardKey);
               } else {
@@ -862,7 +869,7 @@ class _TodoItemCardState extends State<TodoItemCard> {
               }
             },
             child: Transform.translate(
-              offset: Offset(_dragOffset.clamp(-80.0, 80.0), 0),
+              offset: Offset(_dragOffset.clamp(-200.0, 80.0), 0),
               child: Container(
                 padding: const EdgeInsets.all(16),
                 height: 88, // HabitCard와 높이 통일

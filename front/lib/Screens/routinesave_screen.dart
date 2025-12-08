@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+
 import '../components/app_colors.dart';
+
 import 'viewall_screen.dart';
+
 import '../Services/routine_service.dart';
 
 class ViewSaveScreen extends StatefulWidget {
@@ -12,13 +15,21 @@ class ViewSaveScreen extends StatefulWidget {
 
 class _ViewSaveScreenState extends State<ViewSaveScreen> {
   final TextEditingController _routineNameController = TextEditingController();
+
   final TextEditingController _notificationController = TextEditingController();
-  int _selectedGoal = 4; // 기본값: 4
+
+  int _selectedGoal = 3; // 기본값: 3
+
   String _selectedFrequency = '매주'; // 기본값: 매주
-  String? _selectedTime; // 선택된 시간
-  String? _selectedDay; // 선택된 요일 (월화수목금토일)
+
+  int? _selectedHour; // 선택된 시간 (06-05)
+  int? _selectedMinute; // 선택된 분 (5분 단위)
+
+  List<String> _selectedDays = []; // 선택된 요일들 (중복 선택 가능)
+
   bool _isNotificationEnabled = false; // 알림 켜기/끄기
-  String? _selectedDevice; // 선택된 가전 (로봇청소기, 세탁기, 정수기)
+
+  String? _selectedDevice; // 선택된 가전 (로봇청소기, 세탁기, 에어컨)
 
   static const _cardShadow = BoxShadow(
     color: Color(0x0F222C5C),
@@ -69,6 +80,7 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
   );
 
   static const _grayBackgroundColor = Color(0xFFF3F4F6);
+
   static const _borderColor = Color(0xFFCDCDD0);
 
   ShapeDecoration _buildCardDecoration() {
@@ -107,16 +119,18 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
   @override
   void initState() {
     super.initState();
-    // 시간 초기값 설정 (00:00)
-    _selectedTime = '00:00';
-    // 요일 초기값 설정 (월)
-    _selectedDay = '월';
+
+    // 시간 초기값 설정 (06:00)
+    _selectedHour = 6;
+    _selectedMinute = 0;
   }
 
   @override
   void dispose() {
     _routineNameController.dispose();
+
     _notificationController.dispose();
+
     super.dispose();
   }
 
@@ -364,6 +378,9 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
         const SizedBox(height: 8),
         _buildDeviceCard(),
         const SizedBox(height: 8),
+        // 조건 추가에서 선택한 항목 표시
+        if (_selectedDevice != null) _buildSelectedDeviceCard(),
+        if (_selectedDevice != null) const SizedBox(height: 8),
         _buildAddConditionButton(),
       ],
     );
@@ -400,35 +417,38 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: _buildGrayContainerDecoration(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 시간 선택 드롭다운
-                _buildTimeDropdown(),
-                const SizedBox(height: 8),
-                // 요일 선택 (나란히 버튼)
-                Row(
-                  children: [
-                    Image.asset(
-                      'assets/routine_screen/Bell.png',
-                      width: 20,
-                      height: 20,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const SizedBox(width: 20, height: 20);
-                      },
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(child: _buildDayButtons()),
-                  ],
-                ),
-              ],
+          // 알림이 켜져있을 때만 시간/요일 설정 가능
+          if (_isNotificationEnabled)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: _buildGrayContainerDecoration(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 시간 선택 드롭다운 (시간, 분 분리)
+                  _buildTimeDropdown(),
+                  const SizedBox(height: 8),
+
+                  // 요일 선택 (나란히 버튼, 중복 선택 가능)
+                  Row(
+                    children: [
+                      Image.asset(
+                        'assets/routine_screen/Bell.png',
+                        width: 20,
+                        height: 20,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const SizedBox(width: 20, height: 20);
+                        },
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(child: _buildDayButtons()),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -482,14 +502,19 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
   }
 
   Widget _buildTimeDropdown() {
-    // 시간 목록 생성 (00:00 ~ 23:30, 30분 간격)
-    final timeOptions = <String>[];
-    for (int hour = 0; hour < 24; hour++) {
-      for (int minute = 0; minute < 60; minute += 30) {
-        final timeStr =
-            '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
-        timeOptions.add(timeStr);
-      }
+    // 시간 목록 생성 (06시부터 다음날 05시까지)
+    final hourOptions = <int>[];
+    for (int i = 6; i < 24; i++) {
+      hourOptions.add(i);
+    }
+    for (int i = 0; i < 6; i++) {
+      hourOptions.add(i);
+    }
+
+    // 분 목록 생성 (5분 단위)
+    final minuteOptions = <int>[];
+    for (int i = 0; i < 60; i += 5) {
+      minuteOptions.add(i);
     }
 
     return Row(
@@ -505,24 +530,55 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
           },
         ),
         const SizedBox(width: 4),
-        DropdownButton<String>(
-          value: _selectedTime,
+        // 시간 드롭다운
+        DropdownButton<int>(
+          value: _selectedHour,
           underline: Container(),
           icon: const Icon(
             Icons.arrow_drop_down,
             size: 20,
             color: AppColors.textSelected,
           ),
-          items: timeOptions.map((time) {
-            return DropdownMenuItem<String>(
-              value: time,
-              child: Text(time, style: _bodyTextStyle),
+          items: hourOptions.map((hour) {
+            return DropdownMenuItem<int>(
+              value: hour,
+              child: Text(
+                '${hour.toString().padLeft(2, '0')}시',
+                style: _bodyTextStyle,
+              ),
             );
           }).toList(),
           onChanged: (value) {
             if (value != null) {
               setState(() {
-                _selectedTime = value;
+                _selectedHour = value;
+              });
+            }
+          },
+        ),
+        const SizedBox(width: 8),
+        // 분 드롭다운
+        DropdownButton<int>(
+          value: _selectedMinute,
+          underline: Container(),
+          icon: const Icon(
+            Icons.arrow_drop_down,
+            size: 20,
+            color: AppColors.textSelected,
+          ),
+          items: minuteOptions.map((minute) {
+            return DropdownMenuItem<int>(
+              value: minute,
+              child: Text(
+                '${minute.toString().padLeft(2, '0')}분',
+                style: _bodyTextStyle,
+              ),
+            );
+          }).toList(),
+          onChanged: (value) {
+            if (value != null) {
+              setState(() {
+                _selectedMinute = value;
               });
             }
           },
@@ -538,11 +594,16 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
       spacing: 8,
       runSpacing: 8,
       children: days.map((day) {
-        final isSelected = _selectedDay == day;
+        final isSelected = _selectedDays.contains(day);
+
         return GestureDetector(
           onTap: () {
             setState(() {
-              _selectedDay = day;
+              if (isSelected) {
+                _selectedDays.remove(day);
+              } else {
+                _selectedDays.add(day);
+              }
             });
           },
           child: Container(
@@ -573,7 +634,58 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
 
   Widget _buildDeviceCard() {
     // 로봇청소기 아이콘 제거 - 카드 자체를 제거하거나 빈 위젯으로 변경
+
     return const SizedBox.shrink();
+  }
+
+  Widget _buildSelectedDeviceCard() {
+    String iconPath = 'assets/viewsave_screen/robot.png';
+    if (_selectedDevice == '세탁기') {
+      iconPath = 'assets/priority_screen/washing.png';
+    } else if (_selectedDevice == '에어컨') {
+      iconPath = 'assets/viewsave_screen/robot.png'; // 에어컨 아이콘 경로 (임시)
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: _buildCardDecoration(),
+      child: Row(
+        children: [
+          Image.asset(
+            iconPath,
+            width: 40,
+            height: 40,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.backgroundGray,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.devices, size: 24),
+              );
+            },
+          ),
+          const SizedBox(width: 16),
+          Expanded(child: Text(_selectedDevice ?? '', style: _titleTextStyle)),
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedDevice = null;
+              });
+            },
+            child: const Icon(
+              Icons.close,
+              color: AppColors.textSecondary,
+              size: 20,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildRoundedButton({
@@ -639,17 +751,17 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
                   alignment: WrapAlignment.center,
                   children: [
                     _buildDeviceOption(
-                      '로봇청소기',
-                      'assets/viewsave_screen/robot.png',
-                    ),
-                    _buildDeviceOption(
                       '세탁기',
                       'assets/priority_screen/washing.png',
                     ),
                     _buildDeviceOption(
-                      '정수기',
+                      '에어컨',
+                      'assets/viewsave_screen/robot.png', // 에어컨 아이콘 경로 (임시)
+                    ),
+                    _buildDeviceOption(
+                      '로봇청소기',
                       'assets/viewsave_screen/robot.png',
-                    ), // 정수기 아이콘은 임시로 robot.png 사용
+                    ),
                   ],
                 ),
               ],
@@ -662,14 +774,17 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
 
   Widget _buildDeviceOption(String deviceName, String iconPath) {
     final isSelected = _selectedDevice == deviceName;
+
     return GestureDetector(
       onTap: () {
         setState(() {
           _selectedDevice = isSelected ? null : deviceName;
         });
+
         Navigator.pop(context); // 다이얼로그 닫기
       },
       child: Container(
+        width: 100, // 고정 너비로 크기 동일하게
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         decoration: BoxDecoration(
           color: isSelected ? AppColors.textAccent : AppColors.backgroundGray,
@@ -677,6 +792,7 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Image.asset(
               iconPath,
@@ -698,6 +814,7 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
             const SizedBox(height: 8),
             Text(
               deviceName,
+              textAlign: TextAlign.center,
               style: _bodyTextStyle.copyWith(
                 color: isSelected ? Colors.white : AppColors.textSelected,
               ),
@@ -722,6 +839,7 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
 
   Future<void> _onSaveRoutine() async {
     // 루틴명이 입력되었는지 확인
+
     if (_routineNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -729,11 +847,14 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
           duration: Duration(seconds: 2),
         ),
       );
+
       return;
     }
 
     // 스케줄 타입 변환
+
     String scheduleType = 'DAILY';
+
     if (_selectedFrequency == '매일') {
       scheduleType = 'DAILY';
     } else if (_selectedFrequency == '매주') {
@@ -743,9 +864,20 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
     }
 
     // 목표 값 가져오기
+
     final goalValue = _selectedGoal;
 
+    // 시간 문자열 생성 (알림이 켜져있고 시간이 선택된 경우)
+    String? preferredTime;
+    if (_isNotificationEnabled &&
+        _selectedHour != null &&
+        _selectedMinute != null) {
+      preferredTime =
+          '${_selectedHour!.toString().padLeft(2, '0')}:${_selectedMinute!.toString().padLeft(2, '0')}';
+    }
+
     // 로딩 표시 (선택사항)
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -754,21 +886,27 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
 
     try {
       // 백엔드 API 호출하여 루틴 저장
+
       final result = await RoutineService.createRoutine(
         name: _routineNameController.text.trim(),
         scheduleType: scheduleType,
-        preferredTime: _selectedTime,
+        preferredTime: preferredTime,
         runMinutes: goalValue,
         routineType: 'CLEANING', // 로봇청소기이므로 CLEANING
+        selectedDays: _isNotificationEnabled && _selectedDays.isNotEmpty
+            ? _selectedDays
+            : null,
       );
 
       // 로딩 닫기
+
       if (mounted) {
         Navigator.pop(context); // 로딩 다이얼로그 닫기
       }
 
       if (result != null) {
         // 저장 성공 시 viewall 화면으로 이동
+
         if (mounted) {
           Navigator.pushAndRemoveUntil(
             context,
@@ -783,6 +921,7 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
         }
       } else {
         // 저장 실패 시 에러 메시지 표시
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -794,16 +933,20 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
       }
     } catch (e) {
       // 로딩 닫기
+
       if (mounted) {
         Navigator.pop(context); // 로딩 다이얼로그 닫기
       }
 
       // 에러 메시지 표시
+
       if (mounted) {
+        final errorMessage = e.toString().replaceAll('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('오류가 발생했습니다: $e'),
-            duration: const Duration(seconds: 2),
+            content: Text(errorMessage),
+            duration: const Duration(seconds: 5),
+            backgroundColor: Colors.red,
           ),
         );
       }

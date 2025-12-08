@@ -113,9 +113,12 @@ class DashboardService {
         return null;
       }
     } on SocketException catch (e) {
+      final requestUrl = '$baseUrl/recommend/dashboard?user_id=$userId';
       final errorMessage =
-          '네트워크 연결 오류: 백엔드 서버($baseUrl)에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.\n오류: $e';
-      print(errorMessage);
+          '네트워크 연결 오류: 백엔드 서버($baseUrl)에 연결할 수 없습니다.\n\n해결 방법:\n1. 백엔드 서버가 실행 중인지 확인 (back/Project/app.py)\n2. PC와 휴대폰이 같은 Wi-Fi에 연결되어 있는지 확인\n3. 방화벽에서 포트 8088을 허용했는지 확인\n4. 휴대폰 브라우저에서 http://192.168.0.34:8088/api/recommend/dashboard?user_id=1 접속 테스트\n\n오류 상세: $e';
+      print('[DashboardService] SocketException 발생: $e');
+      print('[DashboardService] 시도한 URL: $requestUrl');
+      print('[DashboardService] Base URL: $baseUrl');
       throw Exception(errorMessage);
     } on http.ClientException catch (e) {
       final errorMessage = 'HTTP 클라이언트 오류: $e';

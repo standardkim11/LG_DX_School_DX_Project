@@ -407,6 +407,191 @@ class _RoutineScreenState extends State<RoutineScreen> {
     return [...unchecked, ...checked];
   }
 
+  void _showCreateRoutineModal(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final modalHeight = screenHeight * 0.42; // todo 모달과 동일한 높이
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return Container(
+          height: modalHeight,
+          decoration: const BoxDecoration(
+            color: AppColors.backgroundWhite,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(30),
+              topRight: Radius.circular(30),
+            ),
+          ),
+          child: Column(
+            children: [
+              // 드래그 핸들 (todo 모달과 동일한 스타일)
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 24),
+                width: 82,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.borderLight,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // 헤더 (todo 모달과 동일한 스타일)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '새로운 루틴 생성',
+                    style: TextStyle(
+                      color: const Color(0xFF9B9BA1),
+                      fontSize: 10,
+                      fontFamily: 'LG Smart_H',
+                      fontWeight: FontWeight.w700,
+                      height: 1.60,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              // 스크롤 가능한 내용
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 새로운 루틴 생성하기 버튼
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pop(context); // 모달 닫기
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ViewSaveScreen(),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.backgroundWhite,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.borderLight,
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '새로운 루틴 생성하기',
+                                style: AppTextStyles.todoTitle(context),
+                              ),
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: AppColors.borderLight,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.add,
+                                  color: Colors.black,
+                                  size: 20,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // 인기있는 루틴 섹션
+                      Text(
+                        '인기있는 루틴',
+                        style: TextStyle(
+                          color: const Color(0xFF9B9BA1),
+                          fontSize: 10,
+                          fontFamily: 'LG Smart_H',
+                          fontWeight: FontWeight.w700,
+                          height: 1.60,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // 인기 루틴 카드들
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildPopularRoutineCard(
+                              '로봇청소기',
+                              '40분',
+                              const Color(0xFFFFE5E5),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildPopularRoutineCard(
+                              '독서',
+                              '1시간',
+                              const Color(0xFFE5E5FF),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildPopularRoutineCard(
+                              '빨래',
+                              '1시간 21분',
+                              const Color(0xFFE5FFE5),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPopularRoutineCard(
+    String title,
+    String duration,
+    Color backgroundColor,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppTextStyles.todoTitle(context)),
+          const SizedBox(height: 4),
+          Text(duration, style: AppTextStyles.todoCategory(context)),
+        ],
+      ),
+    );
+  }
+
   void _toggleCheck(int index) {
     setState(() {
       final todos = _todos; // 현재 날짜의 할 일 목록
@@ -649,12 +834,7 @@ class _RoutineScreenState extends State<RoutineScreen> {
                   ),
                   child: GestureDetector(
                     onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const ViewSaveScreen(),
-                        ),
-                      );
+                      _showCreateRoutineModal(context);
                     },
                     child: Container(
                       height: 60,

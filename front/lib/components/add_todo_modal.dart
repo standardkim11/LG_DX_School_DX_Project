@@ -29,9 +29,17 @@ class _AddTodoModalState extends State<AddTodoModal> {
   bool _showAddCategory = false;
   bool _showCustomCategoryInput = false;
 
-  // 시간 목록 (0-23)
+  // 시간 목록 (06-05 순서)
   List<String> get _hourOptions {
-    return List.generate(24, (index) => index.toString().padLeft(2, '0'));
+    // 06부터 시작해서 23까지, 그 다음 00부터 05까지
+    final hours = <String>[];
+    for (int i = 6; i <= 23; i++) {
+      hours.add(i.toString().padLeft(2, '0'));
+    }
+    for (int i = 0; i <= 5; i++) {
+      hours.add(i.toString().padLeft(2, '0'));
+    }
+    return hours;
   }
 
   // 분 목록 (10분 단위: 0, 10, 20, 30, 40, 50)
@@ -119,7 +127,7 @@ class _AddTodoModalState extends State<AddTodoModal> {
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     // 모달 높이는 고정 (Padding으로 키보드 위로 올라가므로 높이는 변경하지 않음)
     final screenHeight = MediaQuery.of(context).size.height;
-    final modalHeight = screenHeight * 0.35;
+    final modalHeight = screenHeight * 0.42; // 0.35 -> 0.42로 증가
 
     return GestureDetector(
       onTap: () {
@@ -179,7 +187,9 @@ class _AddTodoModalState extends State<AddTodoModal> {
                         padding: EdgeInsets.only(
                           left: 14,
                           right: 14,
-                          bottom: 80 + keyboardHeight, // 저장 버튼 공간 + 키보드 높이
+                          bottom:
+                              100 +
+                              keyboardHeight, // 저장 버튼 공간 + 키보드 높이 (80 -> 100으로 증가)
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -594,11 +604,15 @@ class _AddTodoModalState extends State<AddTodoModal> {
                         right: 0,
                         bottom: 0,
                         child: Container(
-                          padding: const EdgeInsets.only(
+                          padding: EdgeInsets.only(
                             left: 14,
                             right: 14,
                             top: 12,
-                            bottom: 40,
+                            bottom:
+                                40 +
+                                MediaQuery.of(
+                                  context,
+                                ).padding.bottom, // SafeArea 하단 패딩 추가
                           ),
                           child: Container(
                             width: double.infinity,
@@ -872,8 +886,10 @@ class _AddTodoModalState extends State<AddTodoModal> {
                               elevation: 8,
                               borderRadius: BorderRadius.circular(8),
                               child: Container(
-                                constraints: const BoxConstraints(
-                                  maxHeight: 200,
+                                constraints: BoxConstraints(
+                                  maxHeight:
+                                      MediaQuery.of(context).size.height *
+                                      0.5, // 40% -> 50%로 증가
                                 ),
                                 decoration: BoxDecoration(
                                   color: Colors.white,
@@ -886,17 +902,17 @@ class _AddTodoModalState extends State<AddTodoModal> {
                                     ),
                                   ],
                                 ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                        maxHeight: 150,
-                                      ),
-                                      child: ListView.builder(
+                                child: SingleChildScrollView(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // 카테고리 목록
+                                      ListView.builder(
                                         shrinkWrap: true,
                                         physics:
-                                            const AlwaysScrollableScrollPhysics(),
+                                            const NeverScrollableScrollPhysics(),
                                         itemCount: _categories.length,
                                         itemBuilder: (context, index) {
                                           final category = _categories[index];
@@ -956,127 +972,132 @@ class _AddTodoModalState extends State<AddTodoModal> {
                                           );
                                         },
                                       ),
-                                    ),
-                                    // 카테고리 추가 버튼
-                                    GestureDetector(
-                                      onTap: () {
-                                        setState(() {
-                                          _showAddCategory = !_showAddCategory;
-                                        });
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 12,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          border: Border(
-                                            top: BorderSide(
-                                              color: Colors.grey.withOpacity(
-                                                0.2,
+                                      // 카테고리 추가 버튼
+                                      GestureDetector(
+                                        onTap: () {
+                                          setState(() {
+                                            _showAddCategory =
+                                                !_showAddCategory;
+                                          });
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            border: Border(
+                                              top: BorderSide(
+                                                color: Colors.grey.withOpacity(
+                                                  0.2,
+                                                ),
+                                                width: 1,
                                               ),
-                                              width: 1,
                                             ),
                                           ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.add,
-                                              size: 20,
-                                              color: Color(0xFF8863EF),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              '카테고리 추가',
-                                              style: TextStyle(
-                                                color: const Color(0xFF8863EF),
-                                                fontSize: 14,
-                                                fontFamily: 'LG Smart_H',
-                                                fontWeight: FontWeight.w400,
+                                          child: Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.add,
+                                                size: 20,
+                                                color: Color(0xFF8863EF),
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    // 카테고리 입력 필드
-                                    if (_showAddCategory)
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          border: Border(
-                                            top: BorderSide(
-                                              color: Colors.grey.withOpacity(
-                                                0.2,
-                                              ),
-                                              width: 1,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: TextField(
-                                                controller:
-                                                    _newCategoryController,
-                                                autofocus: true,
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                '카테고리 추가',
                                                 style: TextStyle(
                                                   color: const Color(
-                                                    0xFF111111,
+                                                    0xFF8863EF,
                                                   ),
                                                   fontSize: 14,
                                                   fontFamily: 'LG Smart_H',
                                                   fontWeight: FontWeight.w400,
                                                 ),
-                                                decoration: InputDecoration(
-                                                  border: UnderlineInputBorder(
-                                                    borderSide: BorderSide(
-                                                      color: const Color(
-                                                        0xFF8863EF,
-                                                      ),
-                                                      width: 2,
-                                                    ),
-                                                  ),
-                                                  focusedBorder:
-                                                      UnderlineInputBorder(
-                                                        borderSide: BorderSide(
-                                                          color: const Color(
-                                                            0xFF8863EF,
-                                                          ),
-                                                          width: 2,
-                                                        ),
-                                                      ),
-                                                ),
-                                                onSubmitted: (_) =>
-                                                    _addNewCategory(),
                                               ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            GestureDetector(
-                                              onTap: _addNewCategory,
-                                              child: Container(
-                                                padding: const EdgeInsets.all(
-                                                  8,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(
-                                                    0xFF8863EF,
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child: const Icon(
-                                                  Icons.check,
-                                                  color: Colors.white,
-                                                  size: 20,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
                                       ),
-                                  ],
+                                      // 카테고리 입력 필드
+                                      if (_showAddCategory)
+                                        Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            border: Border(
+                                              top: BorderSide(
+                                                color: Colors.grey.withOpacity(
+                                                  0.2,
+                                                ),
+                                                width: 1,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: TextField(
+                                                  controller:
+                                                      _newCategoryController,
+                                                  autofocus: true,
+                                                  style: TextStyle(
+                                                    color: const Color(
+                                                      0xFF111111,
+                                                    ),
+                                                    fontSize: 14,
+                                                    fontFamily: 'LG Smart_H',
+                                                    fontWeight: FontWeight.w400,
+                                                  ),
+                                                  decoration: InputDecoration(
+                                                    border: UnderlineInputBorder(
+                                                      borderSide: BorderSide(
+                                                        color: const Color(
+                                                          0xFF8863EF,
+                                                        ),
+                                                        width: 2,
+                                                      ),
+                                                    ),
+                                                    focusedBorder:
+                                                        UnderlineInputBorder(
+                                                          borderSide: BorderSide(
+                                                            color: const Color(
+                                                              0xFF8863EF,
+                                                            ),
+                                                            width: 2,
+                                                          ),
+                                                        ),
+                                                  ),
+                                                  onSubmitted: (_) =>
+                                                      _addNewCategory(),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              GestureDetector(
+                                                onTap: _addNewCategory,
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(
+                                                    8,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(
+                                                      0xFF8863EF,
+                                                    ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.check,
+                                                    color: Colors.white,
+                                                    size: 20,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),

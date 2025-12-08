@@ -13,7 +13,7 @@ class CustomBottomNavigation extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 15),
+        padding: const EdgeInsets.only(bottom: 8),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final double screenWidth = constraints.maxWidth;

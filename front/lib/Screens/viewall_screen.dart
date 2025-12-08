@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import '../components/app_colors.dart';
 import '../components/app_text_styles.dart';
 import '../components/tab_bar.dart';
-import '../components/date_card.dart';
 import '../components/bottom_navigation.dart';
 import 'routine_screen.dart';
 import 'todo_screen.dart';
 import 'dashboard_screen.dart';
 import 'priority.dart';
+import 'routinesave_screen.dart';
 import '../Services/routine_service.dart';
 
 class ViewAllScreen extends StatefulWidget {
@@ -24,31 +24,11 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
   bool _isLoading = true;
   List<ViewAllRoutineItem> _allRoutines = [];
   Set<int> _selectedRoutineIds = {}; // 체크된 루틴 ID들
-  int _selectedDateIndex = 15; // 기본 날짜 인덱스 (12일 금요일)
-  ScrollController? _dateScrollController;
 
   @override
   void initState() {
     super.initState();
-    _dateScrollController = ScrollController();
-
-    // selectedDateKey로부터 초기 날짜 인덱스 설정
-    if (widget.selectedDateKey != null) {
-      _selectedDateIndex = _getDateIndexFromKey(widget.selectedDateKey);
-    }
-
     _loadAllRoutines();
-
-    // 초기 스크롤 위치 설정
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToSelectedDate(context);
-    });
-  }
-
-  @override
-  void dispose() {
-    _dateScrollController?.dispose();
-    super.dispose();
   }
 
   Future<void> _loadAllRoutines() async {
@@ -124,6 +104,22 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
                                     Navigator.of(context).pop(true);
                                     if (onConfirm != null) {
                                       onConfirm();
+                                    } else {
+                                      Navigator.pushAndRemoveUntil(
+                                        context,
+                                        PageRouteBuilder(
+                                          pageBuilder:
+                                              (
+                                                context,
+                                                animation,
+                                                secondaryAnimation,
+                                              ) => const RoutineScreen(),
+                                          transitionDuration: Duration.zero,
+                                          reverseTransitionDuration:
+                                              Duration.zero,
+                                        ),
+                                        (route) => false,
+                                      );
                                     }
                                   }
                                 },
@@ -221,12 +217,154 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
         .where((routine) => _selectedRoutineIds.contains(routine.id))
         .toList();
 
+    // 세탁기 관련 루틴이 있는지 확인
+    final hasWashingRoutine = selectedRoutines.any((routine) =>
+        routine.name.toLowerCase().contains('세탁') ||
+        routine.name.toLowerCase().contains('빨래') ||
+        routine.routineType.toLowerCase().contains('wash'));
+
+    // 세탁기 관련 루틴이 있으면 팝업 표시
+    if (hasWashingRoutine) {
+      _showWeatherWarningDialog(selectedRoutines);
+    } else {
+      // 세탁기 관련 루틴이 없으면 바로 PriorityScreen으로 이동
+      _navigateToPriorityScreen(selectedRoutines);
+    }
+  }
+
+  void _showWeatherWarningDialog(List<ViewAllRoutineItem> selectedRoutines) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (BuildContext context) {
+        bool? selectedButton;
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.backgroundWhite,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '비가 예정된 오늘,\n세탁기를 돌리실 건가요?',
+                      style: AppTextStyles.sectionTitle(context).copyWith(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedButton = true;
+                              });
+                              Future.delayed(
+                                const Duration(milliseconds: 150),
+                                () {
+                                  if (context.mounted) {
+                                    Navigator.pop(context);
+                                    // YES: 세탁기 포함하여 전달
+                                    _navigateToPriorityScreen(selectedRoutines);
+                                  }
+                                },
+                              );
+                            },
+                            child: Container(
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: selectedButton == true
+                                    ? AppColors.textAccent
+                                    : AppColors.backgroundGray,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'YES',
+                                style: TextStyle(
+                                  color: selectedButton == true
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
+                                  fontSize: 16,
+                                  fontFamily: 'LG Smart_H',
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedButton = false;
+                              });
+                              Future.delayed(
+                                const Duration(milliseconds: 150),
+                                () {
+                                  if (context.mounted) {
+                                    Navigator.pop(context);
+                                    // NO: 세탁기 관련 루틴 제외
+                                    final routinesWithoutWashing = selectedRoutines
+                                        .where((routine) =>
+                                            !routine.name.toLowerCase().contains('세탁') &&
+                                            !routine.name.toLowerCase().contains('빨래') &&
+                                            !routine.routineType.toLowerCase().contains('wash'))
+                                        .toList();
+                                    _navigateToPriorityScreen(routinesWithoutWashing);
+                                  }
+                                },
+                              );
+                            },
+                            child: Container(
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: selectedButton == false
+                                    ? AppColors.textAccent
+                                    : AppColors.backgroundGray,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'NO',
+                                style: TextStyle(
+                                  color: selectedButton == false
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
+                                  fontSize: 16,
+                                  fontFamily: 'LG Smart_H',
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _navigateToPriorityScreen(List<ViewAllRoutineItem> selectedRoutines) {
     // 체크된 루틴 ID들을 전역 상태 관리자에 저장
     setSelectedRoutineIds(_selectedRoutineIds);
-
-    // 현재 선택된 날짜 키 계산
-    final selectedDate = _getSelectedDate();
-    final currentDateKey = _formatDateKey(selectedDate);
 
     // PriorityScreen으로 이동하면서 선택된 루틴들과 날짜 정보 전달
     Navigator.push(
@@ -234,7 +372,7 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => PriorityScreen(
           selectedRoutines: selectedRoutines,
-          selectedDateKey: currentDateKey,
+          selectedDateKey: widget.selectedDateKey,
         ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
@@ -257,205 +395,181 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
       child: Scaffold(
         backgroundColor: AppColors.backgroundGray,
         body: SafeArea(
-          child: GestureDetector(
-            onTap: () {
-              // 선택 중일 때 빈 공간을 눌렀을 때 확인 팝업 표시
-              if (_selectedRoutineIds.isNotEmpty) {
-                _showConfirmDialog();
-              }
-            },
-            child: Stack(
-              children: [
-                Column(
-                  children: [
-                    _buildGreeting(context),
-                    const SizedBox(height: 10),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 7),
-                      child: CustomTabBar(
-                        selectedIndex: _selectedTabIndex,
-                        onTabChanged: (index) async {
-                          // routine 탭(index 1)을 클릭한 경우
-                          if (index == 1) {
-                            // 선택 중인 루틴이 있으면 확인 팝업 표시
-                            if (_selectedRoutineIds.isNotEmpty) {
-                              final confirmed = await _showConfirmDialog();
-                              // NO를 선택하면 아무것도 하지 않음 (탭 이동 안 함)
-                              if (!confirmed) return;
-
-                              // YES를 선택했을 때만 화면 이동
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                PageRouteBuilder(
-                                  pageBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                      ) => const RoutineScreen(),
-                                  transitionDuration: Duration.zero,
-                                  reverseTransitionDuration: Duration.zero,
-                                ),
-                                (route) => false, // 모든 이전 화면 제거
-                              );
-                            } else {
-                              // 선택 중인 루틴이 없으면 바로 routine 화면으로 이동
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                PageRouteBuilder(
-                                  pageBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                      ) => const RoutineScreen(),
-                                  transitionDuration: Duration.zero,
-                                  reverseTransitionDuration: Duration.zero,
-                                ),
-                                (route) => false, // 모든 이전 화면 제거
-                              );
-                            }
-                            return;
-                          }
-
-                          // 다른 탭(todo, dashboard)을 클릭한 경우
-                          // 같은 탭을 다시 클릭한 경우에도 선택 중인 루틴이 있으면 확인 팝업 표시
-                          if (index == _selectedTabIndex &&
-                              _selectedRoutineIds.isEmpty) {
-                            return;
-                          }
-
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  _buildGreeting(context),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 7),
+                    child: CustomTabBar(
+                      selectedIndex: _selectedTabIndex,
+                      onTabChanged: (index) {
+                        // routine 탭(index 1)을 클릭한 경우
+                        if (index == 1) {
                           // 선택 중인 루틴이 있으면 확인 팝업 표시
                           if (_selectedRoutineIds.isNotEmpty) {
-                            final confirmed = await _showConfirmDialog();
-                            // NO를 선택하면 아무것도 하지 않음 (탭 이동 안 함)
-                            if (!confirmed) return;
-
-                            // YES를 선택했을 때만 화면 이동
-                            if (index == 0) {
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                PageRouteBuilder(
-                                  pageBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                      ) => const TodoScreen(),
-                                  transitionDuration: Duration.zero,
-                                  reverseTransitionDuration: Duration.zero,
-                                ),
-                                (route) => false,
-                              );
-                            } else if (index == 2) {
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                PageRouteBuilder(
-                                  pageBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                      ) => const DashboardScreen(),
-                                  transitionDuration: Duration.zero,
-                                  reverseTransitionDuration: Duration.zero,
-                                ),
-                                (route) => false,
-                              );
-                            }
+                            _showConfirmDialog(
+                              onConfirm: () {
+                                Navigator.pushAndRemoveUntil(
+                                  context,
+                                  PageRouteBuilder(
+                                    pageBuilder:
+                                        (
+                                          context,
+                                          animation,
+                                          secondaryAnimation,
+                                        ) => const RoutineScreen(),
+                                    transitionDuration: Duration.zero,
+                                    reverseTransitionDuration: Duration.zero,
+                                  ),
+                                  (route) => false, // 모든 이전 화면 제거
+                                );
+                              },
+                            );
                           } else {
-                            // 선택 중인 루틴이 없으면 바로 이동
-                            if (index == 0) {
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                PageRouteBuilder(
-                                  pageBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                      ) => const TodoScreen(),
-                                  transitionDuration: Duration.zero,
-                                  reverseTransitionDuration: Duration.zero,
-                                ),
-                                (route) => false,
-                              );
-                            } else if (index == 2) {
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                PageRouteBuilder(
-                                  pageBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                      ) => const DashboardScreen(),
-                                  transitionDuration: Duration.zero,
-                                  reverseTransitionDuration: Duration.zero,
-                                ),
-                                (route) => false,
-                              );
-                            }
+                            // 선택 중인 루틴이 없으면 바로 routine 화면으로 이동
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              PageRouteBuilder(
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) =>
+                                        const RoutineScreen(),
+                                transitionDuration: Duration.zero,
+                                reverseTransitionDuration: Duration.zero,
+                              ),
+                              (route) => false, // 모든 이전 화면 제거
+                            );
                           }
-                        },
+                          return;
+                        }
+
+                        // 다른 탭(todo, dashboard)을 클릭한 경우
+                        if (index == _selectedTabIndex) {
+                          return;
+                        }
+
+                        // 선택 중인 루틴이 있으면 확인 팝업 표시
+                        if (_selectedRoutineIds.isNotEmpty) {
+                          _showConfirmDialog(
+                            onConfirm: () {
+                              if (index == 0) {
+                                Navigator.pushAndRemoveUntil(
+                                  context,
+                                  PageRouteBuilder(
+                                    pageBuilder:
+                                        (
+                                          context,
+                                          animation,
+                                          secondaryAnimation,
+                                        ) => const TodoScreen(),
+                                    transitionDuration: Duration.zero,
+                                    reverseTransitionDuration: Duration.zero,
+                                  ),
+                                  (route) => false,
+                                );
+                              } else if (index == 2) {
+                                Navigator.pushAndRemoveUntil(
+                                  context,
+                                  PageRouteBuilder(
+                                    pageBuilder:
+                                        (
+                                          context,
+                                          animation,
+                                          secondaryAnimation,
+                                        ) => const DashboardScreen(),
+                                    transitionDuration: Duration.zero,
+                                    reverseTransitionDuration: Duration.zero,
+                                  ),
+                                  (route) => false,
+                                );
+                              }
+                            },
+                          );
+                        } else {
+                          // 선택 중인 루틴이 없으면 바로 이동
+                          if (index == 0) {
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              PageRouteBuilder(
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) =>
+                                        const TodoScreen(),
+                                transitionDuration: Duration.zero,
+                                reverseTransitionDuration: Duration.zero,
+                              ),
+                              (route) => false,
+                            );
+                          } else if (index == 2) {
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              PageRouteBuilder(
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) =>
+                                        const DashboardScreen(),
+                                transitionDuration: Duration.zero,
+                                reverseTransitionDuration: Duration.zero,
+                              ),
+                              (route) => false,
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  Expanded(
+                    child: _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _buildRoutineGrid(),
+                  ),
+                  const CustomBottomNavigation(currentScreen: 'routine'),
+                ],
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 60 + MediaQuery.of(context).padding.bottom,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: const BoxDecoration(
+                    color: AppColors.backgroundGray,
+                  ),
+                  child: GestureDetector(
+                    onTap: _onSelectComplete,
+                    child: Container(
+                      width: double.infinity,
+                      height: 50,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 15,
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    // 날짜 캘린더
-                    _buildDateCalendar(context),
-                    const SizedBox(height: 15),
-                    Expanded(
-                      child: _isLoading
-                          ? const Center(child: CircularProgressIndicator())
-                          : _buildRoutineGrid(),
-                    ),
-                    const CustomBottomNavigation(currentScreen: 'routine'),
-                  ],
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 60 + MediaQuery.of(context).padding.bottom,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: const BoxDecoration(
-                      color: AppColors.backgroundGray,
-                    ),
-                    child: GestureDetector(
-                      onTap: _onSelectComplete,
-                      child: Container(
-                        width: double.infinity,
-                        height: 50,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 15,
+                      decoration: ShapeDecoration(
+                        color: AppColors.textAccent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(40),
                         ),
-                        decoration: ShapeDecoration(
-                          color: AppColors.textAccent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(40),
-                          ),
-                        ),
-                        child: const Center(
-                          child: Text(
-                            '선택 완료',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontFamily: 'LG Smart_H',
-                              fontWeight: FontWeight.w700,
-                              height: 1.43,
-                              color: Colors.white,
-                            ),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          '선택 완료',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontFamily: 'LG Smart_H',
+                            fontWeight: FontWeight.w700,
+                            height: 1.43,
+                            color: Colors.white,
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -611,159 +725,49 @@ class _ViewAllScreenState extends State<ViewAllScreen> {
             Positioned(
               right: 8,
               bottom: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: ShapeDecoration(
-                  color: const Color(0xFF4B57BB),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-                child: const Text(
-                  '수정',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 8,
-                    fontFamily: 'LG Smart_H',
-                    fontWeight: FontWeight.w400,
-                    height: 2.50,
-                  ),
+              child: GestureDetector(
+                onTap: () {
+                  // 수정 버튼 클릭 시 루틴 생성 페이지로 이동
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ViewSaveScreen(),
+                    ),
+                  );
+                },
+                behavior: HitTestBehavior.opaque, // 클릭 영역 확보
+                child: Image.asset(
+                  'assets/viewsave_screen/Edit_icon.png',
+                  width: 24,
+                  height: 24,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: ShapeDecoration(
+                        color: const Color(0xFF4B57BB),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      child: const Text(
+                        '수정',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontFamily: 'LG Smart_H',
+                          fontWeight: FontWeight.w400,
+                          height: 2.50,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  // 날짜 인덱스 계산 (selectedDateKey 기반)
-  int _getDateIndexFromKey(String? dateKey) {
-    if (dateKey == null) return 15; // 기본값
-
-    try {
-      final parts = dateKey.split('-');
-      if (parts.length == 3) {
-        final date = DateTime(
-          int.parse(parts[0]),
-          int.parse(parts[1]),
-          int.parse(parts[2]),
-        );
-
-        // 기준일(12일 금요일) 계산
-        final now = DateTime.now();
-        final baseDate = DateTime(now.year, now.month, 12);
-        final currentWeekday = baseDate.weekday;
-        final daysUntilFriday = (5 - currentWeekday + 7) % 7;
-        final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
-
-        // 날짜 차이 계산
-        final daysDiff = date.difference(referenceDate).inDays;
-        return (15 + daysDiff).clamp(0, 30); // 0~30 범위로 제한
-      }
-    } catch (e) {
-      print('Error parsing dateKey: $e');
-    }
-    return 15;
-  }
-
-  // 날짜를 키 형식으로 변환
-  String _formatDateKey(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
-
-  // 선택된 날짜 가져오기
-  DateTime _getSelectedDate() {
-    final now = DateTime.now();
-    final baseDate = DateTime(now.year, now.month, 12);
-    final currentWeekday = baseDate.weekday;
-    final daysUntilFriday = (5 - currentWeekday + 7) % 7;
-    final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
-    return referenceDate.add(Duration(days: _selectedDateIndex - 15));
-  }
-
-  // 날짜 스크롤 위치로 이동
-  void _scrollToSelectedDate(BuildContext context) {
-    if (_dateScrollController == null || !_dateScrollController!.hasClients)
-      return;
-
-    final screenWidth = MediaQuery.of(context).size.width;
-    const cardWidth = 64.0; // DateCard 너비 (60 + margin 2*2)
-    final scrollPosition =
-        (_selectedDateIndex * cardWidth) - (screenWidth / 2) + (cardWidth / 2);
-    _dateScrollController!.animateTo(
-      scrollPosition.clamp(
-        0.0,
-        _dateScrollController!.position.maxScrollExtent,
-      ),
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
-  }
-
-  Widget _buildDateCalendar(BuildContext context) {
-    // 기준일: 12일 금요일 찾기
-    final now = DateTime.now();
-    final baseDate = DateTime(now.year, now.month, 12);
-    final currentWeekday = baseDate.weekday;
-    final daysUntilFriday = (5 - currentWeekday + 7) % 7;
-    final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
-
-    // 앞뒤로 15일씩만 생성 (총 31일: 15일 전부터 15일 후까지)
-    final dates = List.generate(31, (index) {
-      final date = referenceDate.add(Duration(days: index - 15));
-      final weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-      return {
-        'day': date.day,
-        'label': weekdays[date.weekday - 1],
-        'date': date,
-      };
-    });
-
-    return SizedBox(
-      height: 80,
-      child: ListView.builder(
-        controller: _dateScrollController ?? ScrollController(),
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 1),
-        itemCount: dates.length,
-        itemBuilder: (context, index) {
-          final date = dates[index];
-          final isSelected = index == _selectedDateIndex;
-          return GestureDetector(
-            onTap: () {
-              // 선택 중인 루틴이 있으면 확인 팝업 표시
-              if (_selectedRoutineIds.isNotEmpty) {
-                _showConfirmDialog(
-                  onConfirm: () {
-                    // 선택 해제 후 날짜 변경
-                    setState(() {
-                      _selectedRoutineIds.clear();
-                      _selectedDateIndex = index;
-                    });
-                    _scrollToSelectedDate(context);
-                  },
-                );
-              } else {
-                // 선택 중인 루틴이 없으면 날짜만 변경
-                setState(() {
-                  _selectedDateIndex = index;
-                });
-                _scrollToSelectedDate(context);
-              }
-            },
-            child: Container(
-              width: 60,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              child: DateCard(
-                day: date['day'] as int,
-                label: date['label'] as String,
-                isSelected: isSelected,
-              ),
-            ),
-          );
-        },
       ),
     );
   }

@@ -26,8 +26,17 @@ class _PriorityScreenState extends State<PriorityScreen> {
   @override
   void initState() {
     super.initState();
+    // 전달받은 루틴들을 시간 순서로 정렬
+    final sortedRoutines = List<ViewAllRoutineItem>.from(
+      widget.selectedRoutines,
+    );
+    sortedRoutines.sort((a, b) {
+      return _compareByTime(a, b);
+    });
+
     // 전달받은 루틴들을 화면에서 사용할 형식으로 변환
-    _routines = widget.selectedRoutines.map((routine) {
+    _routines = sortedRoutines.asMap().entries.map((entry) {
+      final routine = entry.value;
       return {
         'key': ValueKey('routine_${routine.id}'), // routineId 기반 key로 변경
         'title': routine.name,
@@ -36,193 +45,51 @@ class _PriorityScreenState extends State<PriorityScreen> {
         'hasUrgentBadge': false, // 필요시 로직 추가
         'imagePath': _getImagePath(routine.routineType),
         'routineId': routine.id,
-        'preferredTime': routine.preferredTime, // 정렬을 위해 추가
+        'preferredTime': routine.preferredTime, // 시간 정보 저장
       };
     }).toList();
+  }
 
-    // 시간 기반으로 정렬
-    _routines.sort((a, b) {
-      final timeA = _parseTimeToMinutes(a['preferredTime'] as String?);
-      final timeB = _parseTimeToMinutes(b['preferredTime'] as String?);
+  /// 시간을 기준으로 루틴을 비교하는 함수
+  int _compareByTime(ViewAllRoutineItem a, ViewAllRoutineItem b) {
+    // preferredTime이 있는 경우 시간 순서로 정렬
+    final timeA = _parseTime(a.preferredTime);
+    final timeB = _parseTime(b.preferredTime);
+
+    // 시간이 있는 경우 시간 순서로 정렬
+    if (timeA != null && timeB != null) {
       return timeA.compareTo(timeB);
-    });
-
-    // 화면이 로드되면 날씨 팝업 표시
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showWeatherDialog();
-    });
+    }
+    // 한쪽만 시간이 있는 경우 시간이 있는 것을 앞으로
+    if (timeA != null) return -1;
+    if (timeB != null) return 1;
+    // 둘 다 시간이 없으면 이름 순서로 정렬
+    return a.name.compareTo(b.name);
   }
 
-  /// 날씨 다이얼로그 표시
-  Future<void> _showWeatherDialog() async {
-    await showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
-      builder: (BuildContext context) {
-        bool? selectedButton;
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            return Dialog(
-              backgroundColor: Colors.transparent,
-              insetPadding: const EdgeInsets.symmetric(horizontal: 40),
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: AppColors.backgroundWhite,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '오늘 오전에 비가 와요.',
-                      style: AppTextStyles.sectionTitle(
-                        context,
-                      ).copyWith(fontSize: 18, fontWeight: FontWeight.w600),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '세탁기 돌리기를 내일로 미룰까요?',
-                      style: AppTextStyles.sectionTitle(
-                        context,
-                      ).copyWith(fontSize: 18, fontWeight: FontWeight.w600),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                selectedButton = true;
-                              });
-                              Future.delayed(
-                                const Duration(milliseconds: 150),
-                                () {
-                                  if (context.mounted) {
-                                    Navigator.of(context).pop(true);
-                                  }
-                                },
-                              );
-                            },
-                            child: Container(
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: selectedButton == true
-                                    ? AppColors.textAccent
-                                    : AppColors.backgroundGray,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                'YES',
-                                style: TextStyle(
-                                  color: selectedButton == true
-                                      ? Colors.white
-                                      : AppColors.textSecondary,
-                                  fontSize: 16,
-                                  fontFamily: 'LG Smart_H',
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                selectedButton = false;
-                              });
-                              Future.delayed(
-                                const Duration(milliseconds: 150),
-                                () {
-                                  if (context.mounted) {
-                                    Navigator.of(context).pop(false);
-                                  }
-                                },
-                              );
-                            },
-                            child: Container(
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: selectedButton == false
-                                    ? AppColors.textAccent
-                                    : AppColors.backgroundGray,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                'NO',
-                                style: TextStyle(
-                                  color: selectedButton == false
-                                      ? Colors.white
-                                      : AppColors.textSecondary,
-                                  fontSize: 16,
-                                  fontFamily: 'LG Smart_H',
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  /// preferredTime을 분(minutes) 단위로 변환하여 정렬에 사용
-  /// 반환값: 오늘 00:00부터의 분 수 (0-1439)
-  int _parseTimeToMinutes(String? preferredTime) {
+  /// preferredTime 문자열을 분 단위로 변환 (06:00 = 360, 14:30 = 870)
+  int? _parseTime(String? preferredTime) {
     if (preferredTime == null || preferredTime.isEmpty) {
-      return 1440; // 시간이 없으면 맨 뒤로
+      return null;
     }
 
-    // "HH:MM" 형식인 경우
-    if (preferredTime.contains(':')) {
-      try {
-        final parts = preferredTime.split(':');
-        if (parts.length >= 2) {
-          final hour = int.parse(parts[0].trim());
-          // 분 부분 파싱 (숫자만 추출)
-          final minuteStr = parts[1].trim();
-          final minute = int.parse(minuteStr.split(RegExp(r'[^\d]'))[0]);
-          if (hour >= 0 && hour < 24 && minute >= 0 && minute < 60) {
-            return hour * 60 + minute;
-          }
+    try {
+      // "HH:MM" 형식 파싱
+      final parts = preferredTime.split(':');
+      if (parts.length >= 2) {
+        final hour = int.parse(parts[0]);
+        final minute = int.parse(parts[1]);
+        // 06:00부터 시작하는 시간 체계 (06:00 = 0, 23:59 = 1079, 00:00 = 1080, 05:59 = 1439)
+        if (hour >= 6) {
+          return hour * 60 + minute; // 06:00 ~ 23:59
+        } else {
+          return (hour + 24) * 60 + minute; // 00:00 ~ 05:59 (다음날로 간주)
         }
-      } catch (e) {
-        // 파싱 실패 시 시간대 이름으로 처리
       }
+    } catch (e) {
+      print('Error parsing time: $preferredTime, error: $e');
     }
-
-    // 시간대 이름인 경우 (MORNING, AFTERNOON 등)
-    final upperTime = preferredTime.toUpperCase();
-    switch (upperTime) {
-      case 'DAWN':
-        return 180; // 3:00 (새벽 3시)
-      case 'MORNING':
-        return 480; // 8:00 (아침 8시)
-      case 'AFTERNOON':
-        return 780; // 13:00 (오후 1시)
-      case 'EVENING':
-        return 1140; // 19:00 (저녁 7시)
-      case 'NIGHT':
-        return 1260; // 21:00 (밤 9시)
-      default:
-        return 1440; // 알 수 없는 값은 맨 뒤로
-    }
+    return null;
   }
 
   /// 루틴 타입에 따른 아이콘 크기 반환
@@ -254,6 +121,22 @@ class _PriorityScreenState extends State<PriorityScreen> {
     blurRadius: 68,
     offset: Offset(58, 26),
     spreadRadius: 0,
+  );
+
+  static const _bannerTitleStyle = TextStyle(
+    color: Colors.white,
+    fontSize: 20,
+    fontFamily: 'LG Smart_H',
+    fontWeight: FontWeight.w600,
+    height: 1,
+  );
+
+  static const _bannerTextStyle = TextStyle(
+    color: Colors.white,
+    fontSize: 15,
+    fontFamily: 'LG Smart_H',
+    fontWeight: FontWeight.w700,
+    height: 1.52,
   );
 
   static const _cardTitleStyle = TextStyle(
@@ -386,23 +269,15 @@ class _PriorityScreenState extends State<PriorityScreen> {
                                     children: [
                                       Text(
                                         '지현님이 선택한 루틴',
-                                        style: TextStyle(
-                                          color: Colors.white,
+                                        style: _bannerTitleStyle.copyWith(
                                           fontSize: 20,
-                                          fontFamily: 'LG Smart_H',
-                                          fontWeight: FontWeight.w600,
-                                          height: 1,
                                         ),
                                       ),
                                       const SizedBox(height: 12),
                                       Text(
                                         '오전에 비가 예정된 오늘,\n세탁기는 오후에 돌리길 추천드립니다.',
-                                        style: TextStyle(
-                                          color: Colors.white,
+                                        style: _bannerTextStyle.copyWith(
                                           fontSize: 13,
-                                          fontFamily: 'LG Smart_H',
-                                          fontWeight: FontWeight.w700,
-                                          height: 1.52,
                                         ),
                                       ),
                                     ],
@@ -455,29 +330,24 @@ class _PriorityScreenState extends State<PriorityScreen> {
                           buildDefaultDragHandles: false,
                           onReorder: (oldIndex, newIndex) {
                             setState(() {
-                              // ReorderableListView의 onReorder 동작:
-                              // oldIndex < newIndex: 아래로 이동할 때, newIndex는 제거 후 기준이므로 1을 빼야 함
-                              // oldIndex > newIndex: 위로 이동할 때, newIndex는 그대로 사용
-                              final adjustedNewIndex = oldIndex < newIndex
-                                  ? newIndex - 1
-                                  : newIndex;
-
-                              // 같은 위치면 변경하지 않음
-                              if (oldIndex == adjustedNewIndex) {
+                              // 인덱스 범위 검증
+                              if (oldIndex < 0 || oldIndex >= _routines.length)
                                 return;
+                              if (newIndex < 0) newIndex = 0;
+                              if (newIndex >= _routines.length)
+                                newIndex = _routines.length - 1;
+
+                              if (newIndex > oldIndex) {
+                                newIndex -= 1;
                               }
 
-                              // 범위 검증
-                              if (oldIndex < 0 ||
-                                  oldIndex >= _routines.length ||
-                                  adjustedNewIndex < 0 ||
-                                  adjustedNewIndex >= _routines.length) {
-                                return;
-                              }
+                              // 범위 재검증
+                              if (newIndex < 0) newIndex = 0;
+                              if (newIndex >= _routines.length)
+                                newIndex = _routines.length - 1;
 
-                              // 아이템 이동
                               final item = _routines.removeAt(oldIndex);
-                              _routines.insert(adjustedNewIndex, item);
+                              _routines.insert(newIndex, item);
                             });
                           },
                           children: _routines.asMap().entries.map((entry) {
@@ -511,118 +381,111 @@ class _PriorityScreenState extends State<PriorityScreen> {
                   ),
                 ),
 
-                // 하단 네비게이션
-                const CustomBottomNavigation(currentScreen: 'routine'),
-              ],
-            ),
+                // 우선순위 설정 버튼
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: GestureDetector(
+                    onTap: () {
+                      // 현재 순서대로 루틴 ID 순서 저장
+                      final routineOrder = _routines
+                          .map((r) => r['routineId'] as int)
+                          .toList();
 
-            // 우선순위 설정 버튼
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 60 + MediaQuery.of(context).padding.bottom,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: const BoxDecoration(
-                  color: AppColors.backgroundGray,
-                ),
-                child: GestureDetector(
-                  onTap: () {
-                    // 현재 순서대로 루틴 ID 순서 저장
-                    final routineOrder = _routines
-                        .map((r) => r['routineId'] as int)
-                        .toList();
+                      final selectedRoutineIds = widget.selectedRoutines
+                          .map((r) => r.id)
+                          .toSet();
 
-                    final selectedRoutineIds = widget.selectedRoutines
-                        .map((r) => r.id)
-                        .toSet();
-
-                    // 날짜별로 저장
-                    if (widget.selectedDateKey != null) {
-                      setPriorityOrderForDate(
-                        widget.selectedDateKey!,
-                        routineOrder,
-                      );
-                      setSelectedRoutinesForDate(
-                        widget.selectedDateKey!,
-                        selectedRoutineIds,
-                      );
-                    } else {
-                      // 날짜 정보가 없으면 기존 방식 사용
-                      setPriorityOrder(routineOrder);
-                      setSelectedRoutineIds(selectedRoutineIds);
-                    }
-
-                    // 날짜가 있으면 날짜 인덱스 복원
-                    if (widget.selectedDateKey != null) {
-                      // dateKey를 DateTime으로 파싱하여 날짜 인덱스 계산
-                      try {
-                        final parts = widget.selectedDateKey!.split('-');
-                        if (parts.length == 3) {
-                          final date = DateTime(
-                            int.parse(parts[0]),
-                            int.parse(parts[1]),
-                            int.parse(parts[2]),
-                          );
-
-                          // 날짜 인덱스 계산: 기준일(12일 금요일)로부터의 차이
-                          final now = DateTime.now();
-                          final baseDate = DateTime(now.year, now.month, 12);
-                          final currentWeekday = baseDate.weekday;
-                          final daysUntilFriday = (5 - currentWeekday + 7) % 7;
-                          final referenceDate = baseDate.add(
-                            Duration(days: daysUntilFriday),
-                          );
-                          final daysDiff = date
-                              .difference(referenceDate)
-                              .inDays;
-                          final dateIndex = 15 + daysDiff; // 15는 기준 인덱스
-
-                          // 날짜 인덱스 저장
-                          setRoutineScreenDate(dateIndex.clamp(0, 30));
-                        }
-                      } catch (e) {
-                        print('Error parsing dateKey: $e');
+                      // 날짜별로 저장
+                      if (widget.selectedDateKey != null) {
+                        setPriorityOrderForDate(
+                          widget.selectedDateKey!,
+                          routineOrder,
+                        );
+                        setSelectedRoutinesForDate(
+                          widget.selectedDateKey!,
+                          selectedRoutineIds,
+                        );
+                      } else {
+                        // 날짜 정보가 없으면 기존 방식 사용
+                        setPriorityOrder(routineOrder);
+                        setSelectedRoutineIds(selectedRoutineIds);
                       }
-                    }
 
-                    // RoutineScreen으로 이동
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (context, animation, secondaryAnimation) =>
-                            const RoutineScreen(),
-                        transitionDuration: Duration.zero,
-                        reverseTransitionDuration: Duration.zero,
+                      // 날짜가 있으면 날짜 인덱스 복원
+                      if (widget.selectedDateKey != null) {
+                        // dateKey를 DateTime으로 파싱하여 날짜 인덱스 계산
+                        try {
+                          final parts = widget.selectedDateKey!.split('-');
+                          if (parts.length == 3) {
+                            final date = DateTime(
+                              int.parse(parts[0]),
+                              int.parse(parts[1]),
+                              int.parse(parts[2]),
+                            );
+
+                            // 날짜 인덱스 계산: 기준일(12일 금요일)로부터의 차이
+                            final now = DateTime.now();
+                            final baseDate = DateTime(now.year, now.month, 12);
+                            final currentWeekday = baseDate.weekday;
+                            final daysUntilFriday =
+                                (5 - currentWeekday + 7) % 7;
+                            final referenceDate = baseDate.add(
+                              Duration(days: daysUntilFriday),
+                            );
+                            final daysDiff = date
+                                .difference(referenceDate)
+                                .inDays;
+                            final dateIndex = 15 + daysDiff; // 15는 기준 인덱스
+
+                            // 날짜 인덱스 저장
+                            setRoutineScreenDate(dateIndex.clamp(0, 30));
+                          }
+                        } catch (e) {
+                          print('Error parsing dateKey: $e');
+                        }
+                      }
+
+                      // RoutineScreen으로 이동
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        PageRouteBuilder(
+                          pageBuilder:
+                              (context, animation, secondaryAnimation) =>
+                                  const RoutineScreen(),
+                          transitionDuration: Duration.zero,
+                          reverseTransitionDuration: Duration.zero,
+                        ),
+                        (route) => false,
+                      );
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      height: 50,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 15,
                       ),
-                      (route) => false,
-                    );
-                  },
-                  child: Container(
-                    width: double.infinity,
-                    height: 50,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 15,
-                    ),
-                    decoration: ShapeDecoration(
-                      color: AppColors.textAccent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(40),
+                      decoration: ShapeDecoration(
+                        color: AppColors.textAccent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(40),
+                        ),
                       ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        '우선순위 설정',
-                        style: _buttonTextStyle.copyWith(
-                          fontWeight: FontWeight.w700,
+                      child: Center(
+                        child: Text(
+                          '우선순위 설정',
+                          style: _buttonTextStyle.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
+
+                // 하단 네비게이션
+                const CustomBottomNavigation(currentScreen: 'routine'),
+              ],
             ),
           ],
         ),
