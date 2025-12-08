@@ -130,9 +130,40 @@ class _ChatScreenState extends State<ChatScreen> {
           _messages.add({'text': reply, 'isUser': false, 'fontSize': 15.0});
           _isLoading = false;
         });
+        _scrollToBottom();
       } else {
-        final errorBody = response.body;
-        throw Exception('서버 오류: ${response.statusCode}\n$errorBody');
+        // 에러 응답 파싱 시도
+        try {
+          final errorData = jsonDecode(response.body);
+          final errorMsg =
+              errorData['message'] as String? ??
+              errorData['error'] as String? ??
+              errorData['details'] as String?;
+
+          String errorMessage = '서버 오류가 발생했습니다.';
+
+          // 할당량 초과 에러 처리
+          if (errorMsg != null && errorMsg.contains('quota') ||
+              errorMsg != null && errorMsg.contains('429')) {
+            errorMessage = 'AI 서비스 사용량이 초과되었습니다.\n잠시 후 다시 시도해주세요.';
+          } else if (errorMsg != null) {
+            errorMessage = errorMsg;
+          }
+
+          setState(() {
+            _messages.add({
+              'text': errorMessage,
+              'isUser': false,
+              'fontSize': 15.0,
+            });
+            _isLoading = false;
+          });
+          _scrollToBottom();
+          return;
+        } catch (e) {
+          // JSON 파싱 실패 시 기본 에러 처리
+          throw Exception('서버 오류: ${response.statusCode}\n${response.body}');
+        }
       }
     } catch (e) {
       String errorMessage = '죄송합니다. 연결에 문제가 발생했습니다.';
@@ -143,7 +174,12 @@ class _ChatScreenState extends State<ChatScreen> {
       } else if (e.toString().contains('요청 시간 초과')) {
         errorMessage = '요청 시간이 초과되었습니다.\n잠시 후 다시 시도해주세요.';
       } else if (e.toString().contains('서버 오류')) {
-        errorMessage = '서버 오류가 발생했습니다.\n관리자에게 문의해주세요.';
+        // 에러 메시지에서 할당량 초과 확인
+        if (e.toString().contains('quota') || e.toString().contains('429')) {
+          errorMessage = 'AI 서비스 사용량이 초과되었습니다.\n잠시 후 다시 시도해주세요.';
+        } else {
+          errorMessage = '서버 오류가 발생했습니다.\n관리자에게 문의해주세요.';
+        }
       }
 
       setState(() {
@@ -259,25 +295,21 @@ class _ChatScreenState extends State<ChatScreen> {
                           if (_isLoading && index == _messages.length) {
                             return Padding(
                               padding: const EdgeInsets.only(
-                                bottom: 24,
-                                top: 16,
+                                bottom: 16,
+                                top: 8,
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.start,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const SizedBox(width: 16),
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    child: const SizedBox(
-                                      width: 32,
-                                      height: 32,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 3,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Color(0xFF4B57BB),
-                                            ),
+                                  const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Color(0xFF4B57BB),
                                       ),
                                     ),
                                   ),
