@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime, date, timedelta
+from sqlalchemy import func, case
 
 from Project.extensions import db
 from models import User, Routine, RoutineExecution
@@ -17,6 +18,7 @@ def routine_to_dict(r: Routine) -> dict:
         "routine_type": r.routine_type,
         "run_minutes": r.run_minutes,
         "schedule_type": r.schedule_type,
+        "schedule_frequency": r.schedule_frequency,
         "preferred_time": r.preferred_time,
         "is_active": r.is_active,
         "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -90,11 +92,24 @@ def create_routine():
         from .maping import get_default_run_minutes
         run_minutes = get_default_run_minutes(routine_type)
 
+    # schedule_frequency 처리 (기본값 1)
+    schedule_frequency = data.get("schedule_frequency", 1)
+    if schedule_frequency is not None:
+        try:
+            schedule_frequency = int(schedule_frequency)
+            if schedule_frequency < 1:
+                schedule_frequency = 1
+        except (ValueError, TypeError):
+            schedule_frequency = 1
+    else:
+        schedule_frequency = 1
+
     new_routine = Routine(
         user_id=user.id,
         name=name,
         routine_type=routine_type,
         schedule_type=schedule_type,
+        schedule_frequency=schedule_frequency,
         preferred_time=preferred_time,
         run_minutes=run_minutes,
         is_active=True,
@@ -112,6 +127,7 @@ def list_routines():
     """
     전체 루틴 목록 조회 (VIEW ALL 화면용)
     집계 정보(완료 횟수 등)를 포함하여 반환
+    목표 달성된 WEEKLY/MONTHLY 루틴은 필터링하여 제외
     GET /api/routines?user_id=1
     """
     user_id = request.args.get("user_id", type=int, default=1)
@@ -126,38 +142,90 @@ def list_routines():
         .all()
     )
 
+    if not routines:
+        return jsonify([])
+    
+    # 목표 달성된 WEEKLY/MONTHLY 루틴 필터링
+    from .maping import is_goal_achieved, is_scheduled_today
+    from datetime import date
+    today = date.today()
+    
+    filtered_routines = []
+    for r in routines:
+        st = (r.schedule_type or "").upper()
+        # DAILY 루틴은 항상 표시
+        if st == "DAILY":
+            filtered_routines.append(r)
+        # WEEKLY/MONTHLY 루틴은 목표 달성되지 않은 것만 표시
+        elif st in ["WEEKLY", "MONTHLY"]:
+            # 오늘 스케줄에 해당하는지 확인
+            scheduled = is_scheduled_today(r, today)
+            # 목표 달성 여부 확인
+            goal_achieved = is_goal_achieved(r, user_id, today)
+            
+            print(f"[list_routines] 루틴 {r.id} ({r.name}): schedule_type={st}, scheduled={scheduled}, goal_achieved={goal_achieved}")
+            
+            # 오늘 스케줄에 해당하고 목표 달성되지 않은 것만 표시
+            if scheduled and not goal_achieved:
+                filtered_routines.append(r)
+            else:
+                print(f"[list_routines] 루틴 {r.id} ({r.name}) 필터링됨: scheduled={scheduled}, goal_achieved={goal_achieved}")
+        else:
+            # 기타 타입은 그대로 표시
+            filtered_routines.append(r)
+    
+    routines = filtered_routines
+
+    routine_ids = [r.id for r in routines]
+    
+    # 오늘 날짜 범위 계산
+    today = date.today()
+    today_start = datetime.combine(today, datetime.min.time())
+    today_end = datetime.combine(today + timedelta(days=1), datetime.min.time())
+
+    # 한 번의 쿼리로 모든 루틴의 완료 횟수 집계 (status는 숫자로 저장됨: 2=완료)
+    # Oracle에서는 숫자 컬럼과 문자열 비교 시 타입 오류 발생하므로 숫자만 비교
+    completed_counts = (
+        db.session.query(
+            RoutineExecution.routine_id,
+            func.count(RoutineExecution.id).label('count')
+        )
+        .filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id.in_(routine_ids),
+            RoutineExecution.status == 2  # 숫자 2만 비교 (완료 상태)
+        )
+        .group_by(RoutineExecution.routine_id)
+        .all()
+    )
+    
+    # 완료 횟수 딕셔너리로 변환
+    completed_count_map = {routine_id: count for routine_id, count in completed_counts}
+    
+    # 한 번의 쿼리로 오늘 완료된 루틴 ID 목록 가져오기 (status는 숫자로 저장됨: 2=완료)
+    # Oracle에서는 숫자 컬럼과 문자열 비교 시 타입 오류 발생하므로 숫자만 비교
+    today_completed_routine_ids = (
+        db.session.query(RoutineExecution.routine_id)
+        .filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id.in_(routine_ids),
+            RoutineExecution.start_time >= today_start,
+            RoutineExecution.start_time < today_end,
+            RoutineExecution.status == 2  # 숫자 2만 비교 (완료 상태)
+        )
+        .distinct()
+        .all()
+    )
+    
+    # 오늘 완료된 루틴 ID 집합으로 변환
+    today_completed_set = {row[0] for row in today_completed_routine_ids}
+
     # 집계 정보 포함하여 반환
     result = []
     for r in routines:
-        # 완료 횟수 집계 (status가 "2" 또는 2인 것만 카운트)
-        # DB에서 status가 문자열로 저장될 수도 있고 숫자로 저장될 수도 있음
-        all_executions = (
-            RoutineExecution.query
-            .filter_by(user_id=user_id, routine_id=r.id)
-            .all()
-        )
-        
-        completed_count = 0
-        for exec in all_executions:
-            # status가 문자열 "2"이거나 숫자 2인 경우 모두 체크
-            if str(exec.status) == "2" or exec.status == 2:
-                completed_count += 1
-        
-        # 오늘 완료 여부 확인
-        today = date.today()
-        today_start = datetime.combine(today, datetime.min.time())
-        today_end = datetime.combine(today + timedelta(days=1), datetime.min.time())
-        
-        today_executions = [
-            exec for exec in all_executions
-            if exec.start_time and today_start <= exec.start_time < today_end
-            and (str(exec.status) == "2" or exec.status == 2)
-        ]
-        
         routine_dict = routine_to_dict(r)
-        routine_dict["completed_count"] = completed_count
-        routine_dict["is_done_today"] = len(today_executions) > 0
-        
+        routine_dict["completed_count"] = completed_count_map.get(r.id, 0)
+        routine_dict["is_done_today"] = r.id in today_completed_set
         result.append(routine_dict)
 
     return jsonify(result)

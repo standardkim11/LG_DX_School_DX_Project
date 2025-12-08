@@ -188,8 +188,12 @@ def parse_preferred_time(value) -> int:
 # ======================
 
 # status 값은 너희 ENUM 규칙에 맞게 조정해도 됨
-DONE_STATUS = 2  # 예: 0=PENDING, 1=RUNNING, 2=DONE
-FAILED_STATUS = 3  # 실패
+# RoutineExecution.status는 숫자(2=완료, 3=실패) 또는 문자열("COMPLETED", "FAILED")로 저장될 수 있음
+# DB에 실제로 숫자로 저장되어 있으므로 숫자와 문자열 둘 다 처리
+DONE_STATUS = 2  # 완료 상태 (숫자)
+DONE_STATUS_STR = "COMPLETED"  # 완료 상태 (문자열)
+FAILED_STATUS = 3  # 실패 상태 (숫자)
+FAILED_STATUS_STR = "FAILED"  # 실패 상태 (문자열)
 
 # =========================
 # 역매핑 (정수 → 문자열 라벨)
@@ -230,20 +234,29 @@ def get_default_run_minutes(routine_type) -> int:
 def is_scheduled_today(routine: Routine, today: date) -> bool:
     """
     ROUTINE.schedule_type 기준으로 '오늘 후보인지' 판단
-    DAILY  : 항상 True
-    WEEKLY : created_at 요일 == 오늘 요일
-    MONTHLY: created_at 일자 == 오늘 일자
+    DAILY  : created_at 날짜부터 삭제할 때까지 매일 True
+    WEEKLY : created_at 요일 == 오늘 요일 (단, created_at 날짜 이후여야 함)
+    MONTHLY: created_at 일자 == 오늘 일자 (단, created_at부터 한 달 동안만)
     ADHOC  : 일단 항상 True (나중에 규칙 바뀌면 여기만 수정)
     """
     st = (routine.schedule_type or "").upper()
     created = routine.created_at.date() if routine.created_at else today
 
+    # created_at 날짜 이전이면 표시하지 않음
+    if today < created:
+        return False
+
     if st == "DAILY":
+        # DAILY: created_at 날짜부터 삭제할 때까지 매일 표시
         return True
     elif st == "WEEKLY":
+        # WEEKLY: created_at 요일 == 오늘 요일 (단, created_at 날짜 이후)
         return created.weekday() == today.weekday()
     elif st == "MONTHLY":
-        return created.day == today.day
+        # MONTHLY: created_at부터 30일간 매일 표시
+        from datetime import timedelta
+        one_month_later = created + timedelta(days=30)
+        return today <= one_month_later
     elif st == "ADHOC":
         return True
     else:
@@ -265,11 +278,105 @@ def is_done_today(routine: Routine, user_id: int, today: date) -> bool:
     if not last_log or not last_log.start_time:
         return False
 
-    # 완료(status=2)만 체크. 실패(status=3)는 제외하지 않음
+    # 완료 상태만 체크 (status는 숫자로 저장됨: 2=완료). 실패는 제외하지 않음
     return (
         last_log.start_time.date() == today
-        and last_log.status == DONE_STATUS  # status=2 (DONE)만 체크
+        and last_log.status == DONE_STATUS  # 숫자 2만 비교
     )
+
+
+def is_goal_achieved(routine: Routine, user_id: int, today: date) -> bool:
+    """
+    WEEKLY/MONTHLY 루틴의 목표 달성 여부 확인
+    WEEKLY: 이번 주에 schedule_frequency 횟수만큼 완료했으면 True
+    MONTHLY: created_at부터 30일간 schedule_frequency 횟수만큼 완료했으면 True
+    DAILY: 항상 False (목표 달성 개념 없음)
+    """
+    st = (routine.schedule_type or "").upper()
+    
+    if st == "DAILY":
+        return False  # DAILY는 목표 달성 개념 없음
+    
+    # schedule_frequency 가져오기 (기본값 1)
+    frequency = getattr(routine, 'schedule_frequency', 1) or 1
+    if frequency < 1:
+        frequency = 1
+    
+    print(f"[is_goal_achieved] 루틴 {routine.id} ({routine.name}): schedule_type={st}, frequency={frequency}, today={today}")
+    if frequency < 1:
+        frequency = 1
+    
+    # 완료된 실행 기록 확인 (숫자 2 또는 문자열 "COMPLETED" 둘 다 처리)
+    from Project.extensions import db
+    from models import RoutineExecution
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, or_
+    
+    if st == "WEEKLY":
+        # 이번 주 시작일 계산 (월요일)
+        weekday = today.weekday()  # 0=월요일, 6=일요일
+        week_start = today - timedelta(days=weekday)
+        week_start_dt = datetime.combine(week_start, datetime.min.time())
+        week_end_dt = datetime.combine(week_start + timedelta(days=7), datetime.min.time())
+        
+        # 이번 주 완료 횟수 집계 (status는 숫자로 저장됨: 2=완료)
+        # Oracle에서는 숫자 컬럼과 문자열 비교 시 타입 오류 발생하므로 숫자만 비교
+        completed_count = db.session.query(func.count(RoutineExecution.id)).filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id == routine.id,
+            RoutineExecution.start_time >= week_start_dt,
+            RoutineExecution.start_time < week_end_dt,
+            RoutineExecution.status == 2  # 숫자 2만 비교 (완료 상태)
+        ).scalar() or 0
+        
+        return completed_count >= frequency
+        
+    elif st == "MONTHLY":
+        # MONTHLY: created_at부터 30일간 기간 내에 frequency 횟수만큼 완료했으면 목표 달성
+        created = routine.created_at.date() if routine.created_at else today
+        created_dt = datetime.combine(created, datetime.min.time())
+        # created_at부터 30일 후까지
+        period_end = created + timedelta(days=30)
+        period_end_dt = datetime.combine(period_end, datetime.min.time())
+        
+        # 기간 내 완료 횟수 집계 (status는 숫자로 저장됨: 2=완료)
+        # Oracle에서는 숫자 컬럼과 문자열 비교 시 타입 오류 발생하므로 숫자만 비교
+        completed_count = db.session.query(func.count(RoutineExecution.id)).filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id == routine.id,
+            RoutineExecution.start_time >= created_dt,
+            RoutineExecution.start_time < period_end_dt,
+            RoutineExecution.status == 2  # 숫자 2만 비교 (완료 상태)
+        ).scalar() or 0
+        
+        print(f"[is_goal_achieved] MONTHLY 루틴 {routine.id}: created={created}, period_end={period_end}, completed_count={completed_count}, frequency={frequency}, today={today}")
+        
+        # 목표 달성 여부 확인
+        if completed_count >= frequency:
+            # 목표 달성 시, 마지막 완료 날짜 확인 (status는 숫자로 저장됨: 2=완료)
+            # Oracle에서는 숫자 컬럼과 문자열 비교 시 타입 오류 발생하므로 숫자만 비교
+            last_completed = RoutineExecution.query.filter(
+                RoutineExecution.user_id == user_id,
+                RoutineExecution.routine_id == routine.id,
+                RoutineExecution.start_time >= created_dt,
+                RoutineExecution.start_time < period_end_dt,
+                RoutineExecution.status == 2  # 숫자 2만 비교 (완료 상태)
+            ).order_by(RoutineExecution.start_time.desc()).first()
+            
+            if last_completed and last_completed.start_time:
+                last_completed_date = last_completed.start_time.date()
+                # 마지막 완료 날짜의 다음날부터는 더 이상 표시하지 않음
+                # 오늘이 마지막 완료 날짜보다 이후면 True (표시 안함)
+                should_hide = today > last_completed_date
+                print(f"[is_goal_achieved] MONTHLY 루틴 {routine.id}: completed_count={completed_count}, frequency={frequency}, last_completed_date={last_completed_date}, today={today}, should_hide={should_hide}")
+                return should_hide
+            # 완료 기록이 있지만 날짜 정보가 없으면 목표 달성으로 간주
+            print(f"[is_goal_achieved] MONTHLY 루틴 {routine.id}: completed_count={completed_count}, frequency={frequency}, last_completed 정보 없음, True 반환")
+            return True
+        
+        return False
+    
+    return False
 
 
 def is_failed_today(routine: Routine, user_id: int, today: date) -> bool:

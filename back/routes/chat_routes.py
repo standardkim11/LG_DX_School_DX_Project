@@ -368,14 +368,16 @@ def chat():
                     if last_log and last_log.start_time:
                         last_date = last_log.start_time.date()
                         days_ago = (today - last_date).days
+                        # 음수일 경우 절댓값 사용 (미래 날짜 처리)
+                        days_ago_abs = abs(days_ago)
                         if days_ago == 0:
                             last_exec_info = " (오늘 실행함)"
                         elif days_ago == 1:
                             last_exec_info = " (어제 실행함)"
-                        elif days_ago < 7:
-                            last_exec_info = f" ({days_ago}일 전 실행함)"
+                        elif days_ago_abs < 7:
+                            last_exec_info = f" ({days_ago_abs}일 전 실행함)"
                         else:
-                            last_exec_info = f" ({days_ago}일 전 실행함, 오래됨)"
+                            last_exec_info = f" ({days_ago_abs}일 전 실행함, 오래됨)"
                 except Exception:
                     pass
             
@@ -409,6 +411,7 @@ def chat():
 - 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하지 마세요.
 - 각 루틴은 한 번만 언급하고, 루틴 이름과 순서는 목록에 나온 그대로 따르세요.
 - 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
+- 날씨, 온도, 습도 등 요소를 이용하여 추천 이유를 설명하세요.
 
 [오늘의 정보]
 {context}
@@ -436,6 +439,7 @@ def chat():
 
 '오늘의 정보'에 있는 날씨 정보, 최근 실행 기록 등의 실제 데이터를 활용하여 점수와 함께 자연스럽게 설명하세요.
 정보가 충분하지 않으면 "우선순위 점수가 높아서 먼저 추천드려요."처럼 간단히 언급하세요.
+필요하다면 추천 이유에 약간의 주관이 들어가도 좋아요.
 
 """
     else:
