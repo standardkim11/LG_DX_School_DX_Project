@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import '../Screens/home_screen.dart';
 import '../Screens/push_screen.dart';
+import '../Screens/care_screen.dart';
 
 class CustomBottomNavigation extends StatelessWidget {
   final String? currentScreen; // 'home', 'routine', 'todo' 등
@@ -77,14 +78,24 @@ class CustomBottomNavigation extends StatelessWidget {
                     ),
                   ),
                   SizedBox(width: gapWidth),
-                  SizedBox(
-                    width: iconSize,
-                    height: iconSize,
-                    child: Image.asset(
-                      'assets/bottom_navigation_icon/Care_icon.png',
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                      isAntiAlias: true,
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CareScreen(),
+                        ),
+                      );
+                    },
+                    child: SizedBox(
+                      width: iconSize,
+                      height: iconSize,
+                      child: Image.asset(
+                        'assets/bottom_navigation_icon/Care_icon.png',
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                        isAntiAlias: true,
+                      ),
                     ),
                   ),
                   SizedBox(width: gapWidth),
