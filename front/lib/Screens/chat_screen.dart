@@ -22,10 +22,11 @@ class _ChatScreenState extends State<ChatScreen> {
   // API 베이스 URL
   static String get baseUrl {
     // config.dart에서 설정된 IP 주소 사용
+    // Web에서는 Platform API를 사용할 수 없으므로 kIsWeb 체크
     return ApiConfig.getBaseUrl(
       isWeb: kIsWeb,
-      isAndroid: Platform.isAndroid,
-      isIOS: Platform.isIOS,
+      isAndroid: !kIsWeb && Platform.isAndroid,
+      isIOS: !kIsWeb && Platform.isIOS,
     );
   }
 
@@ -213,47 +214,36 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: KeyboardListener(
-                        focusNode: FocusNode(),
-                        onKeyEvent: (event) {
-                          if (event is KeyDownEvent &&
-                              event.logicalKey == LogicalKeyboardKey.enter &&
-                              !HardwareKeyboard.instance.isShiftPressed) {
-                            if (_messageController.text.trim().isNotEmpty &&
-                                !_isLoading) {
-                              _sendMessage();
-                            }
-                          }
-                        },
-                        child: TextField(
-                          controller: _messageController,
-                          focusNode: _messageFocusNode,
-                          maxLines: 1,
-                          style: const TextStyle(
+                      child: TextField(
+                        controller: _messageController,
+                        focusNode: _messageFocusNode,
+                        maxLines: 1,
+                        keyboardType: TextInputType.text,
+                        textInputAction: TextInputAction.send,
+                        enableInteractiveSelection: true,
+                        style: const TextStyle(
+                          color: Color(0xFF606D80),
+                          fontSize: 14,
+                          fontFamily: 'LG Smart_H',
+                          fontWeight: FontWeight.w400,
+                          height: 1.43,
+                        ),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          hintText: '어떤 하루를 보내실 건가요?',
+                          hintStyle: TextStyle(
                             color: Color(0xFF606D80),
                             fontSize: 14,
                             fontFamily: 'LG Smart_H',
                             fontWeight: FontWeight.w400,
                             height: 1.43,
                           ),
-                          decoration: const InputDecoration(
-                            border: InputBorder.none,
-                            hintText: '어떤 하루를 보내실 건가요?',
-                            hintStyle: TextStyle(
-                              color: Color(0xFF606D80),
-                              fontSize: 14,
-                              fontFamily: 'LG Smart_H',
-                              fontWeight: FontWeight.w400,
-                              height: 1.43,
-                            ),
-                          ),
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (text) {
-                            if (text.trim().isNotEmpty) {
-                              _sendMessage();
-                            }
-                          },
                         ),
+                        onSubmitted: (text) {
+                          if (text.trim().isNotEmpty && !_isLoading) {
+                            _sendMessage();
+                          }
+                        },
                       ),
                     ),
                     const SizedBox(width: 10),

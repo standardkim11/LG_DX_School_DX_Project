@@ -1,10 +1,64 @@
 import sys, os
+import subprocess
 from pathlib import Path
 
 # Add project root to Python path so imports work from any directory
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
+
+# ============================================================
+#  🔹 0) requirements.txt 자동 설치 체크
+# ============================================================
+def check_and_install_requirements():
+    """requirements.txt가 있으면 필요한 패키지가 설치되어 있는지 확인하고 없으면 설치"""
+    requirements_path = project_root / "requirements.txt"
+    
+    if not requirements_path.exists():
+        print("[INFO] requirements.txt 파일을 찾을 수 없습니다.")
+        return
+    
+    print("[INFO] requirements.txt 확인 중...")
+    
+    # pip list로 설치된 패키지 확인
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "list", "--format=freeze"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        installed_packages = {line.split("==")[0].lower() for line in result.stdout.splitlines() if "==" in line}
+    except subprocess.CalledProcessError:
+        installed_packages = set()
+    
+    # requirements.txt 읽기
+    with open(requirements_path, "r", encoding="utf-8") as f:
+        required_packages = []
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                # 패키지 이름 추출 (예: "Flask>=2.0.0" -> "flask")
+                package_name = line.split(">=")[0].split("==")[0].split("<")[0].split(">")[0].strip().lower()
+                if package_name and package_name not in installed_packages:
+                    required_packages.append(line)
+    
+    if required_packages:
+        print(f"[INFO] {len(required_packages)}개의 패키지가 누락되었습니다. 자동 설치를 시작합니다...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", str(requirements_path)],
+                check=True
+            )
+            print("[OK] requirements.txt 패키지 설치 완료")
+        except subprocess.CalledProcessError as e:
+            print(f"[WARNING] 패키지 설치 중 오류 발생: {e}")
+            print("[WARNING] 수동으로 'pip install -r requirements.txt'를 실행해주세요.")
+    else:
+        print("[OK] 모든 필수 패키지가 설치되어 있습니다.")
+
+# 서버 시작 전에 requirements 체크 (import 전에 실행)
+check_and_install_requirements()
 
 import oracledb
 import joblib  # type: ignore
