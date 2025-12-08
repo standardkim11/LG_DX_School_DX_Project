@@ -126,10 +126,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
             print('[ChatService] ✅ 성공! 응답 받음');
             setState(() {
-              _messages.add({'text': reply, 'isUser': false});
               _isLoading = false;
+              _messages.add({'text': reply, 'isUser': false});
             });
-            _scrollToBottom();
+            // 스크롤을 약간 지연시켜서 새 메시지가 렌더링된 후 스크롤
+            Future.delayed(const Duration(milliseconds: 100), () {
+              _scrollToBottom();
+            });
             return; // 성공하면 종료
           } else {
             // 서버가 응답했지만 에러 상태 코드인 경우
@@ -264,8 +267,13 @@ class _ChatScreenState extends State<ChatScreen> {
                     horizontal: 16,
                     vertical: 12,
                   ),
-                  itemCount: _messages.length,
+                  itemCount: _messages.length + (_isLoading ? 1 : 0),
                   itemBuilder: (context, index) {
+                    // 로딩 중이고 마지막 아이템이면 로딩 인디케이터 표시
+                    if (_isLoading && index == _messages.length) {
+                      return _buildLoadingIndicator();
+                    }
+                    
                     final message = _messages[index];
                     final isUser = message['isUser'] as bool;
                     // 이전 메시지 확인
@@ -429,6 +437,52 @@ class _ChatScreenState extends State<ChatScreen> {
                       height: 1.43,
                     ),
                   ),
+          ),
+          const SizedBox(width: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(width: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      const Color(0xFF111111).withOpacity(0.6),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  '답변을 생성하고 있어요...',
+                  style: TextStyle(
+                    color: Color(0xFF111111),
+                    fontSize: 14,
+                    fontFamily: 'LG Smart_H',
+                    fontWeight: FontWeight.w400,
+                    height: 1.43,
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 16),
         ],

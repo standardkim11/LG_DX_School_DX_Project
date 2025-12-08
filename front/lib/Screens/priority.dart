@@ -1,19 +1,26 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import '../components/app_colors.dart';
 import '../components/app_text_styles.dart';
 import '../components/bottom_navigation.dart';
 import '../Services/routine_service.dart';
+import '../Services/config.dart';
 import 'viewall_screen.dart';
 import 'routine_screen.dart';
 
 class PriorityScreen extends StatefulWidget {
   final List<ViewAllRoutineItem> selectedRoutines;
   final String? selectedDateKey; // 선택된 날짜 키 (YYYY-MM-DD 형식)
+  final bool shouldLoadRoutines; // 루틴을 자동으로 로드할지 여부
 
   const PriorityScreen({
     super.key,
     required this.selectedRoutines,
     this.selectedDateKey,
+    this.shouldLoadRoutines = false,
   });
 
   @override
@@ -21,33 +28,454 @@ class PriorityScreen extends StatefulWidget {
 }
 
 class _PriorityScreenState extends State<PriorityScreen> {
-  late List<Map<String, dynamic>> _routines;
+  List<Map<String, dynamic>> _routines = [];
+  String _weatherMessage = '오늘 날씨 정보를 불러오는 중...';
+
+  // API 베이스 URL
+  static String get baseUrl {
+    return ApiConfig.getBaseUrl(
+      isWeb: kIsWeb,
+      isAndroid: !kIsWeb && Platform.isAndroid,
+      isIOS: !kIsWeb && Platform.isIOS,
+    );
+  }
+
+  static const int userId = 1;
 
   @override
   void initState() {
     super.initState();
-    // 전달받은 루틴들을 시간 순서로 정렬
-    final sortedRoutines = List<ViewAllRoutineItem>.from(
-      widget.selectedRoutines,
-    );
-    sortedRoutines.sort((a, b) {
-      return _compareByTime(a, b);
-    });
+    if (widget.shouldLoadRoutines && widget.selectedRoutines.isEmpty) {
+      // 루틴을 자동으로 로드해야 하는 경우
+      _loadAllRoutines();
+    } else {
+      // 이미 루틴이 전달된 경우
+      _loadPriorityScores();
+    }
+    _loadWeatherInfo();
+  }
 
-    // 전달받은 루틴들을 화면에서 사용할 형식으로 변환
-    _routines = sortedRoutines.asMap().entries.map((entry) {
-      final routine = entry.value;
-      return {
-        'key': ValueKey('routine_${routine.id}'), // routineId 기반 key로 변경
-        'title': routine.name,
-        'time': routine.getTimeDisplay(),
-        'iconSize': _getIconSize(routine.routineType),
-        'hasUrgentBadge': false, // 필요시 로직 추가
-        'imagePath': _getImagePath(routine.routineType),
-        'routineId': routine.id,
-        'preferredTime': routine.preferredTime, // 시간 정보 저장
-      };
-    }).toList();
+  Future<void> _loadAllRoutines() async {
+    try {
+      final allRoutines = await RoutineService.getAllRoutines();
+      if (mounted) {
+        // 로드한 루틴으로 selectedRoutines 업데이트 후 점수 로드
+        setState(() {
+          // selectedRoutines는 final이므로 새로운 위젯으로 교체해야 하지만,
+          // 대신 _loadPriorityScores를 호출할 때 allRoutines를 사용
+        });
+        // 임시로 루틴을 저장하고 점수 로드
+        _loadPriorityScoresWithRoutines(allRoutines);
+      }
+    } catch (e) {
+      print('[PriorityScreen] 루틴 로딩 실패: $e');
+      if (mounted) {
+        setState(() {
+          // 에러 발생 시 빈 상태로 표시
+        });
+      }
+    }
+  }
+
+  Future<void> _loadPriorityScoresWithRoutines(
+    List<ViewAllRoutineItem> routines,
+  ) async {
+    if (routines.isEmpty) {
+      return;
+    }
+
+    try {
+      // 우선순위 점수 API 호출
+      final routineIds = routines.map((r) => r.id).toList();
+
+      // Android인 경우 여러 URL 시도
+      List<String> urlsToTry = [baseUrl];
+      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+        urlsToTry = ApiConfig.getAndroidBaseUrls();
+      }
+
+      Map<int, double>? scores;
+      for (final url in urlsToTry) {
+        try {
+          final uri = Uri.parse('$url/recommend/priority/selected');
+          final response = await http
+              .post(
+                uri,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+                body: jsonEncode({
+                  'user_id': userId,
+                  'routine_ids': routineIds,
+                }),
+              )
+              .timeout(
+                const Duration(seconds: 20), // 백엔드 최적화 후 적절한 타임아웃
+                onTimeout: () {
+                  throw Exception('요청 시간 초과');
+                },
+              );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
+            scores = {};
+            for (final item in data) {
+              final routineId = item['routine_id'] as int;
+              final score = (item['pred_priority_score'] as num).toDouble();
+              scores[routineId] = score;
+            }
+            break; // 성공하면 종료
+          }
+        } catch (e) {
+          print('[PriorityScreen] $url 연결 실패: $e');
+          continue;
+        }
+      }
+
+      // MONTHLY 루틴과 그 외 루틴 분리
+      final monthlyRoutines = <ViewAllRoutineItem>[];
+      final otherRoutines = <ViewAllRoutineItem>[];
+
+      for (final routine in routines) {
+        if (routine.scheduleType.toUpperCase() == 'MONTHLY') {
+          monthlyRoutines.add(routine);
+        } else {
+          otherRoutines.add(routine);
+        }
+      }
+
+      // 그 외 루틴은 점수 기준 내림차순 정렬
+      otherRoutines.sort((a, b) {
+        final scoreA = scores?[a.id] ?? 0.0;
+        final scoreB = scores?[b.id] ?? 0.0;
+        if (scoreA != scoreB) {
+          return scoreB.compareTo(scoreA);
+        }
+        return _compareByTime(a, b);
+      });
+
+      // MONTHLY 루틴도 점수 기준 내림차순 정렬
+      monthlyRoutines.sort((a, b) {
+        final scoreA = scores?[a.id] ?? 0.0;
+        final scoreB = scores?[b.id] ?? 0.0;
+        if (scoreA != scoreB) {
+          return scoreB.compareTo(scoreA);
+        }
+        return _compareByTime(a, b);
+      });
+
+      // 최종 리스트: 그 외 루틴 + MONTHLY 루틴
+      final finalRoutines = [...otherRoutines, ...monthlyRoutines];
+
+      // 전달받은 루틴들을 화면에서 사용할 형식으로 변환
+      _routines = finalRoutines.asMap().entries.map((entry) {
+        final routine = entry.value;
+        final score = scores?[routine.id];
+        return {
+          'key': ValueKey('routine_${routine.id}'),
+          'title': routine.name,
+          'time': routine.getTimeDisplay(),
+          'iconSize': _getIconSize(routine.routineType),
+          'hasUrgentBadge': false,
+          'imagePath': _getImagePath(routine.routineType),
+          'routineId': routine.id,
+          'preferredTime': routine.preferredTime,
+          'priorityScore': score,
+          'scheduleType': routine.scheduleType,
+        };
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          // 점수 로딩 완료
+        });
+      }
+    } catch (e) {
+      print('[PriorityScreen] 우선순위 점수 로딩 실패: $e');
+      // 에러 발생 시 점수 없이 표시
+      final monthlyRoutines = <ViewAllRoutineItem>[];
+      final otherRoutines = <ViewAllRoutineItem>[];
+
+      for (final routine in routines) {
+        if (routine.scheduleType.toUpperCase() == 'MONTHLY') {
+          monthlyRoutines.add(routine);
+        } else {
+          otherRoutines.add(routine);
+        }
+      }
+
+      otherRoutines.sort((a, b) {
+        return _compareByTime(a, b);
+      });
+
+      monthlyRoutines.sort((a, b) {
+        return _compareByTime(a, b);
+      });
+
+      final finalRoutines = [...otherRoutines, ...monthlyRoutines];
+
+      _routines = finalRoutines.asMap().entries.map((entry) {
+        final routine = entry.value;
+        return {
+          'key': ValueKey('routine_${routine.id}'),
+          'title': routine.name,
+          'time': routine.getTimeDisplay(),
+          'iconSize': _getIconSize(routine.routineType),
+          'hasUrgentBadge': false,
+          'imagePath': _getImagePath(routine.routineType),
+          'routineId': routine.id,
+          'preferredTime': routine.preferredTime,
+          'priorityScore': null,
+          'scheduleType': routine.scheduleType,
+        };
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          // 점수 로딩 완료
+        });
+      }
+    }
+  }
+
+  Future<void> _loadWeatherInfo() async {
+    try {
+      // 날씨 정보 API 호출
+      List<String> urlsToTry = [baseUrl];
+      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+        urlsToTry = ApiConfig.getAndroidBaseUrls();
+      }
+
+      String? weatherMessage;
+      for (final url in urlsToTry) {
+        try {
+          final uri = Uri.parse('$url/recommend/weather');
+          final response = await http
+              .get(
+                uri,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+              )
+              .timeout(
+                const Duration(seconds: 20), // 백엔드 최적화 후 적절한 타임아웃
+                onTimeout: () {
+                  throw Exception('요청 시간 초과');
+                },
+              );
+
+          if (response.statusCode == 200) {
+            final data =
+                jsonDecode(utf8.decode(response.bodyBytes))
+                    as Map<String, dynamic>;
+            final recommendationMessage =
+                data['recommendation_message'] as String?;
+            if (recommendationMessage != null &&
+                recommendationMessage.isNotEmpty) {
+              weatherMessage = recommendationMessage;
+            } else {
+              // 날씨 정보는 있지만 추천 메시지가 없는 경우
+              final weatherLabel = data['weather_label'] as String? ?? '맑음';
+              weatherMessage = '오늘 날씨는 $weatherLabel이에요.';
+            }
+            break; // 성공하면 종료
+          }
+        } catch (e) {
+          print('[PriorityScreen] 날씨 정보 로딩 실패 ($url): $e');
+          continue;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _weatherMessage = weatherMessage ?? '오늘 날씨는 맑음이에요.';
+        });
+      }
+    } catch (e) {
+      print('[PriorityScreen] 날씨 정보 로딩 실패: $e');
+      if (mounted) {
+        setState(() {
+          _weatherMessage = '오늘 날씨는 맑음이에요.';
+        });
+      }
+    }
+  }
+
+  Future<void> _loadPriorityScores() async {
+    if (widget.selectedRoutines.isEmpty) {
+      return;
+    }
+
+    try {
+      // 우선순위 점수 API 호출
+      final routineIds = widget.selectedRoutines.map((r) => r.id).toList();
+
+      // Android인 경우 여러 URL 시도
+      List<String> urlsToTry = [baseUrl];
+      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+        urlsToTry = ApiConfig.getAndroidBaseUrls();
+      }
+
+      Map<int, double>? scores;
+      for (final url in urlsToTry) {
+        try {
+          final uri = Uri.parse('$url/recommend/priority/selected');
+          final response = await http
+              .post(
+                uri,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+                body: jsonEncode({
+                  'user_id': userId,
+                  'routine_ids': routineIds,
+                }),
+              )
+              .timeout(
+                const Duration(seconds: 20), // 백엔드 최적화 후 적절한 타임아웃
+                onTimeout: () {
+                  throw Exception('요청 시간 초과');
+                },
+              );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
+            scores = {};
+            for (final item in data) {
+              final routineId = item['routine_id'] as int;
+              final score = (item['pred_priority_score'] as num).toDouble();
+              scores[routineId] = score;
+            }
+            break; // 성공하면 종료
+          }
+        } catch (e) {
+          print('[PriorityScreen] $url 연결 실패: $e');
+          continue;
+        }
+      }
+
+      // 전달받은 루틴들을 정렬 (MONTHLY는 마지막에)
+      final sortedRoutines = List<ViewAllRoutineItem>.from(
+        widget.selectedRoutines,
+      );
+
+      // MONTHLY 루틴과 그 외 루틴 분리
+      final monthlyRoutines = <ViewAllRoutineItem>[];
+      final otherRoutines = <ViewAllRoutineItem>[];
+
+      for (final routine in sortedRoutines) {
+        if (routine.scheduleType.toUpperCase() == 'MONTHLY') {
+          monthlyRoutines.add(routine);
+        } else {
+          otherRoutines.add(routine);
+        }
+      }
+
+      // 그 외 루틴은 점수 기준 내림차순 정렬
+      otherRoutines.sort((a, b) {
+        final scoreA = scores?[a.id] ?? 0.0;
+        final scoreB = scores?[b.id] ?? 0.0;
+        // 점수가 높은 순서로 정렬 (내림차순)
+        if (scoreA != scoreB) {
+          return scoreB.compareTo(scoreA);
+        }
+        // 점수가 같으면 시간 순서로 정렬
+        return _compareByTime(a, b);
+      });
+
+      // MONTHLY 루틴도 점수 기준 내림차순 정렬
+      monthlyRoutines.sort((a, b) {
+        final scoreA = scores?[a.id] ?? 0.0;
+        final scoreB = scores?[b.id] ?? 0.0;
+        // 점수가 높은 순서로 정렬 (내림차순)
+        if (scoreA != scoreB) {
+          return scoreB.compareTo(scoreA);
+        }
+        // 점수가 같으면 시간 순서로 정렬
+        return _compareByTime(a, b);
+      });
+
+      // 최종 리스트: 그 외 루틴 + MONTHLY 루틴
+      final finalRoutines = [...otherRoutines, ...monthlyRoutines];
+
+      // 전달받은 루틴들을 화면에서 사용할 형식으로 변환
+      _routines = finalRoutines.asMap().entries.map((entry) {
+        final routine = entry.value;
+        final score = scores?[routine.id];
+        return {
+          'key': ValueKey('routine_${routine.id}'),
+          'title': routine.name,
+          'time': routine.getTimeDisplay(),
+          'iconSize': _getIconSize(routine.routineType),
+          'hasUrgentBadge': false,
+          'imagePath': _getImagePath(routine.routineType),
+          'routineId': routine.id,
+          'preferredTime': routine.preferredTime,
+          'priorityScore': score, // 우선순위 점수 추가
+          'scheduleType': routine.scheduleType, // 스케줄 타입 저장
+        };
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          // 점수 로딩 완료
+        });
+      }
+    } catch (e) {
+      print('[PriorityScreen] 우선순위 점수 로딩 실패: $e');
+      // 에러 발생 시 점수 없이 표시 (MONTHLY는 뒤로)
+      final sortedRoutines = List<ViewAllRoutineItem>.from(
+        widget.selectedRoutines,
+      );
+
+      // MONTHLY 루틴과 그 외 루틴 분리
+      final monthlyRoutines = <ViewAllRoutineItem>[];
+      final otherRoutines = <ViewAllRoutineItem>[];
+
+      for (final routine in sortedRoutines) {
+        if (routine.scheduleType.toUpperCase() == 'MONTHLY') {
+          monthlyRoutines.add(routine);
+        } else {
+          otherRoutines.add(routine);
+        }
+      }
+
+      // 시간 순서로 정렬
+      otherRoutines.sort((a, b) {
+        return _compareByTime(a, b);
+      });
+
+      monthlyRoutines.sort((a, b) {
+        return _compareByTime(a, b);
+      });
+
+      final finalRoutines = [...otherRoutines, ...monthlyRoutines];
+
+      _routines = finalRoutines.asMap().entries.map((entry) {
+        final routine = entry.value;
+        return {
+          'key': ValueKey('routine_${routine.id}'),
+          'title': routine.name,
+          'time': routine.getTimeDisplay(),
+          'iconSize': _getIconSize(routine.routineType),
+          'hasUrgentBadge': false,
+          'imagePath': _getImagePath(routine.routineType),
+          'routineId': routine.id,
+          'preferredTime': routine.preferredTime,
+          'priorityScore': null,
+          'scheduleType': routine.scheduleType,
+        };
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          // 점수 로딩 완료
+        });
+      }
+    }
   }
 
   /// 시간을 기준으로 루틴을 비교하는 함수
@@ -275,7 +703,7 @@ class _PriorityScreenState extends State<PriorityScreen> {
                                       ),
                                       const SizedBox(height: 12),
                                       Text(
-                                        '오전에 비가 예정된 오늘,\n세탁기는 오후에 돌리길 추천드립니다.',
+                                        _weatherMessage,
                                         style: _bannerTextStyle.copyWith(
                                           fontSize: 13,
                                         ),
@@ -371,6 +799,10 @@ class _PriorityScreenState extends State<PriorityScreen> {
                                       false,
                                   imagePath: routine['imagePath'] as String,
                                   orderNumber: index + 1,
+                                  priorityScore:
+                                      routine['priorityScore'] as double?,
+                                  scheduleType:
+                                      routine['scheduleType'] as String? ?? '',
                                 ),
                               ),
                             );
@@ -501,6 +933,8 @@ class _PriorityCard extends StatelessWidget {
   final bool hasUrgentBadge;
   final String imagePath;
   final int orderNumber; // 순서 번호 추가
+  final double? priorityScore; // 우선순위 점수
+  final String scheduleType; // 스케줄 타입
 
   const _PriorityCard({
     required this.title,
@@ -509,6 +943,8 @@ class _PriorityCard extends StatelessWidget {
     this.hasUrgentBadge = false,
     required this.imagePath,
     required this.orderNumber,
+    this.priorityScore,
+    required this.scheduleType,
   });
 
   @override
@@ -557,14 +993,47 @@ class _PriorityCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        title,
-                        style: _PriorityScreenState._cardTitleStyle.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            title,
+                            style: _PriorityScreenState._cardTitleStyle
+                                .copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          if (priorityScore != null) ...[
+                            const SizedBox(width: 8),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${priorityScore!.toStringAsFixed(2)}점',
+                                  style: _PriorityScreenState._cardTimeStyle
+                                      .copyWith(
+                                        color: AppColors.textAccent,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                      ),
+                                ),
+                                if (scheduleType.toUpperCase() ==
+                                    'MONTHLY') ...[
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '월간',
+                                    style: _PriorityScreenState._cardTimeStyle
+                                        .copyWith(
+                                          color: AppColors.textSecondary,
+                                          fontWeight: FontWeight.w400,
+                                          fontSize: 13,
+                                        ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(time, style: _PriorityScreenState._cardTimeStyle),
                     ],
                   ),
                   if (hasUrgentBadge)

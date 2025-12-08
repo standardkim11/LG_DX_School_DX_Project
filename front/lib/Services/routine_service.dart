@@ -25,16 +25,19 @@ class RoutineService {
     if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
       // 자동 감지 모드: 에뮬레이터와 실제 기기 모두 시도
       urlsToTry = ApiConfig.getAndroidBaseUrls();
-      print('[RoutineService] getAllRoutines 자동 감지 모드: ${urlsToTry.length}개 URL 시도');
+      print('[RoutineService] getAllRoutines 자동 감지 모드: ${urlsToTry.length}개 URL 병렬 시도');
     } else {
       print('[RoutineService] getAllRoutines 단일 URL 사용: $baseUrl');
     }
 
-    for (final url in urlsToTry) {
-      print('[RoutineService] getAllRoutines 시도 중: $url');
+    // 병렬로 여러 URL 시도 (첫 번째 성공한 응답 사용)
+    final futures = urlsToTry.map((url) async {
       try {
         final uri = Uri.parse('$url/routines')
             .replace(queryParameters: {'user_id': userId.toString()});
+
+        print('[RoutineService] getAllRoutines 시도 중: $url');
+        final stopwatch = Stopwatch()..start();
 
         final response = await http
             .get(
@@ -45,11 +48,16 @@ class RoutineService {
               },
             )
             .timeout(
-              const Duration(seconds: 30),
+              const Duration(seconds: 20), // 백엔드 최적화 후 적절한 타임아웃
               onTimeout: () {
+                stopwatch.stop();
+                print('[RoutineService] getAllRoutines 타임아웃 (${stopwatch.elapsedMilliseconds}ms) - $url');
                 throw Exception('요청 시간 초과');
               },
             );
+
+        stopwatch.stop();
+        print('[RoutineService] getAllRoutines 응답 수신 (${stopwatch.elapsedMilliseconds}ms) - $url');
 
         if (response.statusCode == 200) {
           final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
@@ -61,15 +69,22 @@ class RoutineService {
               .toList();
         } else {
           print('Routine API Error: ${response.statusCode} - ${response.body}');
-          // 다음 URL 시도
-          continue;
+          throw Exception('HTTP ${response.statusCode}');
         }
-      } catch (e, stackTrace) {
-        print('[RoutineService] getAllRoutines $url 연결 실패');
-        print('[RoutineService] 에러 타입: ${e.runtimeType}');
-        print('[RoutineService] 에러 메시지: $e');
-        print('[RoutineService] 스택 트레이스: $stackTrace');
-        // 다음 URL 시도
+      } catch (e) {
+        print('[RoutineService] getAllRoutines $url 연결 실패: $e');
+        rethrow;
+      }
+    }).toList();
+
+    // 첫 번째 성공한 응답 반환
+    for (final future in futures) {
+      try {
+        final result = await future;
+        print('[RoutineService] getAllRoutines 성공');
+        return result;
+      } catch (e) {
+        // 다음 future 시도
         continue;
       }
     }
@@ -91,13 +106,13 @@ class RoutineService {
     if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
       // 자동 감지 모드: 에뮬레이터와 실제 기기 모두 시도
       urlsToTry = ApiConfig.getAndroidBaseUrls();
-      print('[RoutineService] getRoutinesByDate 자동 감지 모드: ${urlsToTry.length}개 URL 시도');
+      print('[RoutineService] getRoutinesByDate 자동 감지 모드: ${urlsToTry.length}개 URL 병렬 시도');
     } else {
       print('[RoutineService] getRoutinesByDate 단일 URL 사용: $baseUrl');
     }
 
-    for (final url in urlsToTry) {
-      print('[RoutineService] getRoutinesByDate 시도 중: $url');
+    // 병렬로 여러 URL 시도 (첫 번째 성공한 응답 사용)
+    final futures = urlsToTry.map((url) async {
       try {
         final uri = Uri.parse('$url/recommend/today-routines').replace(
           queryParameters: {
@@ -105,6 +120,9 @@ class RoutineService {
             'date': date, // 날짜 파라미터 추가
           },
         );
+
+        print('[RoutineService] getRoutinesByDate 시도 중: $url');
+        final stopwatch = Stopwatch()..start();
 
         final response = await http
             .get(
@@ -115,11 +133,16 @@ class RoutineService {
               },
             )
             .timeout(
-              const Duration(seconds: 30),
+              const Duration(seconds: 20), // 백엔드 최적화 후 적절한 타임아웃
               onTimeout: () {
+                stopwatch.stop();
+                print('[RoutineService] getRoutinesByDate 타임아웃 (${stopwatch.elapsedMilliseconds}ms) - $url');
                 throw Exception('요청 시간 초과');
               },
             );
+
+        stopwatch.stop();
+        print('[RoutineService] getRoutinesByDate 응답 수신 (${stopwatch.elapsedMilliseconds}ms) - $url');
 
         if (response.statusCode == 200) {
           final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
@@ -128,15 +151,22 @@ class RoutineService {
               .toList();
         } else {
           print('Routine API Error: ${response.statusCode} - ${response.body}');
-          // 다음 URL 시도
-          continue;
+          throw Exception('HTTP ${response.statusCode}');
         }
-      } catch (e, stackTrace) {
-        print('[RoutineService] getRoutinesByDate $url 연결 실패');
-        print('[RoutineService] 에러 타입: ${e.runtimeType}');
-        print('[RoutineService] 에러 메시지: $e');
-        print('[RoutineService] 스택 트레이스: $stackTrace');
-        // 다음 URL 시도
+      } catch (e) {
+        print('[RoutineService] getRoutinesByDate $url 연결 실패: $e');
+        rethrow;
+      }
+    }).toList();
+
+    // 첫 번째 성공한 응답 반환
+    for (final future in futures) {
+      try {
+        final result = await future;
+        print('[RoutineService] getRoutinesByDate 성공');
+        return result;
+      } catch (e) {
+        // 다음 future 시도
         continue;
       }
     }
@@ -187,7 +217,7 @@ class RoutineService {
               body: body,
             )
             .timeout(
-              const Duration(seconds: 30),
+              const Duration(seconds: 12), // 타임아웃 단축
               onTimeout: () {
                 print('[RoutineService] Create Routine 타임아웃 발생: $uri');
                 throw Exception('요청 시간 초과 - 백엔드 서버가 실행 중인지 확인해주세요');

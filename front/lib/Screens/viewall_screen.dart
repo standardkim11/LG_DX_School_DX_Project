@@ -766,11 +766,11 @@ class _ViewAllScreenState extends State<ViewAllScreen>
               bottom: 8,
               child: GestureDetector(
                 onTap: () {
-                  // 수정 버튼 클릭 시 루틴 생성 페이지로 이동
+                  // 수정 버튼 클릭 시 루틴 수정 페이지로 이동 (루틴 데이터 전달)
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const ViewSaveScreen(),
+                      builder: (context) => ViewSaveScreen(routine: routine),
                     ),
                   );
                 },

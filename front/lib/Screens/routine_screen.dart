@@ -378,7 +378,16 @@ class _RoutineScreenState extends State<RoutineScreen>
       return;
     }
 
-    // viewall에서 설정한 적 없는 날짜는 API에서 해당 날짜의 루틴을 가져옴
+    // viewall에서 설정한 적 없는 날짜는 빈 리스트 표시 (View All에서 선택한 것만 표시)
+    print('[RoutineScreen] 선택된 루틴이 없음, 빈 리스트 표시');
+    setState(() {
+      _todosByDate[dateKey] = [];
+      _isLoading = false;
+    });
+    return;
+
+    // 아래 코드는 더 이상 사용하지 않음 (View All에서 선택한 것만 표시)
+    /*
     setState(() {
       _isLoading = true;
     });
@@ -421,6 +430,7 @@ class _RoutineScreenState extends State<RoutineScreen>
         _isLoading = false;
       });
     }
+    */
   }
 
   @override
