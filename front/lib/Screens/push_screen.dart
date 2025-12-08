@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/context_event_service.dart';
 import 'routine_screen.dart';
+import 'washpush_screen.dart';
 import 'dart:async';
 
 class PushScreen extends StatefulWidget {
@@ -12,6 +13,7 @@ class PushScreen extends StatefulWidget {
 
 class _PushScreenState extends State<PushScreen> {
   String? _latenessMessage;
+  String? _washerFrequencyMessage;
   bool _isLoading = true;
   Timer? _timeTimer;
   String _currentTime = '';
@@ -51,10 +53,22 @@ class _PushScreenState extends State<PushScreen> {
       _isLoading = true;
     });
 
+    // 귀가 알림과 세탁기 알림을 동시에 로드
+    await Future.wait([
+      _loadHomeArrivalNotification(testLat, testLng),
+      _loadWasherFrequencyNotification(),
+    ]);
+
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _loadHomeArrivalNotification(double lat, double lng) async {
     try {
       final response = await ContextEventService.getContextEvent(
-        currentLat: testLat,
-        currentLng: testLng,
+        currentLat: lat,
+        currentLng: lng,
       );
 
       if (response != null && response['triggered'] == true) {
@@ -72,21 +86,38 @@ class _PushScreenState extends State<PushScreen> {
 
         setState(() {
           _latenessMessage = message;
-          _isLoading = false;
         });
       } else {
         // API가 triggered=false를 반환하거나 오류 발생 시 기본 메시지
         setState(() {
           _latenessMessage = '오늘은 평소와 거의 비슷한 시간에 귀가 중이에요';
-          _isLoading = false;
         });
       }
     } catch (e) {
       print('Error loading context event: $e');
       setState(() {
         _latenessMessage = '오늘은 평소와 거의 비슷한 시간에 귀가 중이에요';
-        _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadWasherFrequencyNotification() async {
+    try {
+      // 세탁기 사용 빈도 확인
+      // 주 4회 목표인데 현재 2회만 사용한 경우 알림 표시
+      const int targetWeeklyUsage = 4;
+      const int currentWeeklyUsage = 2; // 실제로는 백엔드 API에서 가져와야 함
+
+      if (currentWeeklyUsage < targetWeeklyUsage) {
+        final remainingCount = targetWeeklyUsage - currentWeeklyUsage;
+        setState(() {
+          _washerFrequencyMessage =
+              '이번 주 세탁기를 ${currentWeeklyUsage}회만 사용하셨네요.\n목표까지 ${remainingCount}회 더 사용해야 해요.';
+        });
+      }
+    } catch (e) {
+      print('Error loading washer frequency notification: $e');
+      // 에러 발생 시 알림 표시 안 함
     }
   }
 
@@ -176,17 +207,43 @@ class _PushScreenState extends State<PushScreen> {
                     ),
                   ),
 
-                  // 알림 카드 (시간/날짜 아래 적절한 간격으로 배치)
-                  if (!_isLoading && _latenessMessage != null) ...[
-                    const SizedBox(height: 50),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: _buildNotificationCard(
-                        icon: Icons.home,
-                        message: '지현님, $_latenessMessage\n해야하는 루틴 추천 해드릴께요.',
-                        timeLabel: '지금',
+                  // 알림 카드들 (시간/날짜 아래 적절한 간격으로 배치)
+                  if (!_isLoading) ...[
+                    // 귀가 알림 카드
+                    if (_latenessMessage != null) ...[
+                      const SizedBox(height: 50),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: _buildNotificationCard(
+                          icon: Icons.home,
+                          message: '지현님, $_latenessMessage\n해야하는 루틴 추천 해드릴께요.',
+                          timeLabel: '지금',
+                        ),
                       ),
-                    ),
+                    ],
+                    // 세탁기 사용 빈도 알림 카드
+                    if (_washerFrequencyMessage != null) ...[
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const WashPushScreen(),
+                              ),
+                            );
+                          },
+                          child: _buildNotificationCard(
+                            icon: Icons.home,
+                            message:
+                                '지현님, $_washerFrequencyMessage\n빨리 세탁기를 돌려야 해요.',
+                            timeLabel: '지금',
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
 
                   // 하단 여백을 위한 Spacer
@@ -201,7 +258,7 @@ class _PushScreenState extends State<PushScreen> {
   }
 
   Widget _buildNotificationCard({
-    required IconData icon,
+    IconData? icon,
     required String message,
     required String timeLabel,
   }) {
@@ -222,17 +279,19 @@ class _PushScreenState extends State<PushScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 아이콘 (빨간색 배경)
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFF3132), // 빨간색
-              borderRadius: BorderRadius.circular(8),
+          // 아이콘 (빨간색 배경) - icon이 null이 아닐 때만 표시
+          if (icon != null) ...[
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF3132), // 빨간색
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: Colors.white, size: 24),
             ),
-            child: Icon(icon, color: Colors.white, size: 24),
-          ),
-          const SizedBox(width: 12),
+            const SizedBox(width: 12),
+          ],
           // 메시지와 시간
           Expanded(
             child: Column(
