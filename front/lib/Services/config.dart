@@ -1,31 +1,31 @@
-// API 서버 설정 파일
+﻿// API ?쒕쾭 ?ㅼ젙 ?뚯씪
 //
-// 자동 감지 모드:
-//   - 에뮬레이터와 실제 기기를 자동으로 감지하여 적절한 IP 사용
-//   - 에뮬레이터: 10.0.2.2 사용
-//   - 실제 기기: localNetworkIp 사용
+// ?먮룞 媛먯? 紐⑤뱶:
+//   - ?먮??덉씠?곗? ?ㅼ젣 湲곌린瑜??먮룞?쇰줈 媛먯??섏뿬 ?곸젅??IP ?ъ슜
+//   - ?먮??덉씠?? 10.0.2.2 ?ъ슜
+//   - ?ㅼ젣 湲곌린: localNetworkIp ?ъ슜
 //
-// 수동 설정 모드:
-//   - useEmulator를 true/false로 설정하여 강제 지정 가능
+// ?섎룞 ?ㅼ젙 紐⑤뱶:
+//   - useEmulator瑜?true/false濡??ㅼ젙?섏뿬 媛뺤젣 吏??媛??
 //
 class ApiConfig {
-  // 실제 휴대폰에서 사용할 PC의 로컬 IP 주소
-  // 예: '192.168.0.100' 또는 '192.168.1.50'
-  // PC의 IP 주소 확인 방법:
-  //   - Windows: ipconfig 명령어 실행 후 "IPv4 주소" 확인
-  //   - Mac/Linux: ifconfig 또는 ip addr 명령어 실행
-  static const String localNetworkIp = '192.168.0.34'; // PC의 실제 IP 주소
+  // ?ㅼ젣 ?대??곗뿉???ъ슜??PC??濡쒖뺄 IP 二쇱냼
+  // ?? '192.168.0.100' ?먮뒗 '192.168.1.50'
+  // PC??IP 二쇱냼 ?뺤씤 諛⑸쾿:
+  //   - Windows: ipconfig 紐낅졊???ㅽ뻾 ??"IPv4 二쇱냼" ?뺤씤
+  //   - Mac/Linux: ifconfig ?먮뒗 ip addr 紐낅졊???ㅽ뻾
+  static const String localNetworkIp = '192.168.0.16'; // PC???ㅼ젣 IP 二쇱냼
 
-  // Android 에뮬레이터에서 사용할 IP (변경 불필요)
+  // Android ?먮??덉씠?곗뿉???ъ슜??IP (蹂寃?遺덊븘??
   static const String androidEmulatorIp = '10.0.2.2';
 
   static const int port = 8088;
 
-  // 에뮬레이터 사용 여부 (null이면 자동 감지)
-  // - null: 자동 감지 (에뮬레이터와 실제 기기 모두 지원)
-  // - true: 에뮬레이터 강제 사용 (10.0.2.2 사용)
-  // - false: 실제 기기 강제 사용 (localNetworkIp 사용)
-  static const bool? useEmulator = false; // 실제 휴대폰 사용 시 false로 설정
+  // ?먮??덉씠???ъ슜 ?щ? (null?대㈃ ?먮룞 媛먯?)
+  // - null: ?먮룞 媛먯? (?먮??덉씠?곗? ?ㅼ젣 湲곌린 紐⑤몢 吏??
+  // - true: ?먮??덉씠??媛뺤젣 ?ъ슜 (10.0.2.2 ?ъ슜)
+  // - false: ?ㅼ젣 湲곌린 媛뺤젣 ?ъ슜 (localNetworkIp ?ъ슜)
+  static const bool? useEmulator = null; // ?ㅼ젣 ?대????ъ슜 ??false濡??ㅼ젙
 
   static String getBaseUrl({
     required bool isWeb,
@@ -35,16 +35,16 @@ class ApiConfig {
     if (isWeb) {
       return 'http://localhost:$port/api';
     } else if (isAndroid) {
-      // useEmulator가 null이면 자동 감지 (에뮬레이터 우선 시도)
-      // 실제로는 연결 시도로 판단하지만, 여기서는 에뮬레이터 IP를 우선 반환
-      // 서비스 레이어에서 연결 실패 시 fallback 로직 사용
+      // useEmulator媛 null?대㈃ ?먮룞 媛먯? (?먮??덉씠???곗꽑 ?쒕룄)
+      // ?ㅼ젣濡쒕뒗 ?곌껐 ?쒕룄濡??먮떒?섏?留? ?ш린?쒕뒗 ?먮??덉씠??IP瑜??곗꽑 諛섑솚
+      // ?쒕퉬???덉씠?댁뿉???곌껐 ?ㅽ뙣 ??fallback 濡쒖쭅 ?ъ슜
       if (useEmulator == true) {
         return 'http://$androidEmulatorIp:$port/api';
       } else if (useEmulator == false) {
         return 'http://$localNetworkIp:$port/api';
       } else {
-        // 자동 감지: 에뮬레이터 IP를 기본값으로 사용
-        // (대부분의 경우 에뮬레이터에서 개발하므로)
+        // ?먮룞 媛먯?: ?먮??덉씠??IP瑜?湲곕낯媛믪쑝濡??ъ슜
+        // (?遺遺꾩쓽 寃쎌슦 ?먮??덉씠?곗뿉??媛쒕컻?섎?濡?
         return 'http://$androidEmulatorIp:$port/api';
       }
     } else if (isIOS) {
@@ -53,12 +53,14 @@ class ApiConfig {
     return 'http://localhost:$port/api';
   }
 
-  /// Android에서 사용할 수 있는 모든 가능한 base URL 목록 반환
-  /// (에뮬레이터와 실제 기기 모두 지원)
+  /// Android?먯꽌 ?ъ슜?????덈뒗 紐⑤뱺 媛?ν븳 base URL 紐⑸줉 諛섑솚
+  /// (?먮??덉씠?곗? ?ㅼ젣 湲곌린 紐⑤몢 吏??
   static List<String> getAndroidBaseUrls() {
     return [
-      'http://$androidEmulatorIp:$port/api', // 에뮬레이터
-      'http://$localNetworkIp:$port/api', // 실제 기기
+      'http://$androidEmulatorIp:$port/api', // ?먮??덉씠??
+      'http://$localNetworkIp:$port/api', // ?ㅼ젣 湲곌린
     ];
   }
 }
+
+

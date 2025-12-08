@@ -125,6 +125,14 @@ def create_app():
     # DB & CORS 초기화
     db.init_app(app)
     cors.init_app(app)
+    
+    # CORS 헤더 명시적 설정 (추가 보안)
+    @app.after_request
+    def after_request(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
+        return response
 
 
     # ============================================================
