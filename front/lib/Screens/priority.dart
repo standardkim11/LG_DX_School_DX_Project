@@ -916,7 +916,7 @@ class _PriorityScreenState extends State<PriorityScreen> {
                 ),
 
                 // 하단 네비게이션
-                const CustomBottomNavigation(currentScreen: 'routine'),
+                const CustomBottomNavigation(currentScreen: 'priority'),
               ],
             ),
           ],

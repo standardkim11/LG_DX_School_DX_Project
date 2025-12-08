@@ -563,7 +563,7 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                         ? const Center(child: CircularProgressIndicator())
                         : _buildRoutineGrid(),
                   ),
-                  const CustomBottomNavigation(currentScreen: 'routine'),
+                  const CustomBottomNavigation(currentScreen: 'viewall'),
                 ],
               ),
               Positioned(

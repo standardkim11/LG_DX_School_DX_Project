@@ -66,7 +66,7 @@ class DashboardService {
               },
             )
             .timeout(
-              const Duration(seconds: 20), // 백엔드 최적화 후 적절한 타임아웃
+              const Duration(seconds: 30), // 타임아웃 증가 (30초)
               onTimeout: () {
                 stopwatch.stop();
                 print(

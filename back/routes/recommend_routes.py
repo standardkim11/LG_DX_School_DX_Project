@@ -2,6 +2,7 @@ from flask import Blueprint, current_app, request, jsonify
 from datetime import datetime, time, date, timedelta
 import pandas as pd  # type: ignore
 from sqlalchemy.exc import DatabaseError  # type: ignore
+from sqlalchemy import or_  # type: ignore
 from Project.extensions import db
 from models import User, Routine, Notification, RoutineExecution , UserDevice  ,WeatherInfo, DeviceLog
 import re
@@ -1084,6 +1085,129 @@ def get_unused_notification():
             "has_notification": False,
             "notification": None
         }), 200
+
+
+@recommend_bp.route("/robot-cleaner-notification", methods=["GET"])
+def get_robot_cleaner_notification():
+    """
+    로봇청소기 알림 정보 반환
+    오늘 예상 실행 시간(preferred_time)이 지났는데 아직 실행되지 않은 경우 알림
+    GET /api/recommend/robot-cleaner-notification?user_id=1
+    """
+    user_id = request.args.get("user_id", type=int, default=1)
+    
+    try:
+        user = User.query.get(user_id)
+    except DatabaseError as e:
+        error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+        return jsonify({
+            "error": "Database connection failed",
+            "message": "Unable to connect to the database.",
+            "details": error_msg,
+        }), 503
+    
+    if not user:
+        return jsonify({"error": "user not found"}), 404
+    
+    # 로봇청소기 루틴 찾기
+    robot_cleaner_routine = Routine.query.filter_by(
+        user_id=user_id,
+        is_active=True
+    ).filter(
+        or_(
+            Routine.name.like('%로봇청소기%'),
+            Routine.name.like('%robot%'),
+            Routine.name.like('%청소기%'),
+            Routine.name.like('%cleaner%')
+        )
+    ).first()
+    
+    if not robot_cleaner_routine:
+        return jsonify({
+            "has_notification": False,
+            "notification": None
+        }), 200
+    
+    # preferred_time이 없으면 알림 표시 안 함
+    if not robot_cleaner_routine.preferred_time:
+        return jsonify({
+            "has_notification": False,
+            "notification": None
+        }), 200
+    
+    # preferred_time 파싱 (예: "14:00" 또는 "14" 형태)
+    from .maping import parse_preferred_time
+    preferred_hour = parse_preferred_time(robot_cleaner_routine.preferred_time)
+    
+    now = datetime.now()
+    current_hour = now.hour
+    current_minute = now.minute
+    today = now.date()
+    
+    # preferred_time을 시간으로 변환 (예: 14:00)
+    preferred_time_str = robot_cleaner_routine.preferred_time
+    preferred_minute = 0
+    if ':' in preferred_time_str:
+        try:
+            time_parts = preferred_time_str.split(':')
+            preferred_hour = int(time_parts[0])
+            preferred_minute = int(time_parts[1]) if len(time_parts) > 1 else 0
+        except (ValueError, IndexError):
+            preferred_minute = 0
+    else:
+        # "14" 형태인 경우
+        preferred_hour = preferred_hour
+        preferred_minute = 0
+    
+    # 예상 실행 시간이 지났는지 확인
+    current_time_minutes = current_hour * 60 + current_minute
+    preferred_time_minutes = preferred_hour * 60 + preferred_minute
+    
+    if current_time_minutes < preferred_time_minutes:
+        # 아직 예상 시간이 지나지 않음
+        return jsonify({
+            "has_notification": False,
+            "notification": None
+        }), 200
+    
+    # 오늘 실행 기록 확인 (status는 숫자 2로 저장됨: 완료)
+    today_start = datetime.combine(today, time.min)
+    today_end = datetime.combine(today + timedelta(days=1), time.min)
+    
+    today_execution = RoutineExecution.query.filter(
+        RoutineExecution.user_id == user_id,
+        RoutineExecution.routine_id == robot_cleaner_routine.id,
+        RoutineExecution.status == 2,  # 완료 상태
+        RoutineExecution.start_time >= today_start,
+        RoutineExecution.start_time < today_end
+    ).first()
+    
+    # 오늘 실행 기록이 있으면 알림 표시 안 함
+    if today_execution:
+        return jsonify({
+            "has_notification": False,
+            "notification": None
+        }), 200
+    
+    # 예상 시간이 지났고 오늘 실행되지 않았으므로 알림 표시
+    time_passed_minutes = current_time_minutes - preferred_time_minutes
+    hours_passed = time_passed_minutes // 60
+    minutes_passed = time_passed_minutes % 60
+    
+    if hours_passed > 0:
+        message = f'로봇청소기 실행 시간이 {hours_passed}시간 지났어요.\n깨끗한 집을 위해 지금 실행시켜주세요'
+    else:
+        message = f'로봇청소기 실행 시간이 {minutes_passed}분 지났어요.\n깨끗한 집을 위해 지금 실행시켜주세요'
+    
+    return jsonify({
+        "has_notification": True,
+        "notification": {
+            "message": message,
+            "robot_cleaner_routine_id": robot_cleaner_routine.id,
+            "preferred_time": robot_cleaner_routine.preferred_time,
+            "hours_passed": hours_passed,
+        }
+    }), 200
 
 
 @recommend_bp.route("/dashboard", methods=["GET"])

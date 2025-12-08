@@ -96,6 +96,47 @@ void setRoutineScreenDate(int dateIndex) {
   _RoutineScreenStateManager.selectedDateIndex = dateIndex;
 }
 
+// 외부에서 접근 가능한 날짜 가져오기 함수
+int getRoutineScreenDate() {
+  return _RoutineScreenStateManager.selectedDateIndex;
+}
+
+// 오늘 날짜의 인덱스를 계산하여 설정하는 함수
+void setRoutineScreenToToday() {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day); // 시간 제거하여 날짜만 비교
+  final baseDate = DateTime(now.year, now.month, 12);
+  final currentWeekday = baseDate.weekday;
+  final daysUntilFriday = (5 - currentWeekday + 7) % 7;
+  final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
+  final referenceDateOnly = DateTime(
+    referenceDate.year,
+    referenceDate.month,
+    referenceDate.day,
+  ); // 시간 제거
+
+  // 오늘 날짜와 referenceDate의 차이를 계산 (날짜만 비교)
+  // 오늘 날짜가 referenceDate보다 앞이면 음수, 뒤면 양수
+  final todayDifference = today.difference(referenceDateOnly).inDays;
+
+  // 인덱스 계산 (referenceDate가 인덱스 15이므로)
+  final todayIndex = 15 + todayDifference;
+
+  print('[setRoutineScreenToToday] now: $now');
+  print('[setRoutineScreenToToday] today: $today');
+  print('[setRoutineScreenToToday] baseDate: $baseDate');
+  print('[setRoutineScreenToToday] referenceDate: $referenceDate');
+  print('[setRoutineScreenToToday] referenceDateOnly: $referenceDateOnly');
+  print('[setRoutineScreenToToday] todayDifference: $todayDifference');
+  print('[setRoutineScreenToToday] todayIndex: $todayIndex');
+
+  _RoutineScreenStateManager.selectedDateIndex = todayIndex;
+
+  print(
+    '[setRoutineScreenToToday] 설정된 인덱스: ${_RoutineScreenStateManager.selectedDateIndex}',
+  );
+}
+
 // 외부에서 접근 가능한 선택된 루틴 ID 설정 함수
 void setSelectedRoutineIds(Set<int> routineIds) {
   _RoutineScreenStateManager.setSelectedRoutineIds(routineIds);
@@ -160,11 +201,11 @@ class _RoutineScreenState extends State<RoutineScreen>
       final contextToUse = ctx ?? context;
       final screenWidth = MediaQuery.of(contextToUse).size.width;
       final cardWidth = 64.0; // 카드 너비(60) + 좌우 마진(4)
+      // 항상 최신 상태를 가져오기 위해 _RoutineScreenStateManager에서 직접 읽음
+      final currentDateIndex = _RoutineScreenStateManager.selectedDateIndex;
       // 선택된 날짜를 중앙에 배치: (인덱스 * 카드너비) - (화면너비/2) + (카드너비/2)
       final scrollPosition =
-          (_selectedDateIndex * cardWidth) -
-          (screenWidth / 2) +
-          (cardWidth / 2);
+          (currentDateIndex * cardWidth) - (screenWidth / 2) + (cardWidth / 2);
       _dateScrollController.animateTo(
         scrollPosition.clamp(
           0.0,
@@ -199,7 +240,9 @@ class _RoutineScreenState extends State<RoutineScreen>
     final currentWeekday = baseDate.weekday;
     final daysUntilFriday = (5 - currentWeekday + 7) % 7;
     final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
-    return referenceDate.add(Duration(days: _selectedDateIndex - 15));
+    // 항상 최신 상태를 가져오기 위해 _RoutineScreenStateManager에서 직접 읽음
+    final currentDateIndex = _RoutineScreenStateManager.selectedDateIndex;
+    return referenceDate.add(Duration(days: currentDateIndex - 15));
   }
 
   // 날짜를 키 형식으로 변환
@@ -439,13 +482,27 @@ class _RoutineScreenState extends State<RoutineScreen>
     _dateScrollController = ScrollController();
     WidgetsBinding.instance.addObserver(this); // 생명주기 관찰자 등록
 
-    // 저장된 날짜 인덱스로 복원
+    // 저장된 날짜 인덱스로 복원 (항상 최신 상태 사용)
     _selectedDateIndex = _RoutineScreenStateManager.selectedDateIndex;
+
+    print(
+      '[RoutineScreen] initState - _selectedDateIndex: $_selectedDateIndex',
+    );
+    print(
+      '[RoutineScreen] initState - _RoutineScreenStateManager.selectedDateIndex: ${_RoutineScreenStateManager.selectedDateIndex}',
+    );
 
     // 초기 스크롤 위치를 저장된 날짜 인덱스로 설정 (중앙에 오도록)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToSelectedDate(context);
-      _refreshCurrentDate();
+      // 다시 한 번 최신 상태 확인
+      final latestDateIndex = _RoutineScreenStateManager.selectedDateIndex;
+      if (mounted) {
+        setState(() {
+          _selectedDateIndex = latestDateIndex;
+        });
+        _scrollToSelectedDate(context);
+        _refreshCurrentDate();
+      }
     });
   }
 
@@ -1104,7 +1161,9 @@ class _RoutineScreenState extends State<RoutineScreen>
         itemCount: dates.length,
         itemBuilder: (context, index) {
           final date = dates[index];
-          final isSelected = index == _selectedDateIndex;
+          // 항상 최신 상태를 가져오기 위해 _RoutineScreenStateManager에서 직접 읽음
+          final currentDateIndex = _RoutineScreenStateManager.selectedDateIndex;
+          final isSelected = index == currentDateIndex;
           return GestureDetector(
             onTap: () {
               // 날짜 인덱스 업데이트

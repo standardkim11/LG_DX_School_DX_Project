@@ -25,43 +25,57 @@ class ContextEventService {
     required double currentLat,
     required double currentLng,
   }) async {
-    try {
-      final uri = Uri.parse('$baseUrl/recommend/context-event');
-
-      final response = await http
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: jsonEncode({
-              'user_id': userId,
-              'current_lat': currentLat,
-              'current_lng': currentLng,
-              'event_type': 'ARRIVE_HOME',
-            }),
-          )
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () {
-              throw Exception('요청 시간 초과');
-            },
-          );
-
-      if (response.statusCode == 200) {
-        final data =
-            jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-        return data;
-      } else {
-        print(
-          'Context Event API Error: ${response.statusCode} - ${response.body}',
-        );
-        return null;
-      }
-    } catch (e) {
-      print('Context Event Service Error: $e');
-      return null;
+    // Android인 경우 여러 URL 시도
+    List<String> urlsToTry = [baseUrl];
+    if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+      urlsToTry = ApiConfig.getAndroidBaseUrls();
     }
+
+    for (final url in urlsToTry) {
+      try {
+        final uri = Uri.parse('$url/recommend/context-event');
+
+        final response = await http
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode({
+                'user_id': userId,
+                'current_lat': currentLat,
+                'current_lng': currentLng,
+                'event_type': 'ARRIVE_HOME',
+              }),
+            )
+            .timeout(
+              const Duration(seconds: 30), // 타임아웃 단축 (30초로 변경)
+              onTimeout: () {
+                throw Exception('요청 시간 초과');
+              },
+            );
+
+        if (response.statusCode == 200) {
+          final data =
+              jsonDecode(utf8.decode(response.bodyBytes))
+                  as Map<String, dynamic>;
+          print('[ContextEventService] 성공: $url');
+          return data;
+        } else {
+          print(
+            '[ContextEventService] API Error ($url): ${response.statusCode} - ${response.body}',
+          );
+          continue; // 다음 URL 시도
+        }
+      } catch (e) {
+        print('[ContextEventService] 연결 실패 ($url): $e');
+        continue; // 다음 URL 시도
+      }
+    }
+
+    // 모든 URL 시도 실패
+    print('[ContextEventService] 모든 URL 시도 실패');
+    return null;
   }
 }

@@ -1,27 +1,22 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import '../services/context_event_service.dart';
+import 'robotpush_screen.dart';
 import '../Services/config.dart';
-import 'routine_screen.dart';
-import 'priority.dart';
-import 'washpush_screen.dart';
-import 'dart:async';
 
-class PushScreen extends StatefulWidget {
-  const PushScreen({super.key});
+class CareScreen extends StatefulWidget {
+  const CareScreen({super.key});
 
   @override
-  State<PushScreen> createState() => _PushScreenState();
+  State<CareScreen> createState() => _CareScreenState();
 }
 
-class _PushScreenState extends State<PushScreen> {
-  String? _latenessMessage;
-  String? _unusedFirstLine;
-  String? _unusedSecondLine;
-  String? _washerFrequencyMessage;
+class _CareScreenState extends State<CareScreen> {
+  String? _robotCleanerMessage;
+  int? _robotCleanerRoutineId; // 로봇청소기 루틴 ID 저장
   bool _isLoading = true;
   Timer? _timeTimer;
   String _currentTime = '';
@@ -34,8 +29,7 @@ class _PushScreenState extends State<PushScreen> {
     _timeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _updateCurrentTime();
     });
-    _loadContextEvent();
-    _loadUnusedNotification();
+    _loadRobotCleanerNotification();
   }
 
   @override
@@ -45,7 +39,6 @@ class _PushScreenState extends State<PushScreen> {
   }
 
   void _updateCurrentTime() {
-    if (!mounted) return;
     final now = DateTime.now();
     setState(() {
       _currentTime =
@@ -53,75 +46,17 @@ class _PushScreenState extends State<PushScreen> {
     });
   }
 
-  Future<void> _loadContextEvent() async {
-    // 테스트용 위치 (실제로는 GPS에서 가져와야 함)
-    // 사용자 집 위치 근처로 설정 (예: 서울시청 좌표)
-    const double testLat = 37.5665;
-    const double testLng = 126.9780;
+  Future<void> _loadRobotCleanerNotification() async {
+    setState(() {
+      _isLoading = true;
+    });
 
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-      });
-    }
-
-    // 귀가 알림과 세탁기 알림을 동시에 로드
-    await Future.wait([
-      _loadHomeArrivalNotification(testLat, testLng),
-      _loadWasherFrequencyNotification(),
-    ]);
+    // 세탁기는 돌렸지만 로봇청소기를 돌리지 않고 1시간이 지난 경우 알림 표시
+    await _checkRobotCleanerStatus();
 
     setState(() {
       _isLoading = false;
     });
-  }
-
-  Future<void> _loadHomeArrivalNotification(double lat, double lng) async {
-    try {
-      final response = await ContextEventService.getContextEvent(
-        currentLat: lat,
-        currentLng: lng,
-      );
-
-      if (!mounted) return;
-
-      if (response != null && response['triggered'] == true) {
-        final latenessMinutes = response['lateness_minutes'] as int? ?? 0;
-
-        // 메시지 생성
-        String message;
-        if (latenessMinutes > 0) {
-          message = '지현님, 평소보다 귀가가 ${latenessMinutes}분 늦었네요';
-        } else if (latenessMinutes < 0) {
-          message = '지현님, 평소보다 귀가가 ${-latenessMinutes}분 빠르시네요';
-        } else {
-          message = '지현님, 오늘은 평소와 거의 비슷한 시간에 귀가 중이에요';
-        }
-
-        if (mounted) {
-          setState(() {
-            _latenessMessage = message;
-            _isLoading = false;
-          });
-        }
-      } else {
-        // API가 triggered=false를 반환하거나 오류 발생 시 기본 메시지
-        if (mounted) {
-          setState(() {
-            _latenessMessage = '지현님, 오늘은 평소와 거의 비슷한 시간에 귀가 중이에요';
-            _isLoading = false;
-          });
-        }
-      }
-    } catch (e) {
-      print('Error loading context event: $e');
-      if (mounted) {
-        setState(() {
-          _latenessMessage = '지현님, 오늘은 평소와 거의 비슷한 시간에 귀가 중이에요';
-          _isLoading = false;
-        });
-      }
-    }
   }
 
   // API 베이스 URL
@@ -135,9 +70,9 @@ class _PushScreenState extends State<PushScreen> {
 
   static const int userId = 1;
 
-  Future<void> _loadUnusedNotification() async {
+  Future<void> _checkRobotCleanerStatus() async {
     try {
-      // 미사용 알림 API 호출
+      // 백엔드 API에서 로봇청소기 알림 정보 가져오기
       List<String> urlsToTry = [baseUrl];
       if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
         urlsToTry = ApiConfig.getAndroidBaseUrls();
@@ -146,8 +81,9 @@ class _PushScreenState extends State<PushScreen> {
       for (final url in urlsToTry) {
         try {
           final uri = Uri.parse(
-            '$url/recommend/unused-notification',
+            '$url/recommend/robot-cleaner-notification',
           ).replace(queryParameters: {'user_id': userId.toString()});
+
           final response = await http
               .get(
                 uri,
@@ -167,71 +103,62 @@ class _PushScreenState extends State<PushScreen> {
             final data =
                 jsonDecode(utf8.decode(response.bodyBytes))
                     as Map<String, dynamic>;
-            final hasNotification = data['has_notification'] as bool? ?? false;
 
-            if (hasNotification) {
+            print('[CareScreen] API 응답: $data');
+
+            final hasNotification = data['has_notification'] as bool? ?? false;
+            print('[CareScreen] has_notification: $hasNotification');
+
+            if (hasNotification && mounted) {
               final notification =
                   data['notification'] as Map<String, dynamic>?;
-              if (notification != null && mounted) {
+              print('[CareScreen] notification: $notification');
+
+              if (notification != null) {
                 setState(() {
-                  _unusedFirstLine = notification['first_line'] as String?;
-                  _unusedSecondLine = notification['second_line'] as String?;
+                  final message = notification['message'] as String?;
+                  final routineId =
+                      notification['robot_cleaner_routine_id'] as int?;
+                  print('[CareScreen] message: $message');
+                  print('[CareScreen] routine_id: $routineId');
+                  if (message != null) {
+                    _robotCleanerMessage = message;
+                  } else {
+                    // message가 없으면 기본 메시지 사용
+                    _robotCleanerMessage =
+                        '로봇청소기를 안 돌린지 1시간이 넘었어요.\n깨끗한 집을 위해 지금 실행시켜주세요';
+                  }
+                  _robotCleanerRoutineId = routineId;
+                });
+              }
+            } else {
+              // 알림이 없으면 메시지 초기화
+              if (mounted) {
+                setState(() {
+                  _robotCleanerMessage = null;
                 });
               }
             }
             break; // 성공하면 종료
           }
         } catch (e) {
-          print('[PushScreen] 미사용 알림 로딩 실패 ($url): $e');
+          print('[CareScreen] 로봇청소기 알림 로딩 실패 ($url): $e');
           continue;
         }
       }
     } catch (e) {
-      print('[PushScreen] 미사용 알림 로딩 실패: $e');
-    }
-  }
-
-  Future<void> _loadWasherFrequencyNotification() async {
-    try {
-      // 세탁기 사용 빈도 확인
-      // 주 4회 목표인데 현재 2회만 사용한 경우 알림 표시
-      const int targetWeeklyUsage = 4;
-      const int currentWeeklyUsage = 2; // 실제로는 백엔드 API에서 가져와야 함
-
-      if (currentWeeklyUsage < targetWeeklyUsage) {
-        final remainingCount = targetWeeklyUsage - currentWeeklyUsage;
-        setState(() {
-          _washerFrequencyMessage =
-              '이번 주 세탁기를 ${currentWeeklyUsage}회만 사용하셨네요.\n목표까지 ${remainingCount}회 더 사용해야 해요.';
-        });
-      }
-    } catch (e) {
-      print('Error loading washer frequency notification: $e');
+      print('[CareScreen] 로봇청소기 알림 로딩 실패: $e');
       // 에러 발생 시 알림 표시 안 함
     }
-  }
-
-  void _handleSwipeLeft() {
-    // 왼쪽으로 스와이프하면 routine_screen으로 이동
-    Navigator.pushAndRemoveUntil(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const RoutineScreen(),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-      (route) => false,
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onHorizontalDragEnd: (details) {
-        // 왼쪽으로 스와이프 감지
+        // 왼쪽으로 스와이프 감지 (필요시 다른 화면으로 이동)
         if (details.primaryVelocity! < -500) {
-          _handleSwipeLeft();
+          Navigator.pop(context);
         }
       },
       child: Scaffold(
@@ -297,69 +224,38 @@ class _PushScreenState extends State<PushScreen> {
                     ),
                   ),
 
-                  // 알림 카드 (시간/날짜 아래 적절한 간격으로 배치)
-                  if (!_isLoading && _latenessMessage != null) ...[
-                    const SizedBox(height: 50),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: GestureDetector(
-                        onTap: () {
-                          // 우선순위 설정 화면으로 즉시 이동 (루틴은 PriorityScreen에서 로드)
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const PriorityScreen(
-                                selectedRoutines: [],
-                                shouldLoadRoutines: true,
+                  // 알림 카드들 (시간/날짜 아래 적절한 간격으로 배치)
+                  if (!_isLoading) ...[
+                    // 로봇청소기 알림 카드
+                    if (_robotCleanerMessage != null) ...[
+                      const SizedBox(height: 50),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => RobotPushScreen(
+                                  routineId: _robotCleanerRoutineId,
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                        child: _buildNotificationCard(
-                          firstLine: _latenessMessage ?? '',
-                          secondLine: '귀가하시면 해야할일 추천해드릴게요',
-                          timeLabel: '지금',
+                            );
+                          },
+                          child: _buildNotificationCard(
+                            firstLine: _robotCleanerMessage != null
+                                ? '지현님, ${_robotCleanerMessage!.split('\n').first}'
+                                : '지현님, 로봇청소기를 실행시켜주세요',
+                            secondLine:
+                                _robotCleanerMessage != null &&
+                                    _robotCleanerMessage!.split('\n').length > 1
+                                ? _robotCleanerMessage!.split('\n')[1]
+                                : '깨끗한 집을 위해 지금 실행시켜주세요',
+                            timeLabel: '지금',
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-
-                  // 미사용 알림 카드 (귀가 알림 아래 간격을 두고 배치)
-                  if (!_isLoading &&
-                      _unusedFirstLine != null &&
-                      _unusedSecondLine != null) ...[
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: _buildNotificationCard(
-                        firstLine: _unusedFirstLine!,
-                        secondLine: _unusedSecondLine!,
-                        timeLabel: '지금',
-                      ),
-                    ),
-                  ],
-
-                  // 세탁기 사용 빈도 알림 카드
-                  if (_washerFrequencyMessage != null) ...[
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const WashPushScreen(),
-                            ),
-                          );
-                        },
-                        child: _buildNotificationCard(
-                          firstLine: '지현님, $_washerFrequencyMessage',
-                          secondLine: '빨리 세탁기를 돌려야 해요.',
-                          timeLabel: '지금',
-                        ),
-                      ),
-                    ),
+                    ],
                   ],
 
                   // 하단 여백을 위한 Spacer
@@ -395,14 +291,11 @@ class _PushScreenState extends State<PushScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 아이콘 (빨간색 배경)
+          // 아이콘 (ThinQ 아이콘)
           Container(
             width: 70,
             height: 70,
-            decoration: BoxDecoration(
-              //color: const Color(0xFFFF3132), // 빨간색
-              borderRadius: BorderRadius.circular(8),
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
             child: Padding(
               padding: const EdgeInsets.all(6.0),
               child: Image.asset(
