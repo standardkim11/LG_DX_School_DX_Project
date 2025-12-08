@@ -64,8 +64,11 @@ class RoutineService {
           // 다음 URL 시도
           continue;
         }
-      } catch (e) {
-        print('[RoutineService] getAllRoutines $url 연결 실패: $e');
+      } catch (e, stackTrace) {
+        print('[RoutineService] getAllRoutines $url 연결 실패');
+        print('[RoutineService] 에러 타입: ${e.runtimeType}');
+        print('[RoutineService] 에러 메시지: $e');
+        print('[RoutineService] 스택 트레이스: $stackTrace');
         // 다음 URL 시도
         continue;
       }
@@ -128,8 +131,11 @@ class RoutineService {
           // 다음 URL 시도
           continue;
         }
-      } catch (e) {
-        print('[RoutineService] getRoutinesByDate $url 연결 실패: $e');
+      } catch (e, stackTrace) {
+        print('[RoutineService] getRoutinesByDate $url 연결 실패');
+        print('[RoutineService] 에러 타입: ${e.runtimeType}');
+        print('[RoutineService] 에러 메시지: $e');
+        print('[RoutineService] 스택 트레이스: $stackTrace');
         // 다음 URL 시도
         continue;
       }
@@ -200,8 +206,11 @@ class RoutineService {
           // 다음 URL 시도
           continue;
         }
-      } catch (e) {
-        print('[RoutineService] Create Routine $url 연결 실패: $e');
+      } catch (e, stackTrace) {
+        print('[RoutineService] Create Routine $url 연결 실패');
+        print('[RoutineService] 에러 타입: ${e.runtimeType}');
+        print('[RoutineService] 에러 메시지: $e');
+        print('[RoutineService] 스택 트레이스: $stackTrace');
         // 다음 URL 시도
         continue;
       }
