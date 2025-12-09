@@ -2,7 +2,7 @@ from flask import Blueprint, current_app, request, jsonify
 from datetime import datetime, time, date, timedelta
 import pandas as pd  # type: ignore
 from sqlalchemy.exc import DatabaseError  # type: ignore
-from sqlalchemy import or_  # type: ignore
+from sqlalchemy import or_, func  # type: ignore
 from Project.extensions import db
 from models import User, Routine, Notification, RoutineExecution , UserDevice  ,WeatherInfo, DeviceLog
 import re
@@ -216,19 +216,51 @@ def context_event():
     pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
 
     # 4) 모델 input rows 생성
+    # 성능 최적화: 모든 루틴의 마지막 실행 기록을 한 번의 쿼리로 조회 (N+1 쿼리 문제 해결)
+    routine_ids = [r.id for r in routines]
+    last_logs_query = (
+        db.session.query(
+            RoutineExecution.routine_id,
+            RoutineExecution.run_time,
+            RoutineExecution.recommended_flag,
+            func.row_number()
+            .over(
+                partition_by=RoutineExecution.routine_id,
+                order_by=RoutineExecution.start_time.desc()
+            )
+            .label('rn')
+        )
+        .filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id.in_(routine_ids)
+        )
+        .subquery()
+    )
+    
+    # 각 루틴별로 가장 최근 실행 기록만 가져오기
+    last_logs_map = {}
+    if routine_ids:
+        last_logs = (
+            db.session.query(last_logs_query)
+            .filter(last_logs_query.c.rn == 1)
+            .all()
+        )
+        for log in last_logs:
+            last_logs_map[log.routine_id] = {
+                'run_time': log.run_time,
+                'recommended_flag': log.recommended_flag
+            }
+    
     rows = []
     for r in routines:
         rt = encode_routine_type(r.routine_type)
         st = encode_schedule_type(r.schedule_type)
         preferred_hour = parse_preferred_time(r.preferred_time)
 
-        last_log = RoutineExecution.query.filter_by(
-            user_id=user_id, routine_id=r.id
-        ).order_by(RoutineExecution.start_time.desc()).first()
-
+        last_log = last_logs_map.get(r.id)
         if last_log:
-            run_time = int(last_log.run_time or r.run_minutes or 30)
-            recommended_flag = int(bool(last_log.recommended_flag))
+            run_time = int(last_log['run_time'] or r.run_minutes or 30)
+            recommended_flag = int(bool(last_log['recommended_flag']))
         else:
             run_time = int(r.run_minutes or 30)
             recommended_flag = 0
@@ -393,10 +425,42 @@ def get_priority_today():
     pm25 = float(weather.pm25) if weather and weather.pm25 else 40.0
     pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
 
+    # 성능 최적화: 모든 루틴의 마지막 실행 기록을 한 번의 쿼리로 조회 (N+1 쿼리 문제 해결)
+    routine_ids = [r.id for r in routines]
+    last_logs_query = (
+        db.session.query(
+            RoutineExecution.routine_id,
+            RoutineExecution.run_time,
+            RoutineExecution.recommended_flag,
+            func.row_number()
+            .over(
+                partition_by=RoutineExecution.routine_id,
+                order_by=RoutineExecution.start_time.desc()
+            )
+            .label('rn')
+        )
+        .filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id.in_(routine_ids)
+        )
+        .subquery()
+    )
+    
+    # 각 루틴별로 가장 최근 실행 기록만 가져오기
+    last_logs_map = {}
+    if routine_ids:
+        last_logs = (
+            db.session.query(last_logs_query)
+            .filter(last_logs_query.c.rn == 1)
+            .all()
+        )
+        for log in last_logs:
+            last_logs_map[log.routine_id] = {
+                'run_time': log.run_time,
+                'recommended_flag': log.recommended_flag
+            }
+    
     rows = []
-
-    rows = []
-
     for r in routines:
         # ROUTINE_TYPE (문자열/숫자 → 숫자)
         rt = encode_routine_type(r.routine_type)
@@ -407,14 +471,11 @@ def get_priority_today():
         # PREFERRED_TIME (문자열/숫자 → 시 단위 정수)
         preferred_hour = parse_preferred_time(r.preferred_time)
 
-        # 최근 실행 기록
-        last_log = RoutineExecution.query.filter_by(
-            user_id=user_id, routine_id=r.id
-        ).order_by(RoutineExecution.start_time.desc()).first()
-
+        # 최근 실행 기록 (배치 조회된 데이터 사용)
+        last_log = last_logs_map.get(r.id)
         if last_log:
-            run_time = int(last_log.run_time or r.run_minutes or 30)
-            recommended_flag = int(bool(last_log.recommended_flag))
+            run_time = int(last_log['run_time'] or r.run_minutes or 30)
+            recommended_flag = int(bool(last_log['recommended_flag']))
         else:
             run_time = int(r.run_minutes or 30)
             recommended_flag = 0
@@ -550,19 +611,52 @@ def get_priority_for_selected_routines():
     pm25 = float(weather.pm25) if weather and weather.pm25 else 40.0
     pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
 
+    # 성능 최적화: 모든 루틴의 마지막 실행 기록을 한 번의 쿼리로 조회 (N+1 쿼리 문제 해결)
+    routine_ids_list = [r.id for r in routines]
+    last_logs_query = (
+        db.session.query(
+            RoutineExecution.routine_id,
+            RoutineExecution.run_time,
+            RoutineExecution.recommended_flag,
+            func.row_number()
+            .over(
+                partition_by=RoutineExecution.routine_id,
+                order_by=RoutineExecution.start_time.desc()
+            )
+            .label('rn')
+        )
+        .filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id.in_(routine_ids_list)
+        )
+        .subquery()
+    )
+    
+    # 각 루틴별로 가장 최근 실행 기록만 가져오기
+    last_logs_map = {}
+    if routine_ids_list:
+        last_logs = (
+            db.session.query(last_logs_query)
+            .filter(last_logs_query.c.rn == 1)
+            .all()
+        )
+        for log in last_logs:
+            last_logs_map[log.routine_id] = {
+                'run_time': log.run_time,
+                'recommended_flag': log.recommended_flag
+            }
+    
     rows = []
     for r in routines:
         rt = encode_routine_type(r.routine_type)
         st = encode_schedule_type(r.schedule_type)
         preferred_hour = parse_preferred_time(r.preferred_time)
 
-        last_log = RoutineExecution.query.filter_by(
-            user_id=user_id, routine_id=r.id
-        ).order_by(RoutineExecution.start_time.desc()).first()
-
+        # 최근 실행 기록 (배치 조회된 데이터 사용)
+        last_log = last_logs_map.get(r.id)
         if last_log:
-            run_time = int(last_log.run_time or r.run_minutes or 30)
-            recommended_flag = int(bool(last_log.recommended_flag))
+            run_time = int(last_log['run_time'] or r.run_minutes or 30)
+            recommended_flag = int(bool(last_log['recommended_flag']))
         else:
             run_time = int(r.run_minutes or 30)
             recommended_flag = 0
@@ -1030,11 +1124,11 @@ def get_unused_notification():
     notifications = []
     
     for routine in routines:
-        # 이번 달 실행 횟수 계산
+        # 이번 달 실행 횟수 계산 (status는 숫자로 저장됨: 2=완료)
         executions_this_month = RoutineExecution.query.filter(
             RoutineExecution.user_id == user_id,
             RoutineExecution.routine_id == routine.id,
-            RoutineExecution.status == 'COMPLETED',
+            RoutineExecution.status == 2,  # 숫자 2만 비교 (완료 상태)
             RoutineExecution.start_time >= datetime.combine(current_month_start, time.min),
             RoutineExecution.start_time <= datetime.combine(current_month_end, time.max)
         ).count()
@@ -1241,6 +1335,9 @@ def get_dashboard():
       }
     }
     """
+    import time as time_module
+    start_time = time_module.time()
+    
     user_id = request.args.get("user_id", type=int)
     if not user_id:
         return jsonify({"error": "user_id is required"}), 400
@@ -1256,49 +1353,40 @@ def get_dashboard():
         next_month_dt = datetime(year + 1, 1, 1)
     else:
         next_month_dt = datetime(year, month + 1, 1)
+    
+    current_app.logger.info(f"[DASHBOARD] 시작: user_id={user_id}, year={year}, month={month}")
 
     # -------------------------------
-    # 1) 월간 실행 로그 집계 (집계 쿼리로 최적화)
+    # 1) 월간 실행 로그 집계 (성능 최적화: 하나의 쿼리로 통합)
+    # CASE WHEN을 사용하여 인덱스를 한 번만 스캔하여 두 개의 COUNT를 계산
     # -------------------------------
-    from sqlalchemy import func
+    from sqlalchemy import func, case
     
-    # 한 번의 쿼리로 상태별 집계
-    status_counts_query = (
+    query_start = time_module.time()
+    status_counts = (
         db.session.query(
-            RoutineExecution.status,
-            func.count(RoutineExecution.id).label('count')
+            func.sum(case((RoutineExecution.status == 2, 1), else_=0)).label('completed'),
+            func.sum(case((RoutineExecution.status == 3, 1), else_=0)).label('failed')
         )
         .filter(
             RoutineExecution.user_id == user_id,
             RoutineExecution.start_time >= start_dt,
             RoutineExecution.start_time < next_month_dt,
+            RoutineExecution.status.in_([2, 3])  # 완료 또는 실패만 필터링
         )
-        .group_by(RoutineExecution.status)
-        .all()
+        .first()
     )
     
-    # 상태별 카운트 딕셔너리로 변환
-    status_counts = {status: count for status, count in status_counts_query}
+    completed_count = int(status_counts[0] or 0) if status_counts else 0
+    failed_count = int(status_counts[1] or 0) if status_counts else 0
     
-    # STATUS 정의: 0=PENDING, 1=RUNNING, 2=DONE, 3=FAILED
-    # status가 문자열 "2"이거나 숫자 2인 경우 모두 체크
-    completed_count = sum(
-        count for status, count in status_counts.items()
-        if status == 2 or str(status) == "2"
-    )
-    failed_count = sum(
-        count for status, count in status_counts.items()
-        if status == 3 or str(status) == "3"
-    )
+    current_app.logger.info(f"[DASHBOARD] 상태별 카운트 쿼리: {time_module.time() - query_start:.2f}초, completed={completed_count}, failed={failed_count}")
     
     # 미룬 루틴 수: PENDING 상태이면서 오늘 날짜가 지난 루틴
     # 또는 특정 규칙에 따라 계산 (현재는 0으로 설정, 필요시 로직 추가)
     postponed_count = 0
     
-    # 디버깅
-    current_app.logger.info(f"[DASHBOARD] user_id={user_id}, year={year}, month={month}")
-    current_app.logger.info(f"[DASHBOARD] 상태별 개수: {status_counts}")
-    current_app.logger.info(f"[DASHBOARD] 완료(DONE=2): {completed_count}, 실패(FAILED=3): {failed_count}")
+    # 성능 최적화: 불필요한 디버깅 로그 제거
 
     denom = completed_count + failed_count + postponed_count
     success_rate = (completed_count / denom) if denom > 0 else None
@@ -1325,27 +1413,8 @@ def get_dashboard():
     }
 
     # 습관 트래킹 설정( habit_goal_days )이 된 루틴 중 하나 선택
-    # SQLAlchemy 세션 새로고침 (DB 변경사항 반영)
-    db.session.expire_all()
-    
-    # 디버깅: DB에서 직접 쿼리로 확인
-    from sqlalchemy import text
-    direct_query = text("SELECT id, name, HABIT_GOAL_DAYS, HABIT_START_DATE, is_active FROM routines WHERE user_id = :user_id")
-    direct_results = db.session.execute(direct_query, {"user_id": user_id}).fetchall()
-    current_app.logger.info(f"[DASHBOARD] DB 직접 조회 결과:")
-    for row in direct_results:
-        current_app.logger.info(f"[DASHBOARD]   ID={row[0]}, name={row[1]}, HABIT_GOAL_DAYS={row[2]}, HABIT_START_DATE={row[3]}, is_active={row[4]}")
-    
-    # 디버깅: 모든 루틴 확인 (ORM)
-    all_routines_debug = Routine.query.filter_by(user_id=user_id).all()
-    current_app.logger.info(f"[DASHBOARD] user_id={user_id}의 전체 루틴 개수 (ORM): {len(all_routines_debug)}")
-    for r in all_routines_debug:
-        # 세션 새로고침
-        db.session.refresh(r)
-        current_app.logger.info(f"[DASHBOARD] 루틴 ID={r.id}, name={r.name}, is_active={r.is_active} (type: {type(r.is_active)}), habit_goal_days={r.habit_goal_days}, habit_start_date={r.habit_start_date}")
-    
-    # is_active 필터링: Boolean True 또는 숫자 1 모두 체크
-    # SQLAlchemy에서 Boolean 컬럼이 숫자로 저장될 수 있음
+    # 성능 최적화: 불필요한 디버깅 코드 제거 및 단일 쿼리로 최적화
+    query_start = time_module.time()
     from sqlalchemy import or_
     habit_routine = (
         Routine.query
@@ -1357,46 +1426,34 @@ def get_dashboard():
         .order_by(Routine.habit_start_date.asc().nulls_last())
         .first()
     )
-    
-    # 결과가 없으면 세션을 새로고침하고 다시 시도
-    if not habit_routine:
-        db.session.expire_all()
-        habit_routine = (
-            Routine.query
-            .filter(
-                Routine.user_id == user_id,
-                or_(Routine.is_active == True, Routine.is_active == 1),
-                Routine.habit_goal_days.isnot(None),
-            )
-            .order_by(Routine.habit_start_date.asc().nulls_last())
-            .first()
-        )
-    
-    current_app.logger.info(f"[DASHBOARD] 습관 루틴 찾기 결과: {habit_routine.id if habit_routine else 'None (습관 루틴 없음)'}")
-    if habit_routine:
-        current_app.logger.info(f"[DASHBOARD] 습관 루틴 상세: id={habit_routine.id}, name={habit_routine.name}, goal_days={habit_routine.habit_goal_days}, start_date={habit_routine.habit_start_date}, is_active={habit_routine.is_active}")
+    current_app.logger.info(f"[DASHBOARD] 습관 루틴 조회: {time_module.time() - query_start:.2f}초")
 
     if habit_routine and habit_routine.habit_goal_days:
         goal_days = int(habit_routine.habit_goal_days)
         # 시작일 없으면 월 시작일로 대체
         start_date = habit_routine.habit_start_date or start_dt.date()
         
-        current_app.logger.info(f"[DASHBOARD] 습관 루틴 처리 시작: id={habit_routine.id}, goal_days={goal_days}, start_date={start_date}")
-
-        # 해당 루틴의 완료 로그에서 "완료한 날짜 수" 계산
+        # 성능 최적화: 완료한 날짜 수 계산
+        # Oracle에서 날짜 추출이 복잡하므로, 최소한의 데이터만 가져와서 Python에서 처리
+        # start_time만 선택하여 네트워크 전송량 최소화
+        # 성능 최적화: LIMIT 추가 및 인덱스 활용
+        query_start = time_module.time()
         habit_logs = (
-            RoutineExecution.query
+            db.session.query(RoutineExecution.start_time)
             .filter(
                 RoutineExecution.user_id == user_id,
                 RoutineExecution.routine_id == habit_routine.id,
-                RoutineExecution.status == 2,  # DONE
+                RoutineExecution.status == 2,  # DONE (숫자 2)
                 RoutineExecution.start_time >= datetime.combine(start_date, time.min),
                 RoutineExecution.start_time < next_month_dt,
             )
+            .limit(100)  # 성능 최적화: 한 달에 100일 이상 완료는 불가능하므로 제한
             .all()
         )
-
-        done_dates = {log.start_time.date() for log in habit_logs if log.start_time}
+        current_app.logger.info(f"[DASHBOARD] 습관 로그 조회: {time_module.time() - query_start:.2f}초, 로그 수={len(habit_logs)}")
+        
+        # 날짜만 추출하여 중복 제거
+        done_dates = {log[0].date() for log in habit_logs if log[0]}
         done_days = len(done_dates)
         remaining_days = max(goal_days - done_days, 0)
         progress_rate = (done_days / goal_days) if goal_days > 0 else None
@@ -1428,7 +1485,8 @@ def get_dashboard():
         "habit": habit_info,
     }
     
-    current_app.logger.info(f"[DASHBOARD] 최종 응답 데이터: habit.enabled={habit_info['enabled']}, habit.display_name={habit_info['display_name']}")
+    total_time = time_module.time() - start_time
+    current_app.logger.info(f"[DASHBOARD] 전체 처리 시간: {total_time:.2f}초")
     
     return jsonify(response_data)
 

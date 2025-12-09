@@ -78,7 +78,10 @@ class _CareScreenState extends State<CareScreen> {
         urlsToTry = ApiConfig.getAndroidBaseUrls();
       }
 
-      for (final url in urlsToTry) {
+      print('[CareScreen] 로봇청소기 알림 로딩 시작: ${urlsToTry.length}개 URL');
+      for (int i = 0; i < urlsToTry.length; i++) {
+        final url = urlsToTry[i];
+        print('[CareScreen] 로봇청소기 알림 시도 ${i + 1}/${urlsToTry.length}: $url');
         try {
           final uri = Uri.parse(
             '$url/recommend/robot-cleaner-notification',
@@ -93,7 +96,7 @@ class _CareScreenState extends State<CareScreen> {
                 },
               )
               .timeout(
-                const Duration(seconds: 30), // 타임아웃 단축 (30초로 변경)
+                const Duration(seconds: 10), // 실제 기기에서는 빠른 실패로 다음 URL 시도
                 onTimeout: () {
                   throw Exception('요청 시간 초과');
                 },
@@ -104,23 +107,19 @@ class _CareScreenState extends State<CareScreen> {
                 jsonDecode(utf8.decode(response.bodyBytes))
                     as Map<String, dynamic>;
 
-            print('[CareScreen] API 응답: $data');
-
             final hasNotification = data['has_notification'] as bool? ?? false;
-            print('[CareScreen] has_notification: $hasNotification');
 
             if (hasNotification && mounted) {
               final notification =
                   data['notification'] as Map<String, dynamic>?;
-              print('[CareScreen] notification: $notification');
+
+              print('[CareScreen] 알림 있음 - notification: $notification');
 
               if (notification != null) {
                 setState(() {
                   final message = notification['message'] as String?;
                   final routineId =
                       notification['robot_cleaner_routine_id'] as int?;
-                  print('[CareScreen] message: $message');
-                  print('[CareScreen] routine_id: $routineId');
                   if (message != null) {
                     _robotCleanerMessage = message;
                   } else {
@@ -139,15 +138,30 @@ class _CareScreenState extends State<CareScreen> {
                 });
               }
             }
+            print('[CareScreen] 로봇청소기 알림 로딩 성공: $url');
             break; // 성공하면 종료
+          } else {
+            // HTTP 에러
+            print(
+              '[CareScreen] 로봇청소기 알림 HTTP 에러 ($url): ${response.statusCode}',
+            );
+            continue;
           }
         } catch (e) {
+          // 모든 URL 시도 실패 시 로그 출력
           print('[CareScreen] 로봇청소기 알림 로딩 실패 ($url): $e');
+          if (i == urlsToTry.length - 1) {
+            // 마지막 URL도 실패
+            print('[CareScreen] 로봇청소기 알림 로딩 실패 - 모든 URL 시도 완료');
+          }
           continue;
         }
       }
+
+      // 모든 URL 시도 실패 시 로그 출력
+      print('[CareScreen] 로봇청소기 알림 최종 실패: 모든 URL 연결 시도 완료');
     } catch (e) {
-      print('[CareScreen] 로봇청소기 알림 로딩 실패: $e');
+      print('[CareScreen] 로봇청소기 알림 로딩 중 예외 발생: $e');
       // 에러 발생 시 알림 표시 안 함
     }
   }

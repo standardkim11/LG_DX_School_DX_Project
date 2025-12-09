@@ -207,40 +207,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadDashboardData() async {
-    print('[Dashboard] 데이터 로딩 시작');
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      print('[Dashboard] API 호출 시작...');
       final data = await DashboardService.getDashboardData().timeout(
-        const Duration(seconds: 35),
+        const Duration(seconds: 120), // 실제 기기 네트워크 고려하여 120초로 증가
         onTimeout: () {
-          print('[Dashboard] 타임아웃 발생 (35초 초과)');
           throw Exception('요청 시간 초과 - 백엔드 서버가 실행 중인지 확인해주세요');
         },
       );
 
-      print('[Dashboard] API 응답 받음: ${data != null ? "성공" : "null"}');
-
+      if (!mounted) return;
+      
       if (data != null) {
-        setState(() {
-          _dashboardData = data;
-          _isLoading = false;
-        });
-        print('[Dashboard] 데이터 로딩 완료');
+        if (mounted) {
+          setState(() {
+            _dashboardData = data;
+            _isLoading = false;
+          });
+        }
       } else {
         setState(() {
           _errorMessage = '데이터를 불러올 수 없습니다.';
           _isLoading = false;
         });
-        print('[Dashboard] 데이터가 null입니다');
       }
-    } catch (e, stackTrace) {
-      print('[Dashboard] 에러 발생: $e');
-      print('[Dashboard] Stack trace: $stackTrace');
+    } catch (e) {
+      // 에러는 조용히 처리 (필요시 로그 출력 가능)
+      if (!mounted) return;
       setState(() {
         _errorMessage = '오류가 발생했습니다: $e';
         _isLoading = false;

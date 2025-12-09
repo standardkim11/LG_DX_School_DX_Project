@@ -482,6 +482,9 @@ class _RoutineScreenState extends State<RoutineScreen>
     _dateScrollController = ScrollController();
     WidgetsBinding.instance.addObserver(this); // 생명주기 관찰자 등록
 
+    // 루틴 화면을 열 때마다 오늘 날짜로 설정
+    setRoutineScreenToToday();
+
     // 저장된 날짜 인덱스로 복원 (항상 최신 상태 사용)
     _selectedDateIndex = _RoutineScreenStateManager.selectedDateIndex;
 
@@ -508,9 +511,16 @@ class _RoutineScreenState extends State<RoutineScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 앱이 다시 활성화될 때 데이터 새로고침
+    // 앱이 다시 활성화될 때 오늘 날짜로 설정하고 데이터 새로고침
     if (state == AppLifecycleState.resumed) {
-      _refreshCurrentDate();
+      setRoutineScreenToToday();
+      if (mounted) {
+        setState(() {
+          _selectedDateIndex = _RoutineScreenStateManager.selectedDateIndex;
+        });
+        _scrollToSelectedDate(context);
+        _refreshCurrentDate();
+      }
     }
   }
 

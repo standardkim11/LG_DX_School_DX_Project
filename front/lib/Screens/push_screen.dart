@@ -21,7 +21,6 @@ class _PushScreenState extends State<PushScreen> {
   String? _latenessMessage;
   String? _unusedFirstLine;
   String? _unusedSecondLine;
-  String? _washerFrequencyMessage;
   bool _isLoading = true;
   Timer? _timeTimer;
   String _currentTime = '';
@@ -34,8 +33,13 @@ class _PushScreenState extends State<PushScreen> {
     _timeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _updateCurrentTime();
     });
-    _loadContextEvent();
-    _loadUnusedNotification();
+    // 성능 최적화: 두 API 호출을 병렬 처리
+    _loadAllData();
+  }
+
+  // 병렬로 모든 데이터 로드
+  Future<void> _loadAllData() async {
+    await Future.wait([_loadContextEvent(), _loadUnusedNotification()]);
   }
 
   @override
@@ -65,11 +69,8 @@ class _PushScreenState extends State<PushScreen> {
       });
     }
 
-    // 귀가 알림과 세탁기 알림을 동시에 로드
-    await Future.wait([
-      _loadHomeArrivalNotification(testLat, testLng),
-      _loadWasherFrequencyNotification(),
-    ]);
+    // 귀가 알림 로드
+    await _loadHomeArrivalNotification(testLat, testLng);
 
     setState(() {
       _isLoading = false;
@@ -143,7 +144,13 @@ class _PushScreenState extends State<PushScreen> {
         urlsToTry = ApiConfig.getAndroidBaseUrls();
       }
 
-      for (final url in urlsToTry) {
+      // 성능 최적화: 순차적으로 시도 (실제 기기에서는 10.0.2.2 타임아웃 시간 낭비 방지)
+      // 첫 번째 URL부터 시도하고, 성공하면 즉시 반환
+      Map<String, dynamic>? data;
+      print('[PushScreen] 미사용 알림 로딩 시작: ${urlsToTry.length}개 URL');
+      for (int i = 0; i < urlsToTry.length; i++) {
+        final url = urlsToTry[i];
+        print('[PushScreen] 미사용 알림 시도 ${i + 1}/${urlsToTry.length}: $url');
         try {
           final uri = Uri.parse(
             '$url/recommend/unused-notification',
@@ -157,56 +164,55 @@ class _PushScreenState extends State<PushScreen> {
                 },
               )
               .timeout(
-                const Duration(seconds: 30), // 타임아웃 단축 (30초로 변경)
+                const Duration(seconds: 10), // 실제 기기에서는 빠른 실패로 다음 URL 시도
                 onTimeout: () {
                   throw Exception('요청 시간 초과');
                 },
               );
 
           if (response.statusCode == 200) {
-            final data =
+            data =
                 jsonDecode(utf8.decode(response.bodyBytes))
                     as Map<String, dynamic>;
-            final hasNotification = data['has_notification'] as bool? ?? false;
-
-            if (hasNotification) {
-              final notification =
-                  data['notification'] as Map<String, dynamic>?;
-              if (notification != null && mounted) {
-                setState(() {
-                  _unusedFirstLine = notification['first_line'] as String?;
-                  _unusedSecondLine = notification['second_line'] as String?;
-                });
-              }
-            }
-            break; // 성공하면 종료
+            print('[PushScreen] 미사용 알림 로딩 성공: $url');
+            break; // 성공하면 즉시 반복 종료
+          } else {
+            // HTTP 에러
+            print('[PushScreen] HTTP 에러 ($url): ${response.statusCode}');
+            continue;
           }
         } catch (e) {
+          // 모든 URL 시도 실패 시 로그 출력
           print('[PushScreen] 미사용 알림 로딩 실패 ($url): $e');
+          if (i == urlsToTry.length - 1) {
+            // 마지막 URL도 실패
+            print('[PushScreen] 미사용 알림 로딩 실패 - 모든 URL 시도 완료');
+          }
           continue;
         }
       }
-    } catch (e) {
-      print('[PushScreen] 미사용 알림 로딩 실패: $e');
-    }
-  }
 
-  Future<void> _loadWasherFrequencyNotification() async {
-    try {
-      // 세탁기 사용 빈도 확인
-      // 주 4회 목표인데 현재 2회만 사용한 경우 알림 표시
-      const int targetWeeklyUsage = 4;
-      const int currentWeeklyUsage = 2; // 실제로는 백엔드 API에서 가져와야 함
+      // 모든 URL 시도 실패 시 로그 출력
+      if (data == null) {
+        print('[PushScreen] 최종 실패: 모든 URL 연결 시도 완료');
+      }
 
-      if (currentWeeklyUsage < targetWeeklyUsage) {
-        final remainingCount = targetWeeklyUsage - currentWeeklyUsage;
-        setState(() {
-          _washerFrequencyMessage =
-              '이번 주 세탁기를 ${currentWeeklyUsage}회만 사용하셨네요.\n목표까지 ${remainingCount}회 더 사용해야 해요.';
-        });
+      if (data != null && mounted) {
+        final hasNotification = data['has_notification'] as bool? ?? false;
+
+        if (hasNotification) {
+          final notification = data['notification'] as Map<String, dynamic>?;
+          if (notification != null) {
+            setState(() {
+              _unusedFirstLine = notification['first_line'] as String?;
+              _unusedSecondLine = notification['second_line'] as String?;
+            });
+          }
+        }
       }
     } catch (e) {
-      print('Error loading washer frequency notification: $e');
+      // 예외 발생 시 로그 출력
+      print('[PushScreen] 미사용 알림 로딩 중 예외 발생: $e');
       // 에러 발생 시 알림 표시 안 함
     }
   }
@@ -324,28 +330,16 @@ class _PushScreenState extends State<PushScreen> {
                     ),
                   ],
 
-                  // 미사용 알림 카드 (귀가 알림 아래 간격을 두고 배치)
+                  // 미사용 알림 카드 (DB에서 가져온 미실행 루틴 알림)
                   if (!_isLoading &&
                       _unusedFirstLine != null &&
                       _unusedSecondLine != null) ...[
                     const SizedBox(height: 16),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: _buildNotificationCard(
-                        firstLine: _unusedFirstLine!,
-                        secondLine: _unusedSecondLine!,
-                        timeLabel: '지금',
-                      ),
-                    ),
-                  ],
-
-                  // 세탁기 사용 빈도 알림 카드
-                  if (_washerFrequencyMessage != null) ...[
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: GestureDetector(
                         onTap: () {
+                          // 미사용 알림 클릭 시 세탁기 화면으로 이동 (또는 해당 루틴 화면으로)
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -354,8 +348,8 @@ class _PushScreenState extends State<PushScreen> {
                           );
                         },
                         child: _buildNotificationCard(
-                          firstLine: '지현님, $_washerFrequencyMessage',
-                          secondLine: '빨리 세탁기를 돌려야 해요.',
+                          firstLine: _unusedFirstLine!,
+                          secondLine: _unusedSecondLine!,
                           timeLabel: '지금',
                         ),
                       ),

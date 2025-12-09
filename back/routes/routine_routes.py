@@ -146,32 +146,154 @@ def list_routines():
         return jsonify([])
     
     # 목표 달성된 WEEKLY/MONTHLY 루틴 필터링
-    from .maping import is_goal_achieved, is_scheduled_today
+    from .maping import is_scheduled_today
     from datetime import date
     today = date.today()
     
-    filtered_routines = []
+    # 성능 최적화: 모든 WEEKLY/MONTHLY 루틴의 목표 달성 여부를 배치로 조회
+    weekly_routines = []
+    monthly_routines = []
+    daily_routines = []
+    other_routines = []
+    
     for r in routines:
         st = (r.schedule_type or "").upper()
-        # DAILY 루틴은 항상 표시
         if st == "DAILY":
-            filtered_routines.append(r)
-        # WEEKLY/MONTHLY 루틴은 목표 달성되지 않은 것만 표시
-        elif st in ["WEEKLY", "MONTHLY"]:
-            # 오늘 스케줄에 해당하는지 확인
-            scheduled = is_scheduled_today(r, today)
-            # 목표 달성 여부 확인
-            goal_achieved = is_goal_achieved(r, user_id, today)
-            
-            print(f"[list_routines] 루틴 {r.id} ({r.name}): schedule_type={st}, scheduled={scheduled}, goal_achieved={goal_achieved}")
-            
-            # 오늘 스케줄에 해당하고 목표 달성되지 않은 것만 표시
-            if scheduled and not goal_achieved:
-                filtered_routines.append(r)
-            else:
-                print(f"[list_routines] 루틴 {r.id} ({r.name}) 필터링됨: scheduled={scheduled}, goal_achieved={goal_achieved}")
+            daily_routines.append(r)
+        elif st == "WEEKLY":
+            weekly_routines.append(r)
+        elif st == "MONTHLY":
+            monthly_routines.append(r)
         else:
-            # 기타 타입은 그대로 표시
+            other_routines.append(r)
+    
+    # WEEKLY 루틴 목표 달성 여부 배치 조회
+    goal_achieved_map = {}
+    if weekly_routines:
+        # 이번 주 시작일 계산
+        weekday = today.weekday()
+        week_start = today - timedelta(days=weekday)
+        week_start_dt = datetime.combine(week_start, datetime.min.time())
+        week_end_dt = datetime.combine(week_start + timedelta(days=7), datetime.min.time())
+        
+        weekly_ids = [r.id for r in weekly_routines]
+        # 각 루틴의 이번 주 완료 횟수와 목표 빈도 가져오기
+        weekly_completed_counts = (
+            db.session.query(
+                RoutineExecution.routine_id,
+                func.count(RoutineExecution.id).label('count')
+            )
+            .filter(
+                RoutineExecution.user_id == user_id,
+                RoutineExecution.routine_id.in_(weekly_ids),
+                RoutineExecution.start_time >= week_start_dt,
+                RoutineExecution.start_time < week_end_dt,
+                RoutineExecution.status == 2
+            )
+            .group_by(RoutineExecution.routine_id)
+            .all()
+        )
+        completed_count_map = {rid: count for rid, count in weekly_completed_counts}
+        
+        for r in weekly_routines:
+            completed_count = completed_count_map.get(r.id, 0)
+            frequency = getattr(r, 'schedule_frequency', 1) or 1
+            goal_achieved_map[r.id] = completed_count >= frequency
+    
+    # MONTHLY 루틴 목표 달성 여부 배치 조회
+    if monthly_routines:
+        monthly_ids = [r.id for r in monthly_routines]
+        # 각 MONTHLY 루틴의 created_at과 frequency 정보 수집
+        monthly_info = {}
+        for r in monthly_routines:
+            created = r.created_at.date() if r.created_at else today
+            created_dt = datetime.combine(created, datetime.min.time())
+            period_end = created + timedelta(days=30)
+            period_end_dt = datetime.combine(period_end, datetime.min.time())
+            frequency = getattr(r, 'schedule_frequency', 1) or 1
+            monthly_info[r.id] = {
+                'created_dt': created_dt,
+                'period_end_dt': period_end_dt,
+                'frequency': frequency
+            }
+        
+        # 모든 MONTHLY 루틴의 완료 횟수 배치 조회
+        monthly_completed_counts = {}
+        for rid, info in monthly_info.items():
+            completed_count = (
+                db.session.query(func.count(RoutineExecution.id))
+                .filter(
+                    RoutineExecution.user_id == user_id,
+                    RoutineExecution.routine_id == rid,
+                    RoutineExecution.start_time >= info['created_dt'],
+                    RoutineExecution.start_time < info['period_end_dt'],
+                    RoutineExecution.status == 2
+                )
+                .scalar() or 0
+            )
+            monthly_completed_counts[rid] = completed_count
+        
+        # 목표 달성된 루틴의 마지막 완료 날짜 조회 (배치)
+        achieved_monthly_ids = [
+            rid for rid in monthly_ids 
+            if monthly_completed_counts.get(rid, 0) >= monthly_info[rid]['frequency']
+        ]
+        
+        # 목표 달성되지 않은 루틴은 False로 설정
+        for rid in monthly_ids:
+            if rid not in achieved_monthly_ids:
+                goal_achieved_map[rid] = False
+        
+        if achieved_monthly_ids:
+            # 모든 목표 달성된 MONTHLY 루틴의 마지막 완료 날짜를 한 번에 조회
+            # 각 루틴별로 다른 날짜 범위를 사용하므로, 각 루틴별로 조회해야 하지만
+            # 가능한 경우 배치 최적화
+            last_completed_dates = {}
+            
+            # 각 루틴의 마지막 완료 날짜를 조회 (날짜 범위가 달라서 완전한 배치는 어려움)
+            # 하지만 루프 내에서 쿼리를 최적화
+            for rid in achieved_monthly_ids:
+                info = monthly_info[rid]
+                last_completed = (
+                    RoutineExecution.query
+                    .filter(
+                        RoutineExecution.user_id == user_id,
+                        RoutineExecution.routine_id == rid,
+                        RoutineExecution.start_time >= info['created_dt'],
+                        RoutineExecution.start_time < info['period_end_dt'],
+                        RoutineExecution.status == 2
+                    )
+                    .order_by(RoutineExecution.start_time.desc())
+                    .first()
+                )
+                if last_completed and last_completed.start_time:
+                    last_completed_dates[rid] = last_completed.start_time.date()
+            
+            # 목표 달성 여부 최종 판단
+            for rid in achieved_monthly_ids:
+                last_date = last_completed_dates.get(rid)
+                if last_date:
+                    # 마지막 완료 날짜의 다음날부터는 더 이상 표시하지 않음
+                    goal_achieved_map[rid] = today > last_date
+                else:
+                    # 완료 기록이 있지만 날짜 정보가 없으면 목표 달성으로 간주
+                    goal_achieved_map[rid] = True
+    
+    # 필터링된 루틴 리스트 구성
+    filtered_routines = []
+    filtered_routines.extend(daily_routines)
+    filtered_routines.extend(other_routines)
+    
+    for r in weekly_routines:
+        scheduled = is_scheduled_today(r, today)
+        goal_achieved = goal_achieved_map.get(r.id, False)
+        if scheduled and not goal_achieved:
+            filtered_routines.append(r)
+    
+    for r in monthly_routines:
+        scheduled = is_scheduled_today(r, today)
+        goal_achieved = goal_achieved_map.get(r.id, False)
+        if scheduled and not goal_achieved:
             filtered_routines.append(r)
     
     routines = filtered_routines

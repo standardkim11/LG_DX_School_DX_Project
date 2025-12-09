@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import '../components/app_colors.dart';
 import '../components/app_text_styles.dart';
 import '../components/tab_bar.dart';
@@ -9,6 +13,7 @@ import 'dashboard_screen.dart';
 import 'priority.dart';
 import 'routinesave_screen.dart';
 import '../Services/routine_service.dart';
+import '../Services/config.dart';
 
 class ViewAllScreen extends StatefulWidget {
   final String? selectedDateKey; // 선택된 날짜 키 (YYYY-MM-DD 형식)
@@ -261,7 +266,81 @@ class _ViewAllScreenState extends State<ViewAllScreen>
     }
   }
 
-  void _showWeatherWarningDialog(List<ViewAllRoutineItem> selectedRoutines) {
+  Future<void> _showWeatherWarningDialog(List<ViewAllRoutineItem> selectedRoutines) async {
+    // 날씨 정보를 먼저 로드 (타임아웃을 짧게 설정하여 빠르게 실패 처리)
+    String weatherMessage = '맑음이 예정된 오늘,\n세탁기를 돌리실 건가요?'; // 기본값
+    
+    try {
+      // 오늘 날짜 가져오기
+      final today = DateTime.now();
+      final todayStr = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+      
+      // 날씨 API 호출 (타임아웃을 짧게 설정하여 빠르게 실패 처리)
+      List<String> urlsToTry = [
+        ApiConfig.getBaseUrl(
+          isWeb: kIsWeb,
+          isAndroid: !kIsWeb && Platform.isAndroid,
+          isIOS: !kIsWeb && Platform.isIOS,
+        )
+      ];
+      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+        urlsToTry = ApiConfig.getAndroidBaseUrls();
+      }
+      
+      // 순차적으로 URL 시도 (실제 기기에서는 10.0.2.2 타임아웃 시간 낭비 방지)
+      // 첫 번째 URL만 빠르게 시도 (실패하면 기본값 사용)
+      if (urlsToTry.isNotEmpty) {
+        try {
+          final url = urlsToTry.first;
+          final uri = Uri.parse('$url/recommend/weather').replace(
+            queryParameters: {'date': todayStr},
+          );
+          final response = await http
+              .get(
+                uri,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+              )
+              .timeout(
+                const Duration(seconds: 3), // 매우 짧은 타임아웃으로 빠르게 실패 처리
+                onTimeout: () {
+                  throw Exception('요청 시간 초과');
+                },
+              );
+          
+          if (response.statusCode == 200) {
+            try {
+              final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>?;
+              if (data != null) {
+                final weatherLabel = data['weather_label'] as String? ?? '맑음';
+                weatherMessage = '$weatherLabel이 예정된 오늘,\n세탁기를 돌리실 건가요?';
+                print('[ViewAllScreen] 날씨 정보 로딩 성공: $url, weather_label=$weatherLabel');
+              }
+            } catch (parseError) {
+              // 파싱 실패해도 기본값 사용
+              print('[ViewAllScreen] 날씨 정보 JSON 파싱 실패: $parseError');
+            }
+          }
+        } catch (e) {
+          // 날씨 정보 로딩 실패 시 기본값 사용 (다른 API에 영향 주지 않음)
+          print('[ViewAllScreen] 날씨 정보 로딩 실패 (기본값 사용): $e');
+        }
+      }
+      
+      // 모든 URL 시도 실패 시 로그 출력
+      if (weatherMessage == '맑음이 예정된 오늘,\n세탁기를 돌리실 건가요?') {
+        print('[ViewAllScreen] 날씨 정보 로딩 실패 - 모든 URL 시도 완료, 기본값 사용');
+      }
+    } catch (e) {
+      // 날씨 정보 로딩 중 예외 발생 시 로그 출력
+      print('[ViewAllScreen] 날씨 정보 로딩 중 예외 발생: $e');
+    }
+    
+    // 날씨 정보를 로드한 후 다이얼로그 표시 (API 실패해도 기본값으로 표시)
+    if (!mounted) return;
+    
     showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
@@ -282,7 +361,7 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '비가 예정된 오늘,\n세탁기를 돌리실 건가요?',
+                      weatherMessage,
                       style: AppTextStyles.sectionTitle(
                         context,
                       ).copyWith(fontSize: 18, fontWeight: FontWeight.w600),

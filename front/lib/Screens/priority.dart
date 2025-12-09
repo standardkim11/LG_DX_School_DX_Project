@@ -111,7 +111,7 @@ class _PriorityScreenState extends State<PriorityScreen> {
                 }),
               )
               .timeout(
-                const Duration(seconds: 20), // 백엔드 최적화 후 적절한 타임아웃
+                const Duration(seconds: 120), // 실제 기기 네트워크 고려하여 120초로 증가
                 onTimeout: () {
                   throw Exception('요청 시간 초과');
                 },
@@ -248,7 +248,10 @@ class _PriorityScreenState extends State<PriorityScreen> {
       }
 
       String? weatherMessage;
-      for (final url in urlsToTry) {
+      print('[PriorityScreen] 날씨 정보 로딩 시작: ${urlsToTry.length}개 URL');
+      for (int i = 0; i < urlsToTry.length; i++) {
+        final url = urlsToTry[i];
+        print('[PriorityScreen] 날씨 정보 시도 ${i + 1}/${urlsToTry.length}: $url');
         try {
           final uri = Uri.parse('$url/recommend/weather');
           final response = await http
@@ -260,7 +263,7 @@ class _PriorityScreenState extends State<PriorityScreen> {
                 },
               )
               .timeout(
-                const Duration(seconds: 20), // 백엔드 최적화 후 적절한 타임아웃
+                const Duration(seconds: 10), // 실제 기기에서는 빠른 실패로 다음 URL 시도
                 onTimeout: () {
                   throw Exception('요청 시간 초과');
                 },
@@ -280,10 +283,22 @@ class _PriorityScreenState extends State<PriorityScreen> {
               final weatherLabel = data['weather_label'] as String? ?? '맑음';
               weatherMessage = '오늘 날씨는 $weatherLabel이에요.';
             }
+            print('[PriorityScreen] 날씨 정보 로딩 성공: $url');
             break; // 성공하면 종료
+          } else {
+            // HTTP 에러
+            print(
+              '[PriorityScreen] 날씨 정보 HTTP 에러 ($url): ${response.statusCode}',
+            );
+            continue;
           }
         } catch (e) {
+          // 모든 URL 시도 실패 시 로그 출력
           print('[PriorityScreen] 날씨 정보 로딩 실패 ($url): $e');
+          if (i == urlsToTry.length - 1) {
+            // 마지막 URL도 실패
+            print('[PriorityScreen] 날씨 정보 로딩 실패 - 모든 URL 시도 완료');
+          }
           continue;
         }
       }
@@ -294,7 +309,8 @@ class _PriorityScreenState extends State<PriorityScreen> {
         });
       }
     } catch (e) {
-      print('[PriorityScreen] 날씨 정보 로딩 실패: $e');
+      // 날씨 정보 로딩 실패 시 로그 출력
+      print('[PriorityScreen] 날씨 정보 로딩 중 예외 발생: $e');
       if (mounted) {
         setState(() {
           _weatherMessage = '오늘 날씨는 맑음이에요.';
@@ -335,7 +351,7 @@ class _PriorityScreenState extends State<PriorityScreen> {
                 }),
               )
               .timeout(
-                const Duration(seconds: 20), // 백엔드 최적화 후 적절한 타임아웃
+                const Duration(seconds: 120), // 실제 기기 네트워크 고려하여 120초로 증가
                 onTimeout: () {
                   throw Exception('요청 시간 초과');
                 },

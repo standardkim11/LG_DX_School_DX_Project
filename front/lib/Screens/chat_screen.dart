@@ -111,7 +111,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 body: jsonEncode({'user_id': userId, 'message': messageText}),
               )
               .timeout(
-                const Duration(seconds: 10), // 각 URL당 10초 타임아웃 (더 빠른 실패 감지)
+                const Duration(seconds: 120), // 실제 기기 네트워크 고려하여 120초로 증가
                 onTimeout: () {
                   print('[ChatService] 타임아웃 발생: $fullUrl');
                   throw Exception('요청 시간 초과');
