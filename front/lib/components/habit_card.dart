@@ -567,6 +567,9 @@ class TodoItemCard extends StatefulWidget {
   final Map<String, double>? friendIconSizes; // 각 아이콘별 크기 설정 (키: 아이콘 경로, 값: 크기)
   final double? iconSpacing; // 아이콘과 체크박스 사이 간격 (기본값: 12)
   final VoidCallback? onCheckChanged; // 체크 상태 변경 콜백
+  final VoidCallback? onDelete; // Delete 버튼 클릭 콜백
+  final VoidCallback? onView; // View 버튼 클릭 콜백
+  final VoidCallback? onFail; // Fail 버튼 클릭 콜백
   final String cardKey; // 고유 키
 
   const TodoItemCard({
@@ -579,6 +582,9 @@ class TodoItemCard extends StatefulWidget {
     this.friendIconSizes,
     this.iconSpacing,
     this.onCheckChanged,
+    this.onDelete,
+    this.onView,
+    this.onFail,
     String? cardKey,
   }) : cardKey = cardKey ?? 'todo_${title}_${category}';
 
@@ -669,37 +675,49 @@ class _TodoItemCardState extends State<TodoItemCard> {
                       ),
                     ],
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'assets/viewsave_screen/View_icon.png',
-                        width: 20,
-                        height: 20,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(
-                            Icons.visibility,
-                            size: 20,
-                            color: Color(0xFF9B9BA1),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'View',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Color(0xFF9B9BA1),
-                          fontSize: 12,
-                          fontFamily: 'LG Smart_H',
-                          fontWeight: FontWeight.w400,
-                          height: 1.33,
+                  child: GestureDetector(
+                    onTap: () {
+                      // 스와이프 상태 초기화
+                      setState(() {
+                        _swipeState = null;
+                        _dragOffset = 0.0;
+                      });
+                      SwipeStateManager().clearSwipedCard();
+                      // View 콜백 호출
+                      widget.onView?.call();
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          'assets/viewsave_screen/View_icon.png',
+                          width: 20,
+                          height: 20,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.visibility,
+                              size: 20,
+                              color: Color(0xFF9B9BA1),
+                            );
+                          },
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        const Text(
+                          'View',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFF9B9BA1),
+                            fontSize: 12,
+                            fontFamily: 'LG Smart_H',
+                            fontWeight: FontWeight.w400,
+                            height: 1.33,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -740,82 +758,106 @@ class _TodoItemCardState extends State<TodoItemCard> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       // Fail 버튼
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
+                      GestureDetector(
+                        onTap: () {
+                          // 스와이프 상태 초기화
+                          setState(() {
+                            _swipeState = null;
+                            _dragOffset = 0.0;
+                          });
+                          SwipeStateManager().clearSwipedCard();
+                          // Fail 콜백 호출
+                          widget.onFail?.call();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Icon(
+                                  Icons.close,
+                                  size: 14,
+                                  color: Colors.red,
+                                ),
                               ),
-                              child: Icon(
-                                Icons.close,
-                                size: 14,
-                                color: Colors.red,
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Fail',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Color(0xFF9B9BA1),
+                                  fontSize: 12,
+                                  fontFamily: 'LG Smart_H',
+                                  fontWeight: FontWeight.w400,
+                                  height: 1.33,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Fail',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Color(0xFF9B9BA1),
-                                fontSize: 12,
-                                fontFamily: 'LG Smart_H',
-                                fontWeight: FontWeight.w400,
-                                height: 1.33,
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8), // 버튼 사이 여백 (16 -> 8로 축소)
                       // Delete 버튼
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
+                      GestureDetector(
+                        onTap: () {
+                          // 스와이프 상태 초기화
+                          setState(() {
+                            _swipeState = null;
+                            _dragOffset = 0.0;
+                          });
+                          SwipeStateManager().clearSwipedCard();
+                          // Delete 콜백 호출
+                          widget.onDelete?.call();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Icon(
+                                  Icons.delete_outline,
+                                  size: 14,
+                                  color: const Color(0xFF9B9BA1),
+                                ),
                               ),
-                              child: Icon(
-                                Icons.delete_outline,
-                                size: 14,
-                                color: const Color(0xFF9B9BA1),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Delete',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Color(0xFF9B9BA1),
+                                  fontSize: 12,
+                                  fontFamily: 'LG Smart_H',
+                                  fontWeight: FontWeight.w400,
+                                  height: 1.33,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Delete',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Color(0xFF9B9BA1),
-                                fontSize: 12,
-                                fontFamily: 'LG Smart_H',
-                                fontWeight: FontWeight.w400,
-                                height: 1.33,
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ],

@@ -493,8 +493,8 @@ class _RoutineScreenState extends State<RoutineScreen>
 
         // routineId가 없으면 기본 정렬 (체크 상태 기준)
         if (aRoutineId == null || bRoutineId == null) {
-          final aDone = a['checkType'] == 'done';
-          final bDone = b['checkType'] == 'done';
+          final aDone = a['checkType'] == 'done' || a['checkType'] == 'fail';
+          final bDone = b['checkType'] == 'done' || b['checkType'] == 'fail';
           if (aDone == bDone) return 0;
           return aDone ? 1 : -1;
         }
@@ -504,8 +504,8 @@ class _RoutineScreenState extends State<RoutineScreen>
 
         // 우선순위 순서에 없는 항목은 뒤로
         if (aIndex == -1 && bIndex == -1) {
-          final aDone = a['checkType'] == 'done';
-          final bDone = b['checkType'] == 'done';
+          final aDone = a['checkType'] == 'done' || a['checkType'] == 'fail';
+          final bDone = b['checkType'] == 'done' || b['checkType'] == 'fail';
           if (aDone == bDone) return 0;
           return aDone ? 1 : -1;
         }
@@ -514,8 +514,8 @@ class _RoutineScreenState extends State<RoutineScreen>
 
         // 같은 우선순위 내에서는 체크 상태 기준 정렬
         if (aIndex == bIndex) {
-          final aDone = a['checkType'] == 'done';
-          final bDone = b['checkType'] == 'done';
+          final aDone = a['checkType'] == 'done' || a['checkType'] == 'fail';
+          final bDone = b['checkType'] == 'done' || b['checkType'] == 'fail';
           if (aDone == bDone) return 0;
           return aDone ? 1 : -1;
         }
@@ -523,12 +523,18 @@ class _RoutineScreenState extends State<RoutineScreen>
         return aIndex.compareTo(bIndex);
       });
 
-      // 체크된 항목을 하단으로 이동 (우선순위 순서는 유지)
+      // 체크된 항목과 fail 항목을 하단으로 이동 (우선순위 순서는 유지)
       final unchecked = todosList
-          .where((todo) => todo['checkType'] != 'done')
+          .where(
+            (todo) =>
+                todo['checkType'] != 'done' && todo['checkType'] != 'fail',
+          )
           .toList();
       final checked = todosList
-          .where((todo) => todo['checkType'] == 'done')
+          .where(
+            (todo) =>
+                todo['checkType'] == 'done' || todo['checkType'] == 'fail',
+          )
           .toList();
 
       return [...unchecked, ...checked];
@@ -536,10 +542,14 @@ class _RoutineScreenState extends State<RoutineScreen>
 
     // 우선순위 순서가 없으면 기존 로직 사용
     final unchecked = _todos
-        .where((todo) => todo['checkType'] != 'done')
+        .where(
+          (todo) => todo['checkType'] != 'done' && todo['checkType'] != 'fail',
+        )
         .toList();
     final checked = _todos
-        .where((todo) => todo['checkType'] == 'done')
+        .where(
+          (todo) => todo['checkType'] == 'done' || todo['checkType'] == 'fail',
+        )
         .toList();
     return [...unchecked, ...checked];
   }
@@ -1151,15 +1161,19 @@ class _RoutineScreenState extends State<RoutineScreen>
                     final dateKey = _formatDateKey(selectedDate);
 
                     // 이미 등록된 일정이 있는지 확인
+                    // 1. 화면에 표시된 루틴이 있는지 확인
+                    final hasDisplayedRoutines = _todos.isNotEmpty;
+                    // 2. 날짜별로 선택된 루틴이 있는지 확인
                     final dateSelectedRoutines =
                         _RoutineScreenStateManager.getSelectedRoutinesForDate(
                           dateKey,
                         );
-                    final hasRoutines =
+                    final hasSelectedRoutines =
                         dateSelectedRoutines != null &&
                         dateSelectedRoutines.isNotEmpty;
 
-                    if (hasRoutines) {
+                    // 화면에 루틴이 표시되어 있거나 선택된 루틴이 있으면 확인 팝업 표시
+                    if (hasDisplayedRoutines || hasSelectedRoutines) {
                       // 등록된 일정이 있으면 확인 팝업 표시
                       _showConfirmDialog(
                         '루틴을 다시 선택하시겠습니까?',
@@ -1224,7 +1238,9 @@ class _RoutineScreenState extends State<RoutineScreen>
                         final isFirstChecked =
                             index > 0 &&
                             _sortedTodos[index - 1]['checkType'] != 'done' &&
-                            todo['checkType'] == 'done';
+                            _sortedTodos[index - 1]['checkType'] != 'fail' &&
+                            (todo['checkType'] == 'done' ||
+                                todo['checkType'] == 'fail');
 
                         // 원본 리스트에서의 인덱스 찾기
                         final originalIndex = _todos.indexWhere(
@@ -1263,7 +1279,7 @@ class _RoutineScreenState extends State<RoutineScreen>
                               bottom: 12,
                               top: isFirstChecked
                                   ? 20
-                                  : 0, // 체크된 항목 시작 부분에 여백 추가
+                                  : 0, // 체크된 항목 또는 fail 항목 시작 부분에 여백 추가
                             ),
                             child: TodoItemCard(
                               title: todo['title'] as String,
@@ -1277,6 +1293,71 @@ class _RoutineScreenState extends State<RoutineScreen>
                                 'assets/routine_screen/friends2.png': 26,
                               },
                               onCheckChanged: () => _toggleCheck(originalIndex),
+                              onFail: () {
+                                // Fail 버튼 클릭 시 fail 상태 토글
+                                setState(() {
+                                  final todos = _todos;
+                                  final currentState =
+                                      todos[originalIndex]['checkType']
+                                          as String;
+                                  final newState = currentState == 'fail'
+                                      ? 'none'
+                                      : 'fail';
+                                  todos[originalIndex]['checkType'] = newState;
+                                  // 날짜별 할 일 목록 업데이트
+                                  final selectedDate = _getSelectedDate();
+                                  final dateKey = _formatDateKey(selectedDate);
+                                  _todosByDate[dateKey] = todos;
+                                  // 상태 저장
+                                  final key = _getTodoKey(todos[originalIndex]);
+                                  _RoutineScreenStateManager.setCheckState(
+                                    key,
+                                    newState,
+                                  );
+                                });
+                              },
+                              onDelete: () {
+                                // Delete 버튼 클릭 시 해당 날짜의 루틴 목록에서 제거
+                                final routineId = todo['routineId'] as int?;
+                                if (routineId != null) {
+                                  final selectedDate = _getSelectedDate();
+                                  final dateKey = _formatDateKey(selectedDate);
+
+                                  // 날짜별 선택된 루틴 ID 목록에서 제거
+                                  final dateSelectedRoutines =
+                                      _RoutineScreenStateManager.getSelectedRoutinesForDate(
+                                        dateKey,
+                                      );
+                                  if (dateSelectedRoutines != null) {
+                                    dateSelectedRoutines.remove(routineId);
+                                    _RoutineScreenStateManager.setSelectedRoutinesForDate(
+                                      dateKey,
+                                      dateSelectedRoutines,
+                                    );
+                                  }
+
+                                  // 화면에서도 제거
+                                  setState(() {
+                                    _todosByDate[dateKey] =
+                                        _todosByDate[dateKey]!
+                                            .where(
+                                              (t) =>
+                                                  t['routineId'] != routineId,
+                                            )
+                                            .toList();
+                                  });
+                                }
+                              },
+                              onView: () {
+                                // View 버튼 클릭 시 루틴 생성 화면으로 이동
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const ViewSaveScreen(),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         );
