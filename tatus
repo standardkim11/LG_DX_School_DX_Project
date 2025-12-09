@@ -1,0 +1,164 @@
+[1mdiff --git a/front/lib/Screens/chat_screen.dart b/front/lib/Screens/chat_screen.dart[m
+[1mindex 8e1caf5..ff3c0e0 100644[m
+[1m--- a/front/lib/Screens/chat_screen.dart[m
+[1m+++ b/front/lib/Screens/chat_screen.dart[m
+[36m@@ -32,25 +32,29 @@[m [mclass _ChatScreenState extends State<ChatScreen> {[m
+ [m
+   static const int userId = 1; // 실제로는 사용자 인증에서 가져와야 함[m
+ [m
+[32m+[m[32m  // 초기 환영 메시지 (첫 화면에만 표시)[m
+[32m+[m[32m  final List<Map<String, dynamic>> _initialMessages = [[m
+[32m+[m[32m    {[m
+[32m+[m[32m      'text': '지현님, 반가워요!',[m
+[32m+[m[32m      'isUser': false,[m
+[32m+[m[32m      'fontSize': 24.0,[m
+[32m+[m[32m      'fontWeight': FontWeight.w900,[m
+[32m+[m[32m    }, // 제일 크게, 볼드[m
+[32m+[m[32m    {'text': '루틴도 간단하게!', 'isUser': false, 'fontSize': 20.0}, // 크게[m
+[32m+[m[32m    {'text': '복잡한 루틴을 말 한마디로 만들어요.', 'isUser': false, 'fontSize': 15.0}, // 보통[m
+[32m+[m[32m    {'text': '원하는 조건과 제어할 제품만 말해보세요.', 'isUser': false, 'fontSize': 15.0}, // 보통[m
+[32m+[m[32m  ];[m
+[32m+[m
+[32m+[m[32m  // 실제 채팅 메시지[m
+   final List<Map<String, dynamic>> _messages = [];[m
+ [m
+[32m+[m[32m  // 초기 메시지가 표시되는지 여부[m
+[32m+[m[32m  bool _showInitialMessages = true;[m
+[32m+[m
+   @override[m
+   void initState() {[m
+     super.initState();[m
+[31m-    // 화면이 열리면 자동으로 키보드 표시[m
+[31m-    WidgetsBinding.instance.addPostFrameCallback((_) {[m
+[31m-      Future.delayed(const Duration(milliseconds: 500), () {[m
+[31m-        if (mounted && _messageFocusNode.canRequestFocus) {[m
+[31m-          _messageFocusNode.requestFocus();[m
+[31m-          // 키보드 강제 표시 (에뮬레이터용)[m
+[31m-          Future.delayed(const Duration(milliseconds: 200), () {[m
+[31m-            if (mounted) {[m
+[31m-              SystemChannels.textInput.invokeMethod('TextInput.show');[m
+[31m-            }[m
+[31m-          });[m
+[31m-        }[m
+[31m-      });[m
+[31m-    });[m
+[32m+[m[32m    // 키보드 자동 포커스 제거[m
+   }[m
+ [m
+   @override[m
+[36m@@ -75,32 +79,67 @@[m [mclass _ChatScreenState extends State<ChatScreen> {[m
+     final messageText = _messageController.text.trim();[m
+     if (messageText.isEmpty || _isLoading) return;[m
+ [m
+[32m+[m[32m    // 첫 메시지를 보낼 때 초기 메시지 제거[m
+[32m+[m[32m    if (_showInitialMessages) {[m
+[32m+[m[32m      setState(() {[m
+[32m+[m[32m        _showInitialMessages = false;[m
+[32m+[m[32m      });[m
+[32m+[m[32m    }[m
+[32m+[m
+     // 사용자 메시지 추가[m
+     setState(() {[m
+[31m-      _messages.add({'text': messageText, 'isUser': true});[m
+[32m+[m[32m      _messages.add({'text': messageText, 'isUser': true, 'fontSize': 15.0});[m
+       _isLoading = true;[m
+     });[m
+     _messageController.clear();[m
+[31m-    _scrollToBottom();[m
+[32m+[m
+[32m+[m[32m    // 로딩 인디케이터가 표시되도록 스크롤 (여러 번 시도)[m
+[32m+[m[32m    Future.delayed(const Duration(milliseconds: 100), () {[m
+[32m+[m[32m      _scrollToBottom();[m
+[32m+[m[32m    });[m
+[32m+[m[32m    WidgetsBinding.instance.addPostFrameCallback((_) {[m
+[32m+[m[32m      Future.delayed(const Duration(milliseconds: 200), () {[m
+[32m+[m[32m        _scrollToBottom();[m
+[32m+[m[32m      });[m
+[32m+[m[32m    });[m
+ [m
+     try {[m
+[31m-      // Android인 경우 여러 URL 시도 (에뮬레이터와 실제 기기 모두 지원)[m
+[31m-      List<String> urlsToTry = [baseUrl];[m
+[31m-      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {[m
+[31m-        // 자동 감지 모드: 에뮬레이터와 실제 기기 모두 시도[m
+[31m-        urlsToTry = ApiConfig.getAndroidBaseUrls();[m
+[31m-        print('[ChatService] Android 자동 감지 모드: ${urlsToTry.length}개 URL 시도');[m
+[31m-      } else {[m
+[31m-        print('[ChatService] 단일 URL 사용: $baseUrl');[m
+[31m-      }[m
+[32m+[m[32m      // API 호출 - 경로: /api/chat/chat (url_prefix="/api/chat" + route="/chat")[m
+[32m+[m[32m      // 모바일/에뮬레이터에서는 localhost 대신 10.0.2.2 (Android 에뮬레이터) 또는 실제 IP 사용[m
+[32m+[m[32m      final response = await http[m
+[32m+[m[32m          .post([m
+[32m+[m[32m            Uri.parse('$baseUrl/chat/chat'),[m
+[32m+[m[32m            headers: {[m
+[32m+[m[32m              'Content-Type': 'application/json',[m
+[32m+[m[32m              'Accept': 'application/json',[m
+[32m+[m[32m            },[m
+[32m+[m[32m            body: jsonEncode({'user_id': userId, 'message': messageText}),[m
+[32m+[m[32m          )[m
+[32m+[m[32m          .timeout([m
+[32m+[m[32m            const Duration(seconds: 30),[m
+[32m+[m[32m            onTimeout: () {[m
+[32m+[m[32m              throw Exception('요청 시간 초과');[m
+[32m+[m[32m            },[m
+[32m+[m[32m          );[m
+[32m+[m
+[32m+[m[32m      if (response.statusCode == 200) {[m
+[32m+[m[32m        final data = jsonDecode(response.body);[m
+[32m+[m[32m        final reply = data['reply'] as String? ?? '응답을 받지 못했습니다.';[m
+ [m
+[31m-      Exception? lastException;[m
+[31m-      for (final url in urlsToTry) {[m
+[32m+[m[32m        setState(() {[m
+[32m+[m[32m          _messages.add({'text': reply, 'isUser': false, 'fontSize': 15.0});[m
+[32m+[m[32m          _isLoading = false;[m
+[32m+[m[32m        });[m
+[32m+[m[32m        _scrollToBottom();[m
+[32m+[m[32m      } else {[m
+[32m+[m[32m        // 에러 응답 파싱 시도[m
+         try {[m
+[31m-          // API 호출 - 경로: /api/chat/chat (url_prefix="/api/chat" + route="/chat")[m
+[31m-          final fullUrl = '$url/chat/chat';[m
+[31m-          print('[ChatService] 연결 시도: $fullUrl');[m
+[32m+[m[32m          final errorData = jsonDecode(response.body);[m
+[32m+[m[32m          final errorMsg =[m
+[32m+[m[32m              errorData['message'] as String? ?? errorData['error'] as String?;[m
+[32m+[m[32m          final details = errorData['details'] as String?;[m
+ [m
+[32m+[m[32m<<<<<<< HEAD[m
+           final response = await http[m
+               .post([m
+                 Uri.parse(fullUrl),[m
+[36m@@ -117,94 +156,61 @@[m [mclass _ChatScreenState extends State<ChatScreen> {[m
+                   throw Exception('요청 시간 초과');[m
+                 },[m
+               );[m
+[32m+[m[32m=======[m
+[32m+[m[32m          String errorMessage = '서버 오류가 발생했습니다.';[m
+[32m+[m[32m>>>>>>> 9e71c2e43f73efd0ab6ca37f4f7a570727b680a2[m
+ [m
+[31m-          print('[ChatService] 응답 상태 코드: ${response.statusCode}');[m
+[31m-[m
+[31m-          if (response.statusCode == 200) {[m
+[31m-            final data = jsonDecode(response.body);[m
+[31m-            final reply = data['reply'] as String? ?? '응답을 받지 못했습니다.';[m
+[31m-[m
+[31m-            print('[ChatService] ✅ 성공! 응답 받음');[m
+[31m-            setState(() {[m
+[31m-              _isLoading = false;[m
+[31m-              _messages.add({'text': reply, 'isUser': false});[m
+[31m-            });[m
+[31m-            // 스크롤을 약간 지연시켜서 새 메시지가 렌더링된 후 스크롤[m
+[31m-            Future.delayed(const Duration(milliseconds: 100), () {[m
+[31m-              _scrollToBottom();[m
+[31m-            });[m
+[31m-            return; // 성공하면 종료[m
+[31m-          } else {[m
+[31m-            // 서버가 응답했지만 에러 상태 코드인 경우[m
+[31m-            print('[ChatService] ⚠️ 서버 오류: ${response.statusCode}');[m
+[31m-            try {[m
+[31m-              final errorData = jsonDecode(response.body);[m
+[31m-              final errorMsg =[m
+[31m-                  errorData['message'] as String? ??[m
+[31m-

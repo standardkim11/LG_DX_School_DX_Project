@@ -59,7 +59,7 @@ class RoutineExecution(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     routine_id = db.Column(db.Integer, db.ForeignKey("routines.id"), nullable=False)
 
-    status = db.Column(db.String(20), nullable=False)  # COMPLETED / SKIPPED / ...
+    status = db.Column(db.Integer, nullable=False)  # 2=완료, 3=실패 (DB는 NUMBER(2,0)로 정의됨)
     start_time = db.Column(db.DateTime, nullable=False)
     end_time = db.Column(db.DateTime, nullable=True)
     run_time = db.Column(db.Integer, nullable=True)

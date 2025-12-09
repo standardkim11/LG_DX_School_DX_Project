@@ -1,9 +1,32 @@
 from datetime import datetime, date
 from models import Routine, RoutineExecution
+from sqlalchemy import or_
+from Project.extensions import db
 import re
 # =========================
 # 공통 코드 매핑 및 인코더
 # =========================
+
+def get_korean_object_particle(word: str) -> str:
+    """
+    한국어 단어의 마지막 글자를 확인하여 '을' 또는 '를'을 반환
+    받침이 있으면 '을', 없으면 '를'
+    """
+    if not word:
+        return "를"
+    
+    # 마지막 글자 가져오기
+    last_char = word[-1]
+    
+    # 한글 유니코드 범위: 0xAC00 ~ 0xD7A3
+    char_code = ord(last_char)
+    if 0xAC00 <= char_code <= 0xD7A3:
+        # (유니코드 - 0xAC00) % 28이 0이 아니면 받침이 있음
+        has_final_consonant = (char_code - 0xAC00) % 28 != 0
+        return "을" if has_final_consonant else "를"
+    else:
+        # 한글이 아니면 기본값으로 "를" 사용
+        return "를"
 
 
 # ROUTINE_TYPE 코드
@@ -107,6 +130,43 @@ def encode_routine_type(value) -> int:
     return 4
 
 
+def detect_routine_type_from_name(name: str) -> str:
+    """
+    루틴 이름에서 루틴 타입을 자동으로 감지하여 문자열로 반환.
+    Returns: "CLEANING", "LAUNDRY", "WASHING", "SEPARATING", "ETC"
+    """
+    if not name:
+        return "ETC"
+    
+    # 루틴 이름 정규화 (시간대 제거)
+    normalized = normalize_routine_name(name)
+    normalized_lower = normalized.lower().replace(" ", "")
+    original_lower = name.lower().replace(" ", "")
+    
+    # 우선순위: 더 구체적인 키부터 확인 (긴 키부터)
+    # ROUTINE_TYPE_MAP의 키들을 길이 순으로 정렬하여 긴 것부터 확인
+    sorted_keys = sorted(ROUTINE_TYPE_MAP.items(), key=lambda x: len(x[0]), reverse=True)
+    
+    for key, code in sorted_keys:
+        key_no_space = key.replace(" ", "")
+        # 정규화된 이름이나 원본 이름에 키가 포함되어 있는지 확인
+        if key_no_space in normalized_lower or key_no_space in original_lower:
+            # 코드를 문자열로 변환
+            if code == 0:
+                return "CLEANING"
+            elif code == 1:
+                return "LAUNDRY"
+            elif code == 2:
+                return "WASHING"
+            elif code == 3:
+                return "SEPARATING"
+            else:
+                return "ETC"
+    
+    # 매칭 실패 시 기본값
+    return "ETC"
+
+
 
 def encode_schedule_type(value) -> int:
     """DB 값이 숫자이든 문자열이든 SCHEDULE_TYPE 정수 코드로 변환"""
@@ -128,8 +188,26 @@ def encode_weather(value) -> int:
         return int(value)
     if value is None:
         return 0
-    s = str(value).strip().lower()
-    return WEATHER_MAP.get(s, 0)
+    s = str(value).strip()
+    # 원본 값으로 먼저 찾기 (한글은 소문자 변환이 의미 없으므로)
+    result = WEATHER_MAP.get(s, None)
+    if result is not None:
+        return result
+    # 소문자 변환 후 찾기
+    s_lower = s.lower()
+    result = WEATHER_MAP.get(s_lower, None)
+    if result is not None:
+        return result
+    # 부분 매칭 시도 (예: "rainy" -> "rain", "비오는날" -> "비")
+    for key, code in WEATHER_MAP.items():
+        if key in s or s in key:
+            return code
+        if key in s_lower or s_lower in key:
+            return code
+    # 매칭 실패 시 기본값 0 (맑음) 반환
+    # 디버깅을 위해 로그 출력 (하지만 maping.py는 logger가 없으므로 print 사용)
+    print(f"⚠️ [encode_weather] 날씨 값 매칭 실패: '{s}' -> 기본값 0 (맑음) 반환")
+    return 0
 
 def parse_preferred_time(value) -> int:
     """
@@ -281,7 +359,7 @@ def is_done_today(routine: Routine, user_id: int, today: date) -> bool:
     # 완료 상태만 체크 (status는 숫자로 저장됨: 2=완료). 실패는 제외하지 않음
     return (
         last_log.start_time.date() == today
-        and last_log.status == DONE_STATUS  # 숫자 2만 비교
+        and last_log.status == 2
     )
 
 
@@ -326,7 +404,7 @@ def is_goal_achieved(routine: Routine, user_id: int, today: date) -> bool:
             RoutineExecution.routine_id == routine.id,
             RoutineExecution.start_time >= week_start_dt,
             RoutineExecution.start_time < week_end_dt,
-            RoutineExecution.status == 2  # 숫자 2만 비교 (완료 상태)
+            RoutineExecution.status == 2  # 완료 상태 (숫자)
         ).scalar() or 0
         
         return completed_count >= frequency
@@ -346,7 +424,7 @@ def is_goal_achieved(routine: Routine, user_id: int, today: date) -> bool:
             RoutineExecution.routine_id == routine.id,
             RoutineExecution.start_time >= created_dt,
             RoutineExecution.start_time < period_end_dt,
-            RoutineExecution.status == 2  # 숫자 2만 비교 (완료 상태)
+            RoutineExecution.status == 2  # 완료 상태 (숫자)
         ).scalar() or 0
         
         print(f"[is_goal_achieved] MONTHLY 루틴 {routine.id}: created={created}, period_end={period_end}, completed_count={completed_count}, frequency={frequency}, today={today}")
@@ -360,7 +438,7 @@ def is_goal_achieved(routine: Routine, user_id: int, today: date) -> bool:
                 RoutineExecution.routine_id == routine.id,
                 RoutineExecution.start_time >= created_dt,
                 RoutineExecution.start_time < period_end_dt,
-                RoutineExecution.status == 2  # 숫자 2만 비교 (완료 상태)
+                RoutineExecution.status == 2  # 완료 상태 (숫자)
             ).order_by(RoutineExecution.start_time.desc()).first()
             
             if last_completed and last_completed.start_time:
@@ -395,7 +473,7 @@ def is_failed_today(routine: Routine, user_id: int, today: date) -> bool:
 
     return (
         last_log.start_time.date() == today
-        and last_log.status == FAILED_STATUS  # status=3 (FAILED)
+        and last_log.status == 3  # status=3 (FAILED, 숫자)
     )
 
 

@@ -26,6 +26,7 @@ class _WashPushScreenState extends State<WashPushScreen> {
   bool _isLoadingNotification = true; // 알림 로딩 상태
   List<Map<String, dynamic>> _allRoutines = []; // DB에서 가져온 루틴 리스트
   bool _isLoadingRoutines = false; // 루틴 로딩 상태
+  String? _weatherMessage; // 날씨 정보 메시지
 
   static const _cardShadow = BoxShadow(
     color: Color(0x0F222C5C),
@@ -92,6 +93,8 @@ class _WashPushScreenState extends State<WashPushScreen> {
     _loadUnusedNotification();
     // DB에서 루틴 데이터 가져오기
     _loadAllRoutines();
+    // 날씨 정보 가져오기
+    _loadWeatherInfo();
   }
 
   Future<void> _loadAllRoutines() async {
@@ -232,6 +235,95 @@ class _WashPushScreenState extends State<WashPushScreen> {
     }
   }
 
+  Future<void> _loadWeatherInfo() async {
+    try {
+      // 날씨 정보 API 호출
+      List<String> urlsToTry = [baseUrl];
+      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+        urlsToTry = ApiConfig.getAndroidBaseUrls();
+      }
+
+      String? weatherMessage;
+      print('[WashPushScreen] 날씨 정보 로딩 시작: ${urlsToTry.length}개 URL');
+      for (int i = 0; i < urlsToTry.length; i++) {
+        final url = urlsToTry[i];
+        print('[WashPushScreen] 날씨 정보 시도 ${i + 1}/${urlsToTry.length}: $url');
+        try {
+          final uri = Uri.parse('$url/recommend/weather?user_id=$userId');
+          print('[WashPushScreen] 날씨 정보 API 호출: $uri');
+          final response = await http
+              .get(
+                uri,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+              )
+              .timeout(
+                const Duration(seconds: 10),
+                onTimeout: () {
+                  throw Exception('요청 시간 초과');
+                },
+              );
+
+          print('[WashPushScreen] 날씨 정보 API 응답: statusCode=${response.statusCode}');
+          if (response.statusCode == 200) {
+            try {
+              final data =
+                  jsonDecode(utf8.decode(response.bodyBytes))
+                      as Map<String, dynamic>;
+              final recommendationMessage =
+                  data['recommendation_message'] as String?;
+              if (recommendationMessage != null &&
+                  recommendationMessage.isNotEmpty) {
+                weatherMessage = recommendationMessage;
+              } else {
+                // 날씨 정보는 있지만 추천 메시지가 없는 경우
+                final weatherLabel = data['weather_label'] as String? ?? '맑음';
+                weatherMessage = '오늘 날씨는 $weatherLabel이에요.';
+              }
+              print('[WashPushScreen] 날씨 정보 로딩 성공: $url, weather_label=${data['weather_label']}, recommendation_message=$recommendationMessage');
+              break; // 성공하면 종료
+            } catch (parseError) {
+              print('[WashPushScreen] 날씨 정보 JSON 파싱 실패: $parseError');
+              print('[WashPushScreen] 응답 본문: ${response.body}');
+              continue;
+            }
+          } else {
+            // HTTP 에러
+            print(
+              '[WashPushScreen] 날씨 정보 HTTP 에러 ($url): statusCode=${response.statusCode}, body=${response.body}',
+            );
+            continue;
+          }
+        } catch (e, stackTrace) {
+          // 모든 URL 시도 실패 시 로그 출력
+          print('[WashPushScreen] 날씨 정보 로딩 실패 ($url): $e');
+          print('[WashPushScreen] 스택 트레이스: $stackTrace');
+          if (i == urlsToTry.length - 1) {
+            // 마지막 URL도 실패
+            print('[WashPushScreen] 날씨 정보 로딩 실패 - 모든 URL 시도 완료');
+          }
+          continue;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _weatherMessage = weatherMessage;
+        });
+      }
+    } catch (e) {
+      // 날씨 정보 로딩 실패 시 로그 출력
+      print('[WashPushScreen] 날씨 정보 로딩 중 예외 발생: $e');
+      if (mounted) {
+        setState(() {
+          _weatherMessage = null;
+        });
+      }
+    }
+  }
+
   void _showWasherPopup(BuildContext context) {
     // 알림 데이터가 없으면 팝업 표시 안 함
     if (_notificationFirstLine == null || _notificationSecondLine == null) {
@@ -294,6 +386,31 @@ class _WashPushScreenState extends State<WashPushScreen> {
                             height: 1.3,
                           ),
                         ),
+                        // 날씨 정보 표시
+                        if (_weatherMessage != null && _weatherMessage!.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8E9F0),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _weatherMessage!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontFamily: 'LG Smart_H',
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF4B57BB),
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 24),

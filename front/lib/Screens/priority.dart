@@ -253,7 +253,8 @@ class _PriorityScreenState extends State<PriorityScreen> {
         final url = urlsToTry[i];
         print('[PriorityScreen] 날씨 정보 시도 ${i + 1}/${urlsToTry.length}: $url');
         try {
-          final uri = Uri.parse('$url/recommend/weather');
+          final uri = Uri.parse('$url/recommend/weather?user_id=$userId');
+          print('[PriorityScreen] 날씨 정보 API 호출: $uri');
           final response = await http
               .get(
                 uri,
@@ -269,32 +270,40 @@ class _PriorityScreenState extends State<PriorityScreen> {
                 },
               );
 
+          print('[PriorityScreen] 날씨 정보 API 응답: statusCode=${response.statusCode}');
           if (response.statusCode == 200) {
-            final data =
-                jsonDecode(utf8.decode(response.bodyBytes))
-                    as Map<String, dynamic>;
-            final recommendationMessage =
-                data['recommendation_message'] as String?;
-            if (recommendationMessage != null &&
-                recommendationMessage.isNotEmpty) {
-              weatherMessage = recommendationMessage;
-            } else {
-              // 날씨 정보는 있지만 추천 메시지가 없는 경우
-              final weatherLabel = data['weather_label'] as String? ?? '맑음';
-              weatherMessage = '오늘 날씨는 $weatherLabel이에요.';
+            try {
+              final data =
+                  jsonDecode(utf8.decode(response.bodyBytes))
+                      as Map<String, dynamic>;
+              final recommendationMessage =
+                  data['recommendation_message'] as String?;
+              if (recommendationMessage != null &&
+                  recommendationMessage.isNotEmpty) {
+                weatherMessage = recommendationMessage;
+              } else {
+                // 날씨 정보는 있지만 추천 메시지가 없는 경우
+                final weatherLabel = data['weather_label'] as String? ?? '맑음';
+                weatherMessage = '오늘 날씨는 $weatherLabel이에요.';
+              }
+              print('[PriorityScreen] 날씨 정보 로딩 성공: $url, weather_label=${data['weather_label']}, recommendation_message=$recommendationMessage');
+              break; // 성공하면 종료
+            } catch (parseError) {
+              print('[PriorityScreen] 날씨 정보 JSON 파싱 실패: $parseError');
+              print('[PriorityScreen] 응답 본문: ${response.body}');
+              continue;
             }
-            print('[PriorityScreen] 날씨 정보 로딩 성공: $url');
-            break; // 성공하면 종료
           } else {
             // HTTP 에러
             print(
-              '[PriorityScreen] 날씨 정보 HTTP 에러 ($url): ${response.statusCode}',
+              '[PriorityScreen] 날씨 정보 HTTP 에러 ($url): statusCode=${response.statusCode}, body=${response.body}',
             );
             continue;
           }
-        } catch (e) {
+        } catch (e, stackTrace) {
           // 모든 URL 시도 실패 시 로그 출력
           print('[PriorityScreen] 날씨 정보 로딩 실패 ($url): $e');
+          print('[PriorityScreen] 스택 트레이스: $stackTrace');
           if (i == urlsToTry.length - 1) {
             // 마지막 URL도 실패
             print('[PriorityScreen] 날씨 정보 로딩 실패 - 모든 URL 시도 완료');
@@ -721,7 +730,7 @@ class _PriorityScreenState extends State<PriorityScreen> {
                                       Text(
                                         _weatherMessage,
                                         style: _bannerTextStyle.copyWith(
-                                          fontSize: 13,
+                                          fontSize: 11,
                                         ),
                                       ),
                                     ],

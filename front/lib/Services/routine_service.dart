@@ -230,6 +230,127 @@ class RoutineService {
     print('[RoutineService] Create Routine 모든 연결 시도 실패');
     return null;
   }
+
+  /// 루틴을 실행합니다 (체크 표시 시 호출)
+  /// Returns: 실행 성공 여부
+  static Future<bool> executeRoutine({
+    required int routineId,
+    required int userId,
+    int? runTime,
+  }) async {
+    // Android인 경우 여러 URL 시도 (에뮬레이터와 실제 기기 모두 지원)
+    List<String> urlsToTry = [baseUrl];
+    if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+      urlsToTry = ApiConfig.getAndroidBaseUrls();
+    }
+
+    final body = jsonEncode({
+      'user_id': userId,
+      'status': 2, // 2=done (완료)
+      'run_time': runTime,
+    });
+
+    for (final url in urlsToTry) {
+      try {
+        final uri = Uri.parse('$url/recommend/routines/$routineId/execute');
+
+        print('[RoutineService] Execute Routine 요청 시작: $uri');
+
+        final response = await http
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: body,
+            )
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                print('[RoutineService] Execute Routine 타임아웃 발생: $uri');
+                throw Exception('요청 시간 초과');
+              },
+            );
+
+        if (response.statusCode == 200) {
+          print('[RoutineService] Execute Routine 성공: $url');
+          return true;
+        } else {
+          print(
+            'Execute Routine API Error: ${response.statusCode} - ${response.body}',
+          );
+          continue;
+        }
+      } catch (e, stackTrace) {
+        print('[RoutineService] Execute Routine $url 연결 실패');
+        print('[RoutineService] 에러 타입: ${e.runtimeType}');
+        print('[RoutineService] 에러 메시지: $e');
+        print('[RoutineService] 스택 트레이스: $stackTrace');
+        continue;
+      }
+    }
+
+    // 모든 URL 시도 실패
+    print('[RoutineService] Execute Routine 모든 연결 시도 실패');
+    return false;
+  }
+
+  /// 루틴을 삭제합니다
+  /// Returns: 삭제 성공 여부
+  static Future<bool> deleteRoutine({
+    required int routineId,
+  }) async {
+    // Android인 경우 여러 URL 시도 (에뮬레이터와 실제 기기 모두 지원)
+    List<String> urlsToTry = [baseUrl];
+    if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+      urlsToTry = ApiConfig.getAndroidBaseUrls();
+    }
+
+    for (final url in urlsToTry) {
+      try {
+        final uri = Uri.parse('$url/recommend/routines/$routineId');
+
+        print('[RoutineService] Delete Routine 요청 시작: $uri');
+
+        final response = await http
+            .delete(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+            )
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                print('[RoutineService] Delete Routine 타임아웃 발생: $uri');
+                throw Exception('요청 시간 초과');
+              },
+            );
+
+        if (response.statusCode == 200) {
+          print('[RoutineService] Delete Routine 성공: $url');
+          return true;
+        } else {
+          print(
+            'Delete Routine API Error: ${response.statusCode} - ${response.body}',
+          );
+          continue;
+        }
+      } catch (e, stackTrace) {
+        print('[RoutineService] Delete Routine $url 연결 실패');
+        print('[RoutineService] 에러 타입: ${e.runtimeType}');
+        print('[RoutineService] 에러 메시지: $e');
+        print('[RoutineService] 스택 트레이스: $stackTrace');
+        continue;
+      }
+    }
+
+    // 모든 URL 시도 실패
+    print('[RoutineService] Delete Routine 모든 연결 시도 실패');
+    return false;
+  }
 }
 
 class RoutineItem {

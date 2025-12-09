@@ -79,6 +79,8 @@ class _CareScreenState extends State<CareScreen> {
       }
 
       print('[CareScreen] 로봇청소기 알림 로딩 시작: ${urlsToTry.length}개 URL');
+      bool requestSucceeded = false;
+      
       for (int i = 0; i < urlsToTry.length; i++) {
         final url = urlsToTry[i];
         print('[CareScreen] 로봇청소기 알림 시도 ${i + 1}/${urlsToTry.length}: $url');
@@ -125,7 +127,7 @@ class _CareScreenState extends State<CareScreen> {
                   } else {
                     // message가 없으면 기본 메시지 사용
                     _robotCleanerMessage =
-                        '로봇청소기를 안 돌린지 1시간이 넘었어요.\n깨끗한 집을 위해 지금 실행시켜주세요';
+                        '건조기를 안 돌린지 1시간이 넘었어요.\n지금 안돌리면 입을 옷이 없어요';
                   }
                   _robotCleanerRoutineId = routineId;
                 });
@@ -138,7 +140,8 @@ class _CareScreenState extends State<CareScreen> {
                 });
               }
             }
-            print('[CareScreen] 로봇청소기 알림 로딩 성공: $url');
+            requestSucceeded = true;
+            print('[CareScreen] 로봇청소기 알림 로딩 성공: $url (알림 있음: $hasNotification)');
             break; // 성공하면 종료
           } else {
             // HTTP 에러
@@ -148,7 +151,7 @@ class _CareScreenState extends State<CareScreen> {
             continue;
           }
         } catch (e) {
-          // 모든 URL 시도 실패 시 로그 출력
+          // 연결 실패
           print('[CareScreen] 로봇청소기 알림 로딩 실패 ($url): $e');
           if (i == urlsToTry.length - 1) {
             // 마지막 URL도 실패
@@ -158,8 +161,10 @@ class _CareScreenState extends State<CareScreen> {
         }
       }
 
-      // 모든 URL 시도 실패 시 로그 출력
-      print('[CareScreen] 로봇청소기 알림 최종 실패: 모든 URL 연결 시도 완료');
+      // 실제로 모든 URL 시도가 실패한 경우에만 실패 메시지 출력
+      if (!requestSucceeded) {
+        print('[CareScreen] 로봇청소기 알림 최종 실패: 모든 URL 연결 시도 완료');
+      }
     } catch (e) {
       print('[CareScreen] 로봇청소기 알림 로딩 중 예외 발생: $e');
       // 에러 발생 시 알림 표시 안 함

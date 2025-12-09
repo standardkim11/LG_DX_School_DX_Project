@@ -293,8 +293,12 @@ class _ViewAllScreenState extends State<ViewAllScreen>
         try {
           final url = urlsToTry.first;
           final uri = Uri.parse('$url/recommend/weather').replace(
-            queryParameters: {'date': todayStr},
+            queryParameters: {
+              'user_id': '1', // user_id 추가
+              'date': todayStr,
+            },
           );
+          print('[ViewAllScreen] 날씨 정보 API 호출: $uri');
           final response = await http
               .get(
                 uri,
@@ -304,28 +308,48 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                 },
               )
               .timeout(
-                const Duration(seconds: 3), // 매우 짧은 타임아웃으로 빠르게 실패 처리
+                const Duration(seconds: 10), // 타임아웃 시간 증가
                 onTimeout: () {
                   throw Exception('요청 시간 초과');
                 },
               );
           
+          print('[ViewAllScreen] 날씨 정보 API 응답: statusCode=${response.statusCode}');
           if (response.statusCode == 200) {
             try {
-              final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>?;
+              final responseBody = utf8.decode(response.bodyBytes);
+              print('[ViewAllScreen] 날씨 정보 API 응답 본문: $responseBody');
+              final data = jsonDecode(responseBody) as Map<String, dynamic>?;
               if (data != null) {
+                print('[ViewAllScreen] 날씨 정보 파싱된 데이터: $data');
                 final weatherLabel = data['weather_label'] as String? ?? '맑음';
-                weatherMessage = '$weatherLabel이 예정된 오늘,\n세탁기를 돌리실 건가요?';
-                print('[ViewAllScreen] 날씨 정보 로딩 성공: $url, weather_label=$weatherLabel');
+                final recommendationMessage = data['recommendation_message'] as String?;
+                final weatherCode = data['weather_code'] as int?;
+                final weatherRaw = data['weather'] as String?; // DB에 저장된 원본 날씨 값
+                print('[ViewAllScreen] 날씨 정보 상세: weather=$weatherRaw, weather_label=$weatherLabel, weather_code=$weatherCode, recommendation_message=$recommendationMessage');
+                if (recommendationMessage != null && recommendationMessage.isNotEmpty) {
+                  // 추천 메시지가 있으면 사용
+                  weatherMessage = recommendationMessage;
+                } else {
+                  // 추천 메시지가 없으면 날씨 라벨 사용
+                  weatherMessage = '$weatherLabel이 예정된 오늘,\n세탁기를 돌리실 건가요?';
+                }
+                print('[ViewAllScreen] 날씨 정보 로딩 성공: $url, weather_label=$weatherLabel, recommendation_message=$recommendationMessage');
+              } else {
+                print('[ViewAllScreen] 날씨 정보 데이터가 null입니다.');
               }
             } catch (parseError) {
               // 파싱 실패해도 기본값 사용
               print('[ViewAllScreen] 날씨 정보 JSON 파싱 실패: $parseError');
+              print('[ViewAllScreen] 응답 본문: ${response.body}');
             }
+          } else {
+            print('[ViewAllScreen] 날씨 정보 HTTP 에러: statusCode=${response.statusCode}, body=${response.body}');
           }
-        } catch (e) {
+        } catch (e, stackTrace) {
           // 날씨 정보 로딩 실패 시 기본값 사용 (다른 API에 영향 주지 않음)
           print('[ViewAllScreen] 날씨 정보 로딩 실패 (기본값 사용): $e');
+          print('[ViewAllScreen] 스택 트레이스: $stackTrace');
         }
       }
       
@@ -364,8 +388,10 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                       weatherMessage,
                       style: AppTextStyles.sectionTitle(
                         context,
-                      ).copyWith(fontSize: 18, fontWeight: FontWeight.w600),
+                      ).copyWith(fontSize: 16, fontWeight: FontWeight.w600),
                       textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 24),
                     Row(
@@ -478,6 +504,137 @@ class _ViewAllScreenState extends State<ViewAllScreen>
         );
       },
     );
+  }
+
+  /// 삭제 확인 다이얼로그 표시
+  Future<void> _showDeleteConfirmDialog(ViewAllRoutineItem routine) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppColors.backgroundWhite,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '루틴 삭제',
+                  style: AppTextStyles.todoTitle(context),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '${routine.name} 루틴을 삭제하시겠습니까?',
+                  style: AppTextStyles.todoCategory(context),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).pop(false); // 취소
+                        },
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: AppColors.backgroundGray,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '취소',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 16,
+                              fontFamily: 'LG Smart_H',
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).pop(true); // 삭제
+                        },
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Text(
+                            '삭제',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontFamily: 'LG Smart_H',
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (result == true) {
+      // 삭제 확인
+      await _deleteRoutine(routine);
+    }
+  }
+
+  /// 루틴 삭제 실행
+  Future<void> _deleteRoutine(ViewAllRoutineItem routine) async {
+    print('[ViewAllScreen] 루틴 삭제 시작: ${routine.id}');
+    
+    final success = await RoutineService.deleteRoutine(
+      routineId: routine.id,
+    );
+
+    if (success) {
+      print('[ViewAllScreen] 루틴 삭제 성공: ${routine.id}');
+      // 선택된 루틴 ID에서도 제거
+      _selectedRoutineIds.remove(routine.id);
+      // 루틴 목록 새로고침
+      await _loadAllRoutines();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${routine.name} 루틴이 삭제되었습니다.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      print('[ViewAllScreen] 루틴 삭제 실패: ${routine.id}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('루틴 삭제에 실패했습니다.'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _navigateToPriorityScreen(List<ViewAllRoutineItem> selectedRoutines) {
@@ -840,6 +997,32 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                 ],
               ),
             ),
+            // 삭제 버튼 (연필 아이콘 위에 배치)
+            Positioned(
+              right: 8,
+              bottom: 40, // 연필 아이콘 위에 배치
+              child: GestureDetector(
+                onTap: () {
+                  // 삭제 확인 다이얼로그 표시
+                  _showDeleteConfirmDialog(routine);
+                },
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.close,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+            // 수정 버튼 (연필 아이콘)
             Positioned(
               right: 8,
               bottom: 8,
