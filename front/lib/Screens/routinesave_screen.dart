@@ -695,7 +695,7 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
     if (_selectedDevice == '세탁기') {
       iconPath = 'assets/priority_screen/washing.png';
     } else if (_selectedDevice == '에어컨') {
-      iconPath = 'assets/viewsave_screen/robot.png'; // 에어컨 아이콘 경로 (임시)
+      iconPath = 'assets/viewsave_screen/Wind.png';
     }
 
     return Container(
@@ -704,22 +704,24 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
       decoration: _buildCardDecoration(),
       child: Row(
         children: [
-          Image.asset(
-            iconPath,
+          Container(
             width: 40,
             height: 40,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.backgroundGray,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.devices, size: 24),
-              );
-            },
+            decoration: BoxDecoration(
+              color: AppColors.backgroundGray,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Image.asset(
+                iconPath,
+                width: 24,
+                height: 24,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(Icons.devices, size: 24);
+                },
+              ),
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(child: Text(_selectedDevice ?? '', style: _titleTextStyle)),
@@ -808,7 +810,7 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
                     ),
                     _buildDeviceOption(
                       '에어컨',
-                      'assets/viewsave_screen/robot.png', // 에어컨 아이콘 경로 (임시)
+                      'assets/viewsave_screen/Wind.png',
                     ),
                     _buildDeviceOption(
                       '로봇청소기',

@@ -96,45 +96,26 @@ void setRoutineScreenDate(int dateIndex) {
   _RoutineScreenStateManager.selectedDateIndex = dateIndex;
 }
 
-// 외부에서 접근 가능한 날짜 가져오기 함수
-int getRoutineScreenDate() {
-  return _RoutineScreenStateManager.selectedDateIndex;
-}
-
-// 오늘 날짜의 인덱스를 계산하여 설정하는 함수
+// 외부에서 접근 가능한 오늘 날짜로 설정 함수
 void setRoutineScreenToToday() {
   final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day); // 시간 제거하여 날짜만 비교
   final baseDate = DateTime(now.year, now.month, 12);
   final currentWeekday = baseDate.weekday;
   final daysUntilFriday = (5 - currentWeekday + 7) % 7;
   final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
-  final referenceDateOnly = DateTime(
+
+  // 오늘과 기준일(12일 금요일)의 차이 계산
+  final today = DateTime(now.year, now.month, now.day);
+  final referenceDay = DateTime(
     referenceDate.year,
     referenceDate.month,
     referenceDate.day,
-  ); // 시간 제거
-
-  // 오늘 날짜와 referenceDate의 차이를 계산 (날짜만 비교)
-  // 오늘 날짜가 referenceDate보다 앞이면 음수, 뒤면 양수
-  final todayDifference = today.difference(referenceDateOnly).inDays;
-
-  // 인덱스 계산 (referenceDate가 인덱스 15이므로)
-  final todayIndex = 15 + todayDifference;
-
-  print('[setRoutineScreenToToday] now: $now');
-  print('[setRoutineScreenToToday] today: $today');
-  print('[setRoutineScreenToToday] baseDate: $baseDate');
-  print('[setRoutineScreenToToday] referenceDate: $referenceDate');
-  print('[setRoutineScreenToToday] referenceDateOnly: $referenceDateOnly');
-  print('[setRoutineScreenToToday] todayDifference: $todayDifference');
-  print('[setRoutineScreenToToday] todayIndex: $todayIndex');
-
-  _RoutineScreenStateManager.selectedDateIndex = todayIndex;
-
-  print(
-    '[setRoutineScreenToToday] 설정된 인덱스: ${_RoutineScreenStateManager.selectedDateIndex}',
   );
+  final daysDifference = today.difference(referenceDay).inDays;
+
+  // 인덱스 15가 기준일이므로 오늘 인덱스 = 15 + daysDifference
+  final todayIndex = 15 + daysDifference;
+  _RoutineScreenStateManager.selectedDateIndex = todayIndex;
 }
 
 // 외부에서 접근 가능한 선택된 루틴 ID 설정 함수
@@ -201,11 +182,11 @@ class _RoutineScreenState extends State<RoutineScreen>
       final contextToUse = ctx ?? context;
       final screenWidth = MediaQuery.of(contextToUse).size.width;
       final cardWidth = 64.0; // 카드 너비(60) + 좌우 마진(4)
-      // 항상 최신 상태를 가져오기 위해 _RoutineScreenStateManager에서 직접 읽음
-      final currentDateIndex = _RoutineScreenStateManager.selectedDateIndex;
       // 선택된 날짜를 중앙에 배치: (인덱스 * 카드너비) - (화면너비/2) + (카드너비/2)
       final scrollPosition =
-          (currentDateIndex * cardWidth) - (screenWidth / 2) + (cardWidth / 2);
+          (_selectedDateIndex * cardWidth) -
+          (screenWidth / 2) +
+          (cardWidth / 2);
       _dateScrollController.animateTo(
         scrollPosition.clamp(
           0.0,
@@ -240,9 +221,7 @@ class _RoutineScreenState extends State<RoutineScreen>
     final currentWeekday = baseDate.weekday;
     final daysUntilFriday = (5 - currentWeekday + 7) % 7;
     final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
-    // 항상 최신 상태를 가져오기 위해 _RoutineScreenStateManager에서 직접 읽음
-    final currentDateIndex = _RoutineScreenStateManager.selectedDateIndex;
-    return referenceDate.add(Duration(days: currentDateIndex - 15));
+    return referenceDate.add(Duration(days: _selectedDateIndex - 15));
   }
 
   // 날짜를 키 형식으로 변환
@@ -421,16 +400,7 @@ class _RoutineScreenState extends State<RoutineScreen>
       return;
     }
 
-    // viewall에서 설정한 적 없는 날짜는 빈 리스트 표시 (View All에서 선택한 것만 표시)
-    print('[RoutineScreen] 선택된 루틴이 없음, 빈 리스트 표시');
-    setState(() {
-      _todosByDate[dateKey] = [];
-      _isLoading = false;
-    });
-    return;
-
-    // 아래 코드는 더 이상 사용하지 않음 (View All에서 선택한 것만 표시)
-    /*
+    // viewall에서 설정한 적 없는 날짜는 API에서 해당 날짜의 루틴을 가져옴
     setState(() {
       _isLoading = true;
     });
@@ -473,7 +443,6 @@ class _RoutineScreenState extends State<RoutineScreen>
         _isLoading = false;
       });
     }
-    */
   }
 
   @override
@@ -482,27 +451,13 @@ class _RoutineScreenState extends State<RoutineScreen>
     _dateScrollController = ScrollController();
     WidgetsBinding.instance.addObserver(this); // 생명주기 관찰자 등록
 
-    // 저장된 날짜 인덱스로 복원 (항상 최신 상태 사용)
+    // 저장된 날짜 인덱스로 복원
     _selectedDateIndex = _RoutineScreenStateManager.selectedDateIndex;
-
-    print(
-      '[RoutineScreen] initState - _selectedDateIndex: $_selectedDateIndex',
-    );
-    print(
-      '[RoutineScreen] initState - _RoutineScreenStateManager.selectedDateIndex: ${_RoutineScreenStateManager.selectedDateIndex}',
-    );
 
     // 초기 스크롤 위치를 저장된 날짜 인덱스로 설정 (중앙에 오도록)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // 다시 한 번 최신 상태 확인
-      final latestDateIndex = _RoutineScreenStateManager.selectedDateIndex;
-      if (mounted) {
-        setState(() {
-          _selectedDateIndex = latestDateIndex;
-        });
-        _scrollToSelectedDate(context);
-        _refreshCurrentDate();
-      }
+      _scrollToSelectedDate(context);
+      _refreshCurrentDate();
     });
   }
 
@@ -560,8 +515,8 @@ class _RoutineScreenState extends State<RoutineScreen>
 
         // routineId가 없으면 기본 정렬 (체크 상태 기준)
         if (aRoutineId == null || bRoutineId == null) {
-          final aDone = a['checkType'] == 'done' || a['checkType'] == 'fail';
-          final bDone = b['checkType'] == 'done' || b['checkType'] == 'fail';
+          final aDone = a['checkType'] == 'done';
+          final bDone = b['checkType'] == 'done';
           if (aDone == bDone) return 0;
           return aDone ? 1 : -1;
         }
@@ -571,8 +526,8 @@ class _RoutineScreenState extends State<RoutineScreen>
 
         // 우선순위 순서에 없는 항목은 뒤로
         if (aIndex == -1 && bIndex == -1) {
-          final aDone = a['checkType'] == 'done' || a['checkType'] == 'fail';
-          final bDone = b['checkType'] == 'done' || b['checkType'] == 'fail';
+          final aDone = a['checkType'] == 'done';
+          final bDone = b['checkType'] == 'done';
           if (aDone == bDone) return 0;
           return aDone ? 1 : -1;
         }
@@ -581,8 +536,8 @@ class _RoutineScreenState extends State<RoutineScreen>
 
         // 같은 우선순위 내에서는 체크 상태 기준 정렬
         if (aIndex == bIndex) {
-          final aDone = a['checkType'] == 'done' || a['checkType'] == 'fail';
-          final bDone = b['checkType'] == 'done' || b['checkType'] == 'fail';
+          final aDone = a['checkType'] == 'done';
+          final bDone = b['checkType'] == 'done';
           if (aDone == bDone) return 0;
           return aDone ? 1 : -1;
         }
@@ -590,18 +545,12 @@ class _RoutineScreenState extends State<RoutineScreen>
         return aIndex.compareTo(bIndex);
       });
 
-      // 체크된 항목과 fail 항목을 하단으로 이동 (우선순위 순서는 유지)
+      // 체크된 항목을 하단으로 이동 (우선순위 순서는 유지)
       final unchecked = todosList
-          .where(
-            (todo) =>
-                todo['checkType'] != 'done' && todo['checkType'] != 'fail',
-          )
+          .where((todo) => todo['checkType'] != 'done')
           .toList();
       final checked = todosList
-          .where(
-            (todo) =>
-                todo['checkType'] == 'done' || todo['checkType'] == 'fail',
-          )
+          .where((todo) => todo['checkType'] == 'done')
           .toList();
 
       return [...unchecked, ...checked];
@@ -609,14 +558,10 @@ class _RoutineScreenState extends State<RoutineScreen>
 
     // 우선순위 순서가 없으면 기존 로직 사용
     final unchecked = _todos
-        .where(
-          (todo) => todo['checkType'] != 'done' && todo['checkType'] != 'fail',
-        )
+        .where((todo) => todo['checkType'] != 'done')
         .toList();
     final checked = _todos
-        .where(
-          (todo) => todo['checkType'] == 'done' || todo['checkType'] == 'fail',
-        )
+        .where((todo) => todo['checkType'] == 'done')
         .toList();
     return [...unchecked, ...checked];
   }
@@ -1171,9 +1116,7 @@ class _RoutineScreenState extends State<RoutineScreen>
         itemCount: dates.length,
         itemBuilder: (context, index) {
           final date = dates[index];
-          // 항상 최신 상태를 가져오기 위해 _RoutineScreenStateManager에서 직접 읽음
-          final currentDateIndex = _RoutineScreenStateManager.selectedDateIndex;
-          final isSelected = index == currentDateIndex;
+          final isSelected = index == _selectedDateIndex;
           return GestureDetector(
             onTap: () {
               // 날짜 인덱스 업데이트
@@ -1230,19 +1173,15 @@ class _RoutineScreenState extends State<RoutineScreen>
                     final dateKey = _formatDateKey(selectedDate);
 
                     // 이미 등록된 일정이 있는지 확인
-                    // 1. 화면에 표시된 루틴이 있는지 확인
-                    final hasDisplayedRoutines = _todos.isNotEmpty;
-                    // 2. 날짜별로 선택된 루틴이 있는지 확인
                     final dateSelectedRoutines =
                         _RoutineScreenStateManager.getSelectedRoutinesForDate(
                           dateKey,
                         );
-                    final hasSelectedRoutines =
+                    final hasRoutines =
                         dateSelectedRoutines != null &&
                         dateSelectedRoutines.isNotEmpty;
 
-                    // 화면에 루틴이 표시되어 있거나 선택된 루틴이 있으면 확인 팝업 표시
-                    if (hasDisplayedRoutines || hasSelectedRoutines) {
+                    if (hasRoutines) {
                       // 등록된 일정이 있으면 확인 팝업 표시
                       _showConfirmDialog(
                         '루틴을 다시 선택하시겠습니까?',
@@ -1307,9 +1246,7 @@ class _RoutineScreenState extends State<RoutineScreen>
                         final isFirstChecked =
                             index > 0 &&
                             _sortedTodos[index - 1]['checkType'] != 'done' &&
-                            _sortedTodos[index - 1]['checkType'] != 'fail' &&
-                            (todo['checkType'] == 'done' ||
-                                todo['checkType'] == 'fail');
+                            todo['checkType'] == 'done';
 
                         // 원본 리스트에서의 인덱스 찾기
                         final originalIndex = _todos.indexWhere(
@@ -1348,7 +1285,7 @@ class _RoutineScreenState extends State<RoutineScreen>
                               bottom: 12,
                               top: isFirstChecked
                                   ? 20
-                                  : 0, // 체크된 항목 또는 fail 항목 시작 부분에 여백 추가
+                                  : 0, // 체크된 항목 시작 부분에 여백 추가
                             ),
                             child: TodoItemCard(
                               title: todo['title'] as String,
@@ -1362,71 +1299,6 @@ class _RoutineScreenState extends State<RoutineScreen>
                                 'assets/routine_screen/friends2.png': 26,
                               },
                               onCheckChanged: () => _toggleCheck(originalIndex),
-                              onFail: () {
-                                // Fail 버튼 클릭 시 fail 상태 토글
-                                setState(() {
-                                  final todos = _todos;
-                                  final currentState =
-                                      todos[originalIndex]['checkType']
-                                          as String;
-                                  final newState = currentState == 'fail'
-                                      ? 'none'
-                                      : 'fail';
-                                  todos[originalIndex]['checkType'] = newState;
-                                  // 날짜별 할 일 목록 업데이트
-                                  final selectedDate = _getSelectedDate();
-                                  final dateKey = _formatDateKey(selectedDate);
-                                  _todosByDate[dateKey] = todos;
-                                  // 상태 저장
-                                  final key = _getTodoKey(todos[originalIndex]);
-                                  _RoutineScreenStateManager.setCheckState(
-                                    key,
-                                    newState,
-                                  );
-                                });
-                              },
-                              onDelete: () {
-                                // Delete 버튼 클릭 시 해당 날짜의 루틴 목록에서 제거
-                                final routineId = todo['routineId'] as int?;
-                                if (routineId != null) {
-                                  final selectedDate = _getSelectedDate();
-                                  final dateKey = _formatDateKey(selectedDate);
-
-                                  // 날짜별 선택된 루틴 ID 목록에서 제거
-                                  final dateSelectedRoutines =
-                                      _RoutineScreenStateManager.getSelectedRoutinesForDate(
-                                        dateKey,
-                                      );
-                                  if (dateSelectedRoutines != null) {
-                                    dateSelectedRoutines.remove(routineId);
-                                    _RoutineScreenStateManager.setSelectedRoutinesForDate(
-                                      dateKey,
-                                      dateSelectedRoutines,
-                                    );
-                                  }
-
-                                  // 화면에서도 제거
-                                  setState(() {
-                                    _todosByDate[dateKey] =
-                                        _todosByDate[dateKey]!
-                                            .where(
-                                              (t) =>
-                                                  t['routineId'] != routineId,
-                                            )
-                                            .toList();
-                                  });
-                                }
-                              },
-                              onView: () {
-                                // View 버튼 클릭 시 루틴 생성 화면으로 이동
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const ViewSaveScreen(),
-                                  ),
-                                );
-                              },
                             ),
                           ),
                         );
