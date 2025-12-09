@@ -21,6 +21,7 @@ class Routine(db.Model):
 
     run_minutes = db.Column(db.Integer, nullable=True)
     schedule_type = db.Column(db.String(20), nullable=False, default="ONCE")
+    schedule_frequency = db.Column(db.Integer, nullable=False, default=1)  # 빈도 (1=1회, 2=2회 등)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     preferred_time = db.Column(db.String(50), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -41,6 +42,7 @@ class Routine(db.Model):
             "serial_no": self.serial_no,
             "run_minutes": self.run_minutes,
             "schedule_type": self.schedule_type,
+            "schedule_frequency": self.schedule_frequency,
             "is_active": self.is_active,
             "preferred_time": self.preferred_time.isoformat()
             if self.preferred_time

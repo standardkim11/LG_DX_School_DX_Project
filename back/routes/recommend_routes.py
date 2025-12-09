@@ -2,12 +2,13 @@ from flask import Blueprint, current_app, request, jsonify
 from datetime import datetime, time, date, timedelta
 import pandas as pd  # type: ignore
 from sqlalchemy.exc import DatabaseError  # type: ignore
+from sqlalchemy import or_  # type: ignore
 from Project.extensions import db
 from models import User, Routine, Notification, RoutineExecution , UserDevice  ,WeatherInfo, DeviceLog
 import re
 
 from .maping import encode_routine_type, encode_schedule_type, encode_weather, REVERSE_ROUTINE_TYPE, REVERSE_SCHEDULE_TYPE, REVERSE_WEATHER
-from .maping import parse_preferred_time,    is_scheduled_today,    is_done_today, is_failed_today, normalize_routine_name
+from .maping import parse_preferred_time, is_scheduled_today, is_done_today, is_failed_today, is_goal_achieved, normalize_routine_name
 from .utils import distance_km, today_date, safe_commit, error_response
 
 
@@ -638,11 +639,24 @@ def create_routine():
     if not user_id or not name:
         return jsonify({"error": "user_id and name are required"}), 400
 
+    # schedule_frequency 처리 (기본값 1)
+    schedule_frequency = data.get("schedule_frequency", 1)
+    if schedule_frequency is not None:
+        try:
+            schedule_frequency = int(schedule_frequency)
+            if schedule_frequency < 1:
+                schedule_frequency = 1
+        except (ValueError, TypeError):
+            schedule_frequency = 1
+    else:
+        schedule_frequency = 1
+
     routine = Routine(
         user_id=user_id,
         name=name,
         routine_type=routine_type,
         schedule_type=schedule_type,
+        schedule_frequency=schedule_frequency,
         preferred_time=preferred_time,
         run_minutes=run_minutes,
         serial_no=serial_no,
@@ -668,6 +682,7 @@ def list_routines():
             "name": r.name,
             "routine_type": r.routine_type,
             "schedule_type": r.schedule_type,
+            "schedule_frequency": r.schedule_frequency,
             "preferred_time": r.preferred_time,
             "run_minutes": r.run_minutes,
             "serial_no": r.serial_no,
@@ -864,12 +879,18 @@ def get_today_routines():
 
     today_list = []
     for r in all_routines:
-        # 오늘 스케줄인지 검사
+        # 1) 오늘 스케줄인지 검사 (created_at 기준)
         if not is_scheduled_today(r, today):
             continue
 
-        # 오늘 완료 여부 체크
-                # 오늘 완료 / 실패 여부 체크
+        # 2) WEEKLY/MONTHLY 루틴의 목표 달성 여부 확인
+        # 목표 달성 시 더 이상 표시하지 않음 (DAILY는 제외)
+        st = (r.schedule_type or "").upper()
+        if st != "DAILY" and is_goal_achieved(r, user_id, today):
+            continue
+
+        # 3) 오늘 완료 / 실패 여부 체크
+        # DAILY 루틴은 체크되어도 계속 표시 (필터링하지 않음)
         last_log = (
             RoutineExecution.query
             .filter_by(user_id=user_id, routine_id=r.id)
@@ -880,10 +901,14 @@ def get_today_routines():
         done = False
         failed = False
         if last_log and last_log.start_time and last_log.start_time.date() == today:
-            if last_log.status == 2:      # DONE
+            # status는 숫자로 저장됨: 2=완료, 3=실패
+            if last_log.status == 2:
                 done = True
-            elif last_log.status == 3:    # FAILED
+            elif last_log.status == 3:
                 failed = True
+        
+        # DAILY 루틴은 완료되어도 필터링하지 않음 (계속 표시)
+        # WEEKLY/MONTHLY 루틴은 완료되면 목표 달성으로 간주하여 이미 필터링됨
 
         # preferred_time → 정렬용 숫자
         pref_hour = parse_preferred_time(r.preferred_time)
@@ -897,7 +922,7 @@ def get_today_routines():
             "preferred_hour": pref_hour,
             "run_minutes": r.run_minutes,
             "done": done,
-            "failed": failed,   # ← 추가
+            "failed": failed,
         })
 
 
@@ -968,6 +993,223 @@ def get_weather():
     }), 200
 
 
+@recommend_bp.route("/unused-notification", methods=["GET"])
+def get_unused_notification():
+    """
+    미사용 루틴 알림 정보 반환
+    GET /api/recommend/unused-notification?user_id=1
+    """
+    user_id = request.args.get("user_id", type=int, default=1)
+    
+    try:
+        user = User.query.get(user_id)
+    except DatabaseError as e:
+        error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+        return jsonify({
+            "error": "Database connection failed",
+            "message": "Unable to connect to the database.",
+            "details": error_msg,
+        }), 503
+    
+    if not user:
+        return jsonify({"error": "user not found"}), 404
+    
+    # 현재 날짜 기준으로 이번 달 계산
+    now = datetime.now()
+    current_month_start = date(now.year, now.month, 1)
+    current_month_end = date(now.year, now.month + 1, 1) - timedelta(days=1) if now.month < 12 else date(now.year + 1, 1, 1) - timedelta(days=1)
+    
+    # 활성화된 루틴 중에서 주기적으로 실행해야 하는 루틴 찾기 (WEEKLY, MONTHLY 등)
+    routines = Routine.query.filter_by(
+        user_id=user_id,
+        is_active=True
+    ).filter(
+        Routine.schedule_type.in_(['WEEKLY', 'MONTHLY'])
+    ).all()
+    
+    notifications = []
+    
+    for routine in routines:
+        # 이번 달 실행 횟수 계산
+        executions_this_month = RoutineExecution.query.filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id == routine.id,
+            RoutineExecution.status == 'COMPLETED',
+            RoutineExecution.start_time >= datetime.combine(current_month_start, time.min),
+            RoutineExecution.start_time <= datetime.combine(current_month_end, time.max)
+        ).count()
+        
+        # 예상 실행 횟수 계산
+        expected_count = 0
+        if routine.schedule_type == 'WEEKLY':
+            # 주 1회이면 이번 달에 약 4-5회
+            days_in_month = (current_month_end - current_month_start).days + 1
+            expected_count = max(1, days_in_month // 7)
+        elif routine.schedule_type == 'MONTHLY':
+            # 월 1회이면 이번 달에 1회
+            expected_count = 1
+        
+        # 실행 횟수가 부족한 경우 알림 생성
+        if executions_this_month < expected_count:
+            remaining = expected_count - executions_this_month
+            routine_name = normalize_routine_name(routine.name)
+            
+            # 루틴 타입에 따라 메시지 생성
+            if '세탁기' in routine_name or 'washing' in routine_name.lower() or '세탁' in routine_name:
+                first_line = f"이번달에 {routine_name}을(를) {executions_this_month}번밖에 안돌렸어요."
+                second_line = f"{remaining}번 더 돌리셔야해요. 지금 돌리실건가요?"
+            else:
+                first_line = f"이번달에 {routine_name}을(를) {executions_this_month}번밖에 안하셨어요."
+                second_line = f"{remaining}번 더 하셔야해요. 지금 하실건가요?"
+            
+            notifications.append({
+                "routine_id": routine.id,
+                "routine_name": routine_name,
+                "executions_this_month": executions_this_month,
+                "expected_count": expected_count,
+                "remaining": remaining,
+                "first_line": first_line,
+                "second_line": second_line,
+            })
+    
+    # 가장 부족한 루틴 하나만 반환 (또는 여러 개 반환 가능)
+    if notifications:
+        # remaining이 가장 큰 것부터 정렬
+        notifications.sort(key=lambda x: x["remaining"], reverse=True)
+        return jsonify({
+            "has_notification": True,
+            "notification": notifications[0]  # 가장 부족한 루틴 하나만 반환
+        }), 200
+    else:
+        return jsonify({
+            "has_notification": False,
+            "notification": None
+        }), 200
+
+
+@recommend_bp.route("/robot-cleaner-notification", methods=["GET"])
+def get_robot_cleaner_notification():
+    """
+    로봇청소기 알림 정보 반환
+    오늘 예상 실행 시간(preferred_time)이 지났는데 아직 실행되지 않은 경우 알림
+    GET /api/recommend/robot-cleaner-notification?user_id=1
+    """
+    user_id = request.args.get("user_id", type=int, default=1)
+    
+    try:
+        user = User.query.get(user_id)
+    except DatabaseError as e:
+        error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+        return jsonify({
+            "error": "Database connection failed",
+            "message": "Unable to connect to the database.",
+            "details": error_msg,
+        }), 503
+    
+    if not user:
+        return jsonify({"error": "user not found"}), 404
+    
+    # 로봇청소기 루틴 찾기
+    robot_cleaner_routine = Routine.query.filter_by(
+        user_id=user_id,
+        is_active=True
+    ).filter(
+        or_(
+            Routine.name.like('%로봇청소기%'),
+            Routine.name.like('%robot%'),
+            Routine.name.like('%청소기%'),
+            Routine.name.like('%cleaner%')
+        )
+    ).first()
+    
+    if not robot_cleaner_routine:
+        return jsonify({
+            "has_notification": False,
+            "notification": None
+        }), 200
+    
+    # preferred_time이 없으면 알림 표시 안 함
+    if not robot_cleaner_routine.preferred_time:
+        return jsonify({
+            "has_notification": False,
+            "notification": None
+        }), 200
+    
+    # preferred_time 파싱 (예: "14:00" 또는 "14" 형태)
+    from .maping import parse_preferred_time
+    preferred_hour = parse_preferred_time(robot_cleaner_routine.preferred_time)
+    
+    now = datetime.now()
+    current_hour = now.hour
+    current_minute = now.minute
+    today = now.date()
+    
+    # preferred_time을 시간으로 변환 (예: 14:00)
+    preferred_time_str = robot_cleaner_routine.preferred_time
+    preferred_minute = 0
+    if ':' in preferred_time_str:
+        try:
+            time_parts = preferred_time_str.split(':')
+            preferred_hour = int(time_parts[0])
+            preferred_minute = int(time_parts[1]) if len(time_parts) > 1 else 0
+        except (ValueError, IndexError):
+            preferred_minute = 0
+    else:
+        # "14" 형태인 경우
+        preferred_hour = preferred_hour
+        preferred_minute = 0
+    
+    # 예상 실행 시간이 지났는지 확인
+    current_time_minutes = current_hour * 60 + current_minute
+    preferred_time_minutes = preferred_hour * 60 + preferred_minute
+    
+    if current_time_minutes < preferred_time_minutes:
+        # 아직 예상 시간이 지나지 않음
+        return jsonify({
+            "has_notification": False,
+            "notification": None
+        }), 200
+    
+    # 오늘 실행 기록 확인 (status는 숫자 2로 저장됨: 완료)
+    today_start = datetime.combine(today, time.min)
+    today_end = datetime.combine(today + timedelta(days=1), time.min)
+    
+    today_execution = RoutineExecution.query.filter(
+        RoutineExecution.user_id == user_id,
+        RoutineExecution.routine_id == robot_cleaner_routine.id,
+        RoutineExecution.status == 2,  # 완료 상태
+        RoutineExecution.start_time >= today_start,
+        RoutineExecution.start_time < today_end
+    ).first()
+    
+    # 오늘 실행 기록이 있으면 알림 표시 안 함
+    if today_execution:
+        return jsonify({
+            "has_notification": False,
+            "notification": None
+        }), 200
+    
+    # 예상 시간이 지났고 오늘 실행되지 않았으므로 알림 표시
+    time_passed_minutes = current_time_minutes - preferred_time_minutes
+    hours_passed = time_passed_minutes // 60
+    minutes_passed = time_passed_minutes % 60
+    
+    if hours_passed > 0:
+        message = f'로봇청소기 실행 시간이 {hours_passed}시간 지났어요.\n깨끗한 집을 위해 지금 실행시켜주세요'
+    else:
+        message = f'로봇청소기 실행 시간이 {minutes_passed}분 지났어요.\n깨끗한 집을 위해 지금 실행시켜주세요'
+    
+    return jsonify({
+        "has_notification": True,
+        "notification": {
+            "message": message,
+            "robot_cleaner_routine_id": robot_cleaner_routine.id,
+            "preferred_time": robot_cleaner_routine.preferred_time,
+            "hours_passed": hours_passed,
+        }
+    }), 200
+
+
 @recommend_bp.route("/dashboard", methods=["GET"])
 def get_dashboard():
     """대시보드 화면용 요약 API.
@@ -1016,33 +1258,45 @@ def get_dashboard():
         next_month_dt = datetime(year, month + 1, 1)
 
     # -------------------------------
-    # 1) 월간 실행 로그 집계
+    # 1) 월간 실행 로그 집계 (집계 쿼리로 최적화)
     # -------------------------------
-    logs = (
-        RoutineExecution.query
+    from sqlalchemy import func
+    
+    # 한 번의 쿼리로 상태별 집계
+    status_counts_query = (
+        db.session.query(
+            RoutineExecution.status,
+            func.count(RoutineExecution.id).label('count')
+        )
         .filter(
             RoutineExecution.user_id == user_id,
             RoutineExecution.start_time >= start_dt,
             RoutineExecution.start_time < next_month_dt,
         )
+        .group_by(RoutineExecution.status)
         .all()
     )
-
-    # status 값은 프로젝트에서 쓰는 규칙에 맞게 수정 가능
+    
+    # 상태별 카운트 딕셔너리로 변환
+    status_counts = {status: count for status, count in status_counts_query}
+    
     # STATUS 정의: 0=PENDING, 1=RUNNING, 2=DONE, 3=FAILED
-    completed_count = sum(1 for log in logs if log.status == 2)  # DONE
-    failed_count = sum(1 for log in logs if log.status == 3)     # FAILED
+    # status가 문자열 "2"이거나 숫자 2인 경우 모두 체크
+    completed_count = sum(
+        count for status, count in status_counts.items()
+        if status == 2 or str(status) == "2"
+    )
+    failed_count = sum(
+        count for status, count in status_counts.items()
+        if status == 3 or str(status) == "3"
+    )
     
     # 미룬 루틴 수: PENDING 상태이면서 오늘 날짜가 지난 루틴
     # 또는 특정 규칙에 따라 계산 (현재는 0으로 설정, 필요시 로직 추가)
     postponed_count = 0
     
-    # 디버깅: 실제 로그 상태 확인
-    status_counts = {}
-    for log in logs:
-        status_counts[log.status] = status_counts.get(log.status, 0) + 1
+    # 디버깅
     current_app.logger.info(f"[DASHBOARD] user_id={user_id}, year={year}, month={month}")
-    current_app.logger.info(f"[DASHBOARD] 전체 로그 개수: {len(logs)}")
     current_app.logger.info(f"[DASHBOARD] 상태별 개수: {status_counts}")
     current_app.logger.info(f"[DASHBOARD] 완료(DONE=2): {completed_count}, 실패(FAILED=3): {failed_count}")
 

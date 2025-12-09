@@ -33,3 +33,4 @@ flutter:
     - assets/todo_screen/
     - assets/viewsave_screen/
     - assets/priority_screen/
+    - assets/push_screen/

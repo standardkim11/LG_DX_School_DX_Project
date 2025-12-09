@@ -7,7 +7,9 @@ import 'viewall_screen.dart';
 import '../Services/routine_service.dart';
 
 class ViewSaveScreen extends StatefulWidget {
-  const ViewSaveScreen({super.key});
+  final ViewAllRoutineItem? routine; // 수정할 루틴 데이터
+
+  const ViewSaveScreen({super.key, this.routine});
 
   @override
   State<ViewSaveScreen> createState() => _ViewSaveScreenState();
@@ -120,9 +122,50 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
   void initState() {
     super.initState();
 
-    // 시간 초기값 설정 (06:00)
-    _selectedHour = 6;
-    _selectedMinute = 0;
+    // 수정 모드인 경우 기존 데이터 로드
+    if (widget.routine != null) {
+      final routine = widget.routine!;
+
+      // 루틴명 설정
+      _routineNameController.text = routine.name;
+
+      // 스케줄 타입에 따라 목표 횟수와 주기 설정
+      if (routine.scheduleType == 'DAILY') {
+        _selectedGoal = 1; // 매일인 경우 1번 고정
+        _selectedFrequency = '매일';
+      } else if (routine.scheduleType == 'WEEKLY') {
+        _selectedGoal = 1; // 주 1회
+        _selectedFrequency = '매주';
+      } else if (routine.scheduleType == 'MONTHLY') {
+        _selectedGoal = 1; // 월 1회
+        _selectedFrequency = '매달';
+      }
+
+      // 시간 설정
+      if (routine.preferredTime != null &&
+          routine.preferredTime!.contains(':')) {
+        try {
+          final timeParts = routine.preferredTime!.split(':');
+          if (timeParts.length >= 2) {
+            _selectedHour = int.parse(timeParts[0]);
+            _selectedMinute = int.parse(timeParts[1]);
+          }
+        } catch (e) {
+          // 파싱 실패 시 기본값 사용
+          _selectedHour = 6;
+          _selectedMinute = 0;
+        }
+      } else {
+        // 시간 초기값 설정 (06:00)
+        _selectedHour = 6;
+        _selectedMinute = 0;
+      }
+    } else {
+      // 새 루틴 생성 모드
+      // 시간 초기값 설정 (06:00)
+      _selectedHour = 6;
+      _selectedMinute = 0;
+    }
   }
 
   @override
@@ -289,7 +332,12 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
                     onChanged: (value) {
                       if (value != null) {
                         setState(() {
-                          _selectedGoal = value;
+                          // 매일인 경우 목표를 1번으로 고정
+                          if (_selectedFrequency == '매일') {
+                            _selectedGoal = 1;
+                          } else {
+                            _selectedGoal = value;
+                          }
                         });
                       }
                     },
@@ -333,6 +381,10 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
       onTap: () {
         setState(() {
           _selectedFrequency = label;
+          // 매일인 경우 목표를 1번으로 고정
+          if (label == '매일') {
+            _selectedGoal = 1;
+          }
         });
       },
       child: Row(

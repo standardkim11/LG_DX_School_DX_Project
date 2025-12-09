@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'lgrouthinq.dart' as lg;
 import 'push_screen.dart';
+import 'routine_screen.dart' as routine;
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -67,6 +68,8 @@ class HomeScreen extends StatelessWidget {
                           SizedBox(width: gapWidth),
                           GestureDetector(
                             onTap: () {
+                              // 오늘 날짜로 설정
+                              routine.setRoutineScreenToToday();
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(

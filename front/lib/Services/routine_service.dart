@@ -25,16 +25,22 @@ class RoutineService {
     if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
       // 자동 감지 모드: 에뮬레이터와 실제 기기 모두 시도
       urlsToTry = ApiConfig.getAndroidBaseUrls();
-      print('[RoutineService] getAllRoutines 자동 감지 모드: ${urlsToTry.length}개 URL 시도');
+      print(
+        '[RoutineService] getAllRoutines 자동 감지 모드: ${urlsToTry.length}개 URL 병렬 시도',
+      );
     } else {
       print('[RoutineService] getAllRoutines 단일 URL 사용: $baseUrl');
     }
 
-    for (final url in urlsToTry) {
-      print('[RoutineService] getAllRoutines 시도 중: $url');
+    // 병렬로 여러 URL 시도 (첫 번째 성공한 응답 사용)
+    final futures = urlsToTry.map((url) async {
       try {
-        final uri = Uri.parse('$url/routines')
-            .replace(queryParameters: {'user_id': userId.toString()});
+        final uri = Uri.parse(
+          '$url/routines',
+        ).replace(queryParameters: {'user_id': userId.toString()});
+
+        print('[RoutineService] getAllRoutines 시도 중: $url');
+        final stopwatch = Stopwatch()..start();
 
         final response = await http
             .get(
@@ -45,11 +51,20 @@ class RoutineService {
               },
             )
             .timeout(
-              const Duration(seconds: 30),
+              const Duration(seconds: 30), // 타임아웃 증가 (30초)
               onTimeout: () {
+                stopwatch.stop();
+                print(
+                  '[RoutineService] getAllRoutines 타임아웃 (${stopwatch.elapsedMilliseconds}ms) - $url',
+                );
                 throw Exception('요청 시간 초과');
               },
             );
+
+        stopwatch.stop();
+        print(
+          '[RoutineService] getAllRoutines 응답 수신 (${stopwatch.elapsedMilliseconds}ms) - $url',
+        );
 
         if (response.statusCode == 200) {
           final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
@@ -61,15 +76,22 @@ class RoutineService {
               .toList();
         } else {
           print('Routine API Error: ${response.statusCode} - ${response.body}');
-          // 다음 URL 시도
-          continue;
+          throw Exception('HTTP ${response.statusCode}');
         }
-      } catch (e, stackTrace) {
-        print('[RoutineService] getAllRoutines $url 연결 실패');
-        print('[RoutineService] 에러 타입: ${e.runtimeType}');
-        print('[RoutineService] 에러 메시지: $e');
-        print('[RoutineService] 스택 트레이스: $stackTrace');
-        // 다음 URL 시도
+      } catch (e) {
+        print('[RoutineService] getAllRoutines $url 연결 실패: $e');
+        rethrow;
+      }
+    }).toList();
+
+    // 첫 번째 성공한 응답 반환
+    for (final future in futures) {
+      try {
+        final result = await future;
+        print('[RoutineService] getAllRoutines 성공');
+        return result;
+      } catch (e) {
+        // 다음 future 시도
         continue;
       }
     }
@@ -91,13 +113,15 @@ class RoutineService {
     if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
       // 자동 감지 모드: 에뮬레이터와 실제 기기 모두 시도
       urlsToTry = ApiConfig.getAndroidBaseUrls();
-      print('[RoutineService] getRoutinesByDate 자동 감지 모드: ${urlsToTry.length}개 URL 시도');
+      print(
+        '[RoutineService] getRoutinesByDate 자동 감지 모드: ${urlsToTry.length}개 URL 병렬 시도',
+      );
     } else {
       print('[RoutineService] getRoutinesByDate 단일 URL 사용: $baseUrl');
     }
 
-    for (final url in urlsToTry) {
-      print('[RoutineService] getRoutinesByDate 시도 중: $url');
+    // 병렬로 여러 URL 시도 (첫 번째 성공한 응답 사용)
+    final futures = urlsToTry.map((url) async {
       try {
         final uri = Uri.parse('$url/recommend/today-routines').replace(
           queryParameters: {
@@ -105,6 +129,9 @@ class RoutineService {
             'date': date, // 날짜 파라미터 추가
           },
         );
+
+        print('[RoutineService] getRoutinesByDate 시도 중: $url');
+        final stopwatch = Stopwatch()..start();
 
         final response = await http
             .get(
@@ -115,11 +142,20 @@ class RoutineService {
               },
             )
             .timeout(
-              const Duration(seconds: 30),
+              const Duration(seconds: 30), // 타임아웃 증가 (30초)
               onTimeout: () {
+                stopwatch.stop();
+                print(
+                  '[RoutineService] getRoutinesByDate 타임아웃 (${stopwatch.elapsedMilliseconds}ms) - $url',
+                );
                 throw Exception('요청 시간 초과');
               },
             );
+
+        stopwatch.stop();
+        print(
+          '[RoutineService] getRoutinesByDate 응답 수신 (${stopwatch.elapsedMilliseconds}ms) - $url',
+        );
 
         if (response.statusCode == 200) {
           final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
@@ -128,15 +164,22 @@ class RoutineService {
               .toList();
         } else {
           print('Routine API Error: ${response.statusCode} - ${response.body}');
-          // 다음 URL 시도
-          continue;
+          throw Exception('HTTP ${response.statusCode}');
         }
-      } catch (e, stackTrace) {
-        print('[RoutineService] getRoutinesByDate $url 연결 실패');
-        print('[RoutineService] 에러 타입: ${e.runtimeType}');
-        print('[RoutineService] 에러 메시지: $e');
-        print('[RoutineService] 스택 트레이스: $stackTrace');
-        // 다음 URL 시도
+      } catch (e) {
+        print('[RoutineService] getRoutinesByDate $url 연결 실패: $e');
+        rethrow;
+      }
+    }).toList();
+
+    // 첫 번째 성공한 응답 반환
+    for (final future in futures) {
+      try {
+        final result = await future;
+        print('[RoutineService] getRoutinesByDate 성공');
+        return result;
+      } catch (e) {
+        // 다음 future 시도
         continue;
       }
     }
@@ -187,7 +230,7 @@ class RoutineService {
               body: body,
             )
             .timeout(
-              const Duration(seconds: 30),
+              const Duration(seconds: 30), // 타임아웃 증가 (30초)
               onTimeout: () {
                 print('[RoutineService] Create Routine 타임아웃 발생: $uri');
                 throw Exception('요청 시간 초과 - 백엔드 서버가 실행 중인지 확인해주세요');
@@ -196,7 +239,8 @@ class RoutineService {
 
         if (response.statusCode == 201) {
           final data =
-              jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+              jsonDecode(utf8.decode(response.bodyBytes))
+                  as Map<String, dynamic>;
           print('[RoutineService] Create Routine 성공: $url');
           return data;
         } else {
@@ -297,6 +341,7 @@ class ViewAllRoutineItem {
   final String? createdAt;
   final int completedCount; // 완료 횟수
   final bool isDoneToday; // 오늘 완료 여부
+  final int scheduleFrequency; // 스케줄 빈도 (1=1회, 2=2회 등)
 
   ViewAllRoutineItem({
     required this.id,
@@ -310,6 +355,7 @@ class ViewAllRoutineItem {
     this.createdAt,
     required this.completedCount,
     required this.isDoneToday,
+    this.scheduleFrequency = 1,
   });
 
   factory ViewAllRoutineItem.fromJson(Map<String, dynamic> json) {
@@ -325,6 +371,7 @@ class ViewAllRoutineItem {
       createdAt: json['created_at'] as String?,
       completedCount: json['completed_count'] as int? ?? 0,
       isDoneToday: json['is_done_today'] as bool? ?? false,
+      scheduleFrequency: json['schedule_frequency'] as int? ?? 1,
     );
   }
 
@@ -340,6 +387,11 @@ class ViewAllRoutineItem {
             if (timeParts.length >= 2) {
               final hour = int.parse(timeParts[0]);
               final minute = timeParts[1];
+              // WEEKLY/MONTHLY 루틴의 경우 요일 정보 추가
+              if (scheduleType == 'WEEKLY' && preferredTime!.contains(':')) {
+                final weekday = _getWeekdayDisplay();
+                return '${hour.toString().padLeft(2, '0')}:$minute$weekday';
+              }
               return '${hour.toString().padLeft(2, '0')}:$minute';
             }
           } catch (e) {
@@ -359,14 +411,29 @@ class ViewAllRoutineItem {
       }
       return '매일';
     } else if (scheduleType == 'WEEKLY') {
-      // 주간 루틴의 경우 요일 정보가 필요할 수 있음
-      return '주 1회';
+      // 주간 루틴: 완료 횟수/목표 횟수 형식 (예: "2/4")
+      final frequency = scheduleFrequency > 0 ? scheduleFrequency : 1;
+      return '$completedCount/$frequency';
+    } else if (scheduleType == 'MONTHLY') {
+      // 월간 루틴: 완료 횟수/목표 횟수 형식 (예: "2/4")
+      final frequency = scheduleFrequency > 0 ? scheduleFrequency : 1;
+      return '$completedCount/$frequency';
     } else if (scheduleType == 'CUSTOM') {
       // 커스텀 스케줄의 경우 추가 정보가 필요할 수 있음
       return '2주 1회';
-    } else if (scheduleType == 'MONTHLY') {
-      return '월 1회';
     }
     return scheduleType;
+  }
+
+  /// 요일 표시 문자열 반환 (WEEKLY 루틴용)
+  String _getWeekdayDisplay() {
+    if (createdAt == null) return '';
+    try {
+      final date = DateTime.parse(createdAt!);
+      final weekdays = ['(월)', '(화)', '(수)', '(목)', '(금)', '(토)', '(일)'];
+      return weekdays[date.weekday - 1];
+    } catch (e) {
+      return '';
+    }
   }
 }

@@ -516,7 +516,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
       ),
-      bottomNavigationBar: CustomBottomNavigation(currentScreen: 'routine'),
+      bottomNavigationBar: CustomBottomNavigation(currentScreen: 'dashboard'),
     );
   }
 }

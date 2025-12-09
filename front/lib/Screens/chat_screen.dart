@@ -197,6 +197,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // 디버깅용: 콘솔에 에러 출력
       print('Chat API Error: $e');
+      print('API URL: $baseUrl/chat/chat');
+      print('에러 타입: ${e.runtimeType}');
     }
 
     _scrollToBottom();
@@ -424,6 +426,71 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _buildWelcomeMessage() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const SizedBox(height: 100),
+          // 인사
+          Text(
+            '지현님, 반가워요!',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontSize: 24,
+              fontFamily: 'LG Smart_H',
+              fontWeight: FontWeight.w700,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 45),
+          // 서브 타이틀
+          Text(
+            '루틴도 간단하게!',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontSize: 20,
+              fontFamily: 'LG Smart_H',
+              fontWeight: FontWeight.w500,
+              height: 2.5,
+            ),
+          ),
+          const SizedBox(height: 45),
+          // 설명 1
+          Text(
+            '복잡한 루틴을 말 한마디로 만들어요.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.black54,
+              fontSize: 16,
+              fontFamily: 'LG Smart_H',
+              fontWeight: FontWeight.w500,
+              height: 1.8,
+            ),
+          ),
+          const SizedBox(height: 5),
+          // 설명 2
+          Text(
+            '원하는 조건과 제어할 제품만 말해보세요.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.black54,
+              fontSize: 16,
+              fontFamily: 'LG Smart_H',
+              fontWeight: FontWeight.w500,
+              height: 1.0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMessageBubble(
     String text,
     bool isUser, {
@@ -476,6 +543,49 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ),
                   ),
+          ),
+          const SizedBox(width: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(width: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      const Color(0xFF111111).withOpacity(0.6),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  '답변을 생성하고 있어요...',
+                  style: TextStyle(
+                    color: Color(0xFF111111),
+                    fontSize: 14,
+                    fontFamily: 'LG Smart_H',
+                    fontWeight: FontWeight.w400,
+                    height: 1.43,
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 16),
         ],
