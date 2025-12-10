@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>세탁기 시연</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            background: linear-gradient(135deg, #e0e0e0 0%, #c0c0c0 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .washing-machine {
+            width: 850px;
+            background: linear-gradient(135deg, #f8f8f8 0%, #ffffff 100%);
+            border-radius: 25px;
+            box-shadow:
+                0 20px 60px rgba(0, 0, 0, 0.15),
+                0 5px 15px rgba(0, 0, 0, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            overflow: hidden;
+            position: relative;
+            border: 1px solid #e0e0e0;
+        }
+
+        .control-panel {
+            background: #ffffff;
+            padding: 15px 35px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0;
+            border-bottom: 2px solid #e5e5e5;
+            min-height: 130px;
+            overflow: visible;
+            position: relative;
+            z-index: 1;
+        }
+
+        .power-button,
+        .play-button {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%);
+            border: 2px solid #d5d5d5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 20px;
+            color: #333;
+            box-shadow:
+                0 3px 8px rgba(0, 0, 0, 0.08),
+                inset 0 1px 3px rgba(255, 255, 255, 0.9);
+            flex-shrink: 0;
+            aspect-ratio: 1;
+        }
+
+        .power-button {
+            order: 1;
+            flex-shrink: 0;
+            margin-right: 30px;
+            margin-left: 120px;
+        }
+
+        .play-button {
+            order: 3;
+            flex-shrink: 0;
+            margin-left: 30px;
+            margin-right: 30px;
+        }
+
+        .power-button:hover,
+        .play-button:hover {
+            transform: scale(1.05);
+            box-shadow:
+                0 6px 15px rgba(0, 0, 0, 0.15),
+                inset 0 2px 5px rgba(255, 255, 255, 1);
+        }
+
+        .power-button:active,
+        .play-button:active {
+            transform: scale(0.98);
+        }
+
+        .main-display {
+            flex: 0 0 auto;
+            width: 220px;
+            height: 220px;
+            min-width: 220px;
+            min-height: 220px;
+            max-width: 220px;
+            max-height: 220px;
+            border-radius: 50%;
+            aspect-ratio: 1;
+            background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
+            border: 10px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            position: relative;
+            padding: 28px;
+            box-shadow:
+                inset 0 0 50px rgba(0, 0, 0, 0.9),
+                0 15px 40px rgba(0, 0, 0, 0.4),
+                0 8px 20px rgba(0, 0, 0, 0.3),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            order: 2;
+            flex-shrink: 0;
+            margin-left: 30px;
+            margin-right: 30px;
+            z-index: 10;
+        }
+
+        .status-dots {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 18px;
+            margin-top: 3px;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #444;
+            transition: all 0.3s ease;
+        }
+
+        .dot.active {
+            background: #4a9eff;
+            box-shadow: 0 0 15px rgba(74, 158, 255, 0.9);
+            transform: scale(1.3);
+        }
+
+        .main-status {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-align: center;
+            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+            letter-spacing: 2px;
+            word-break: keep-all;
+            white-space: nowrap;
+        }
+
+        .sub-status {
+            font-size: 14px;
+            color: #aaa;
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        .settings-panel {
+            width: auto;
+            min-width: auto;
+            max-width: none;
+            background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
+            border-radius: 12px;
+            padding: 15px 10px;
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            box-shadow:
+                inset 0 0 25px rgba(0, 0, 0, 0.9),
+                0 4px 12px rgba(0, 0, 0, 0.25),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+            flex-shrink: 0;
+            order: 4;
+        }
+
+        .setting-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .setting-dots {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .setting-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #444;
+            transition: all 0.3s ease;
+        }
+
+        .setting-dot.active {
+            background: #4a9eff;
+            width: 10px;
+            height: 10px;
+            box-shadow: 0 0 10px rgba(74, 158, 255, 0.7);
+        }
+
+        .setting-label {
+            font-size: 13px;
+            color: #ccc;
+        }
+
+        .drum-container {
+            background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);
+            padding: 90px 70px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 650px;
+            position: relative;
+            box-shadow: inset 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        /* 세탁기 문 - 더 명확하게 */
+        .door-frame {
+            position: absolute;
+            width: 480px;
+            height: 480px;
+            border-radius: 50%;
+            border: 40px solid #2a2a2a;
+            background: #1a1a1a;
+            box-shadow:
+                inset 0 0 50px rgba(0, 0, 0, 0.9),
+                0 15px 40px rgba(0, 0, 0, 0.6);
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .door-glass {
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            border-radius: 50%;
+            border: 15px solid #0a0a0a;
+            background:
+                radial-gradient(circle at 45% 45%, rgba(150, 200, 255, 0.15) 0%, rgba(100, 150, 200, 0.08) 40%, transparent 70%),
+                linear-gradient(135deg, rgba(40, 50, 60, 0.2) 0%, rgba(20, 25, 35, 0.3) 100%);
+            backdrop-filter: blur(0.3px);
+            box-shadow:
+                inset 0 0 100px rgba(0, 0, 0, 0.95),
+                inset 0 0 40px rgba(50, 100, 150, 0.15);
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        .door-handle {
+            position: absolute;
+            right: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 50px;
+            height: 80px;
+            background: linear-gradient(135deg, #6a6a6a 0%, #4a4a4a 50%, #3a3a3a 100%);
+            border-radius: 8px 0 0 8px;
+            box-shadow:
+                inset -3px 0 8px rgba(0, 0, 0, 0.5),
+                0 2px 6px rgba(0, 0, 0, 0.4),
+                inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .door-handle::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 40px;
+            background: linear-gradient(180deg, #8a8a8a 0%, #5a5a5a 50%, #8a8a8a 100%);
+            border-radius: 2px;
+            box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.3);
+        }
+
+        /* 세탁통 - 더 크고 명확하게 */
+        .drum {
+            position: absolute;
+            width: 370px;
+            height: 370px;
+            border-radius: 50%;
+            background:
+                radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.2) 0%, transparent 60%),
+                linear-gradient(135deg, #5a5a5a 0%, #4a4a4a 30%, #3a3a3a 70%, #2a2a2a 100%);
+            border: 18px solid #1a1a1a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow:
+                inset 0 0 80px rgba(0, 0, 0, 0.9),
+                0 0 50px rgba(0, 0, 0, 0.7),
+                inset 0 0 150px rgba(0, 0, 0, 0.5);
+            z-index: 3;
+        }
+
+        /* 세탁통에 세로 줄무늬 추가 - 회전이 더 잘 보이도록 */
+        .drum::before {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: repeating-linear-gradient(0deg,
+                    transparent 0%,
+                    transparent 8%,
+                    rgba(0, 0, 0, 0.3) 8%,
+                    rgba(0, 0, 0, 0.3) 9%,
+                    transparent 9%,
+                    transparent 17%,
+                    rgba(0, 0, 0, 0.3) 17%,
+                    rgba(0, 0, 0, 0.3) 18%);
+            z-index: 1;
+        }
+
+        .drum.rotating {
+            animation: drumRotate 2s linear infinite !important;
+        }
+
+        .drum.stopping {
+            animation: drumSlowStop 3s ease-out forwards !important;
+        }
+
+        @keyframes drumRotate {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes drumSlowStop {
+            0% {
+                transform: rotate(0deg);
+                animation-timing-function: linear;
+            }
+
+            30% {
+                transform: rotate(108deg);
+            }
+
+            60% {
+                transform: rotate(180deg);
+                animation-timing-function: ease-out;
+            }
+
+            100% {
+                transform: rotate(216deg);
+            }
+        }
+
+        /* 세탁통 구멍 패턴 - 회전이 잘 보이도록 */
+        .drum-holes {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            z-index: 4;
+        }
+
+        .drum-hole {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.8);
+            box-shadow:
+                inset 0 0 8px rgba(0, 0, 0, 1),
+                0 0 3px rgba(0, 0, 0, 0.5);
+        }
+
+        /* 원형으로 더 많은 구멍 배치 */
+        .drum-hole:nth-child(1) {
+            top: 5%;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .drum-hole:nth-child(2) {
+            top: 12%;
+            left: 70%;
+        }
+
+        .drum-hole:nth-child(3) {
+            top: 20%;
+            left: 82%;
+        }
+
+        .drum-hole:nth-child(4) {
+            top: 30%;
+            left: 90%;
+        }
+
+        .drum-hole:nth-child(5) {
+            top: 40%;
+            left: 94%;
+        }
+
+        .drum-hole:nth-child(6) {
+            top: 50%;
+            left: 96%;
+        }
+
+        .drum-hole:nth-child(7) {
+            top: 60%;
+            left: 94%;
+        }
+
+        .drum-hole:nth-child(8) {
+            top: 70%;
+            left: 90%;
+        }
+
+        .drum-hole:nth-child(9) {
+            top: 80%;
+            left: 82%;
+        }
+
+        .drum-hole:nth-child(10) {
+            top: 88%;
+            left: 70%;
+        }
+
+        .drum-hole:nth-child(11) {
+            top: 95%;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .drum-hole:nth-child(12) {
+            top: 88%;
+            left: 30%;
+        }
+
+        .drum-hole:nth-child(13) {
+            top: 80%;
+            left: 18%;
+        }
+
+        .drum-hole:nth-child(14) {
+            top: 70%;
+            left: 10%;
+        }
+
+        .drum-hole:nth-child(15) {
+            top: 60%;
+            left: 6%;
+        }
+
+        .drum-hole:nth-child(16) {
+            top: 50%;
+            left: 4%;
+        }
+
+        .drum-hole:nth-child(17) {
+            top: 40%;
+            left: 6%;
+        }
+
+        .drum-hole:nth-child(18) {
+            top: 30%;
+            left: 10%;
+        }
+
+        .drum-hole:nth-child(19) {
+            top: 20%;
+            left: 18%;
+        }
+
+        .drum-hole:nth-child(20) {
+            top: 12%;
+            left: 30%;
+        }
+
+        .drum-center {
+            display: none;
+        }
+
+        /* 세탁물 - 더 크고 명확하게 */
+        .laundry {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            overflow: hidden;
+            z-index: 5;
+        }
+
+        /* 통이 회전해도 세탁물 컨테이너는 고정 */
+        .drum.rotating .laundry {
+            animation: counterRotate 2s linear infinite;
+        }
+
+        .drum.stopping .laundry {
+            animation: counterSlowStop 3s ease-out forwards;
+        }
+
+        @keyframes counterRotate {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(-360deg);
+            }
+        }
+
+        @keyframes counterSlowStop {
+            0% {
+                transform: rotate(0deg);
+                animation-timing-function: linear;
+            }
+
+            30% {
+                transform: rotate(-108deg);
+            }
+
+            60% {
+                transform: rotate(-180deg);
+                animation-timing-function: ease-out;
+            }
+
+            100% {
+                transform: rotate(-216deg);
+            }
+        }
+
+        .laundry-item {
+            position: absolute;
+            opacity: 0.85;
+            box-shadow:
+                0 3px 10px rgba(0, 0, 0, 0.4),
+                inset 0 1px 3px rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+        }
+
+        .drum.rotating .laundry-item {
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+        }
+
+        .drum.rotating .laundry-item-1 {
+            animation: laundryChaos1 1.2s ease-in-out infinite;
+        }
+
+        .drum.rotating .laundry-item-2 {
+            animation: laundryChaos2 1.5s ease-in-out infinite;
+        }
+
+        .drum.rotating .laundry-item-3 {
+            animation: laundryChaos3 1.8s ease-in-out infinite;
+        }
+
+        .drum.rotating .laundry-item-4 {
+            animation: laundryChaos4 1.3s ease-in-out infinite;
+        }
+
+        .drum.rotating .laundry-item-5 {
+            animation: laundryChaos5 1.6s ease-in-out infinite;
+        }
+
+        .drum.rotating .laundry-item-6 {
+            animation: laundryChaos6 1.4s ease-in-out infinite;
+        }
+
+        /* 세탁물 점진적 멈춤 */
+        .drum.stopping .laundry-item {
+            animation: laundrySlowStop 3s ease-out forwards;
+        }
+
+        .drum.stopping .laundry-item-1 {
+            animation: laundrySlowStop1 3s ease-out forwards;
+        }
+
+        .drum.stopping .laundry-item-2 {
+            animation: laundrySlowStop2 3s ease-out forwards;
+        }
+
+        .drum.stopping .laundry-item-3 {
+            animation: laundrySlowStop3 3s ease-out forwards;
+        }
+
+        .drum.stopping .laundry-item-4 {
+            animation: laundrySlowStop4 3s ease-out forwards;
+        }
+
+        .drum.stopping .laundry-item-5 {
+            animation: laundrySlowStop5 3s ease-out forwards;
+        }
+
+        .drum.stopping .laundry-item-6 {
+            animation: laundrySlowStop6 3s ease-out forwards;
+        }
+
+        @keyframes laundryChaos1 {
+            0% {
+                transform: translate(-50%, -50%) translateY(-80px) rotate(-20deg) translate(0, 0);
+            }
+
+            25% {
+                transform: translate(-50%, -50%) translateY(-80px) rotate(50deg) translate(40px, -30px);
+            }
+
+            50% {
+                transform: translate(-50%, -50%) translateY(-80px) rotate(-70deg) translate(-35px, 40px);
+            }
+
+            75% {
+                transform: translate(-50%, -50%) translateY(-80px) rotate(90deg) translate(25px, 35px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translateY(-80px) rotate(-20deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundryChaos2 {
+            0% {
+                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(25deg) translate(0, 0);
+            }
+
+            25% {
+                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(-45deg) translate(-30px, 25px);
+            }
+
+            50% {
+                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(75deg) translate(35px, -40px);
+            }
+
+            75% {
+                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(-55deg) translate(-20px, -25px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(25deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundryChaos3 {
+            0% {
+                transform: translate(-50%, -50%) translate(90px, -30px) rotate(45deg) translate(0, 0);
+            }
+
+            25% {
+                transform: translate(-50%, -50%) translate(90px, -30px) rotate(-30deg) translate(30px, 30px);
+            }
+
+            50% {
+                transform: translate(-50%, -50%) translate(90px, -30px) rotate(60deg) translate(-40px, -25px);
+            }
+
+            75% {
+                transform: translate(-50%, -50%) translate(90px, -30px) rotate(-80deg) translate(20px, 40px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translate(90px, -30px) rotate(45deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundryChaos4 {
+            0% {
+                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-35deg) translate(0, 0);
+            }
+
+            25% {
+                transform: translate(-50%, -50%) translate(60px, 70px) rotate(55deg) translate(-25px, -35px);
+            }
+
+            50% {
+                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-65deg) translate(40px, 20px);
+            }
+
+            75% {
+                transform: translate(-50%, -50%) translate(60px, 70px) rotate(45deg) translate(-30px, 30px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-35deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundryChaos5 {
+            0% {
+                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(30deg) translate(0, 0);
+            }
+
+            25% {
+                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(-50deg) translate(35px, -20px);
+            }
+
+            50% {
+                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(70deg) translate(-30px, 35px);
+            }
+
+            75% {
+                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(-40deg) translate(25px, -30px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(30deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundryChaos6 {
+            0% {
+                transform: translate(-50%, -50%) translateY(80px) rotate(-25deg) translate(0, 0);
+            }
+
+            25% {
+                transform: translate(-50%, -50%) translateY(80px) rotate(40deg) translate(-35px, 25px);
+            }
+
+            50% {
+                transform: translate(-50%, -50%) translateY(80px) rotate(-60deg) translate(30px, -40px);
+            }
+
+            75% {
+                transform: translate(-50%, -50%) translateY(80px) rotate(50deg) translate(-25px, 30px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translateY(80px) rotate(-25deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundrySlowStop1 {
+            0% {
+                transform: translate(-50%, -50%) translateY(-80px) rotate(-20deg) translate(0, 0);
+            }
+
+            30% {
+                transform: translate(-50%, -50%) translateY(-80px) rotate(15deg) translate(10px, -5px);
+            }
+
+            60% {
+                transform: translate(-50%, -50%) translateY(-80px) rotate(-5deg) translate(3px, -2px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translateY(-80px) rotate(-20deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundrySlowStop2 {
+            0% {
+                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(25deg) translate(0, 0);
+            }
+
+            30% {
+                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(-10deg) translate(-8px, 5px);
+            }
+
+            60% {
+                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(8deg) translate(-3px, 2px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(25deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundrySlowStop3 {
+            0% {
+                transform: translate(-50%, -50%) translate(90px, -30px) rotate(45deg) translate(0, 0);
+            }
+
+            30% {
+                transform: translate(-50%, -50%) translate(90px, -30px) rotate(-20deg) translate(10px, 8px);
+            }
+
+            60% {
+                transform: translate(-50%, -50%) translate(90px, -30px) rotate(15deg) translate(4px, 3px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translate(90px, -30px) rotate(45deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundrySlowStop4 {
+            0% {
+                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-35deg) translate(0, 0);
+            }
+
+            30% {
+                transform: translate(-50%, -50%) translate(60px, 70px) rotate(20deg) translate(-8px, -10px);
+            }
+
+            60% {
+                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-12deg) translate(-3px, -4px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-35deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundrySlowStop5 {
+            0% {
+                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(30deg) translate(0, 0);
+            }
+
+            30% {
+                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(-15deg) translate(8px, -8px);
+            }
+
+            60% {
+                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(10deg) translate(3px, -3px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(30deg) translate(0, 0);
+            }
+        }
+
+        @keyframes laundrySlowStop6 {
+            0% {
+                transform: translate(-50%, -50%) translateY(80px) rotate(-25deg) translate(0, 0);
+            }
+
+            30% {
+                transform: translate(-50%, -50%) translateY(80px) rotate(18deg) translate(-10px, 8px);
+            }
+
+            60% {
+                transform: translate(-50%, -50%) translateY(80px) rotate(-8deg) translate(-4px, 3px);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) translateY(80px) rotate(-25deg) translate(0, 0);
+            }
+        }
+
+        .laundry-item-1 {
+            width: 70px;
+            height: 95px;
+            border-radius: 8px 8px 12px 12px;
+            background:
+                repeating-linear-gradient(45deg,
+                    #4a8fff 0px,
+                    #4a8fff 8px,
+                    #3a7fef 8px,
+                    #3a7fef 16px),
+                linear-gradient(135deg, #5a9fff 0%, #3a7fdf 100%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) translateY(-80px) rotate(-20deg);
+        }
+
+        .laundry-item-2 {
+            width: 80px;
+            height: 105px;
+            border-radius: 10px 10px 14px 14px;
+            background:
+                repeating-linear-gradient(90deg,
+                    #ff4a4a 0px,
+                    #ff4a4a 10px,
+                    #ef3a3a 10px,
+                    #ef3a3a 20px),
+                linear-gradient(135deg, #ff5a5a 0%, #df3a3a 100%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) translate(-90px, -30px) rotate(25deg);
+        }
+
+        .laundry-item-3 {
+            width: 65px;
+            height: 90px;
+            border-radius: 8px 8px 12px 12px;
+            background:
+                repeating-linear-gradient(135deg,
+                    #4aff4a 0px,
+                    #4aff4a 6px,
+                    #3adf3a 6px,
+                    #3adf3a 12px),
+                linear-gradient(135deg, #5aff5a 0%, #3adf3a 100%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) translate(90px, -30px) rotate(45deg);
+        }
+
+        .laundry-item-4 {
+            width: 75px;
+            height: 100px;
+            border-radius: 9px 9px 13px 13px;
+            background:
+                repeating-linear-gradient(0deg,
+                    #f0f0f0 0px,
+                    #f0f0f0 8px,
+                    #e0e0e0 8px,
+                    #e0e0e0 16px),
+                linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) translate(60px, 70px) rotate(-35deg);
+        }
+
+        .laundry-item-5 {
+            width: 70px;
+            height: 95px;
+            border-radius: 8px 8px 12px 12px;
+            background:
+                repeating-linear-gradient(60deg,
+                    #ff4aff 0px,
+                    #ff4aff 7px,
+                    #df3adf 7px,
+                    #df3adf 14px),
+                linear-gradient(135deg, #ff5aff 0%, #df3adf 100%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) translate(-60px, 70px) rotate(30deg);
+        }
+
+        .laundry-item-6 {
+            width: 60px;
+            height: 85px;
+            border-radius: 7px 7px 11px 11px;
+            background:
+                repeating-linear-gradient(120deg,
+                    #4affff 0px,
+                    #4affff 6px,
+                    #3adfdf 6px,
+                    #3adfdf 12px),
+                linear-gradient(135deg, #5affff 0%, #3adfdf 100%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) translateY(80px) rotate(-25deg);
+        }
+
+        /* 세탁물 주름 효과 */
+        .laundry-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background:
+                repeating-linear-gradient(90deg,
+                    transparent 0px,
+                    transparent 3px,
+                    rgba(0, 0, 0, 0.05) 3px,
+                    rgba(0, 0, 0, 0.05) 4px);
+            border-radius: inherit;
+            pointer-events: none;
+        }
+
+        /* 물 효과 */
+        .water-effect {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background:
+                radial-gradient(circle at 50% 50%, rgba(120, 180, 255, 0.2) 0%, transparent 65%);
+            z-index: 6;
+            pointer-events: none;
+        }
+
+        .play-button {
+            font-size: 0;
+        }
+
+        .play-button::before {
+            content: '▶';
+            font-size: 24px;
+            display: block;
+            line-height: 1;
+        }
+
+        .play-button.playing::before {
+            content: '⏸';
+        }
+    </style>
+</head>
+
+<body>
+    <div class="washing-machine">
+        <div class="control-panel">
+            <div class="power-button">⏻</div>
+
+            <div class="main-display" id="mainDisplay">
+                <div class="status-dots">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+                <div class="main-status" id="mainStatus">표준</div>
+                <div class="sub-status" id="subStatus">
+                    온도 40°C 헹굼 2회<br>
+                    탈수 강
+                </div>
+            </div>
+
+            <div class="play-button" id="playButton"></div>
+
+            <div class="settings-panel">
+                <div class="setting-item">
+                    <div class="setting-dots">
+                        <div class="setting-dot"></div>
+                        <div class="setting-dot"></div>
+                        <div class="setting-dot active"></div>
+                        <div class=" setting-dot"></div>
+                        <div class="setting-dot"></div>
+                    </div>
+                    <div class="setting-label">온도</div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-dots">
+                        <div class="setting-dot"></div>
+                        <div class="setting-dot"></div>
+                        <div class="setting-dot"></div>
+                        <div class="setting-dot active"></div>
+                        <div class="setting-dot"></div>
+                    </div>
+                    <div class="setting-label">헹굼</div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-dots">
+                        <div class="setting-dot active"></div>
+                        <div class="setting-dot"></div>
+                        <div class="setting-dot"></div>
+                        <div class="setting-dot"></div>
+                        <div class="setting-dot"></div>
+                    </div>
+                    <div class="setting-label">탈수</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="drum-container">
+            <div class="door-frame">
+                <div class="door-glass"></div>
+                <div class="door-handle"></div>
+            </div>
+            <div class="drum" id="drum">
+                <div class="drum-holes">
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                    <div class="drum-hole"></div>
+                </div>
+                <div class="laundry">
+                    <div class="laundry-item laundry-item-1"></div>
+                    <div class="laundry-item laundry-item-2"></div>
+                    <div class="laundry-item laundry-item-3"></div>
+                    <div class="laundry-item laundry-item-4"></div>
+                    <div class="laundry-item laundry-item-5"></div>
+                    <div class="laundry-item laundry-item-6"></div>
+                </div>
+                <div class="water-effect"></div>
+                <div class="drum-center"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const playButton = document.getElementById('playButton');
+        const drum = document.getElementById('drum');
+        const mainStatus = document.getElementById('mainStatus');
+        const subStatus = document.getElementById('subStatus');
+        const statusDots = document.querySelectorAll('.status-dots .dot');
+
+        let isRunning = false;
+        let timeoutId = null;
+
+        function handlePlayButton() {
+            if (isRunning) {
+                // 일시정지
+                clearTimeout(timeoutId);
+                drum.classList.remove('rotating');
+                isRunning = false;
+                playButton.classList.remove('playing');
+                return;
+            }
+
+            isRunning = true;
+            playButton.classList.add('playing');
+            // ⏯️ 이모지는 자동으로 멈춤 상태를 보여줌
+
+            // 세탁통 회전 시작
+            drum.classList.add('rotating');
+
+            // 안내판 변경: 세척 중
+            mainStatus.textContent = '세탁 중';
+            subStatus.innerHTML = '온도 40°C 헹굼 2회<br>탈수 강';
+
+            // 상태 점들 활성화 (순차적으로)
+            statusDots.forEach((dot, index) => {
+                setTimeout(() => {
+                    dot.classList.add('active');
+
+                    // 마지막 dot이 채워지면 세탁 완료
+                    if (index === statusDots.length - 1) {
+                        setTimeout(() => {
+                            // 세탁통 회전을 점진적으로 멈춤
+                            drum.classList.remove('rotating');
+                            drum.classList.add('stopping');
+
+                            // 회전이 완전히 멈춘 후 완료 처리
+                            setTimeout(() => {
+                                drum.classList.remove('stopping');
+
+                                // 안내판 변경: 세척 완료
+                                mainStatus.textContent = '세탁 완료';
+                                subStatus.innerHTML = '';
+
+                                // 상태 점들 비활성화
+                                statusDots.forEach(dot => {
+                                    dot.classList.remove('active');
+                                });
+
+                                // 상태 초기화
+                                isRunning = false;
+                                playButton.classList.remove('playing');
+                            }, 3000);
+                        }, 800);
+                    }
+                }, index * 400);
+            });
+        }
+
+        playButton.addEventListener('click', handlePlayButton);
+
+        // 엔터 키로 작동 버튼 클릭
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' || event.keyCode === 13) {
+                event.preventDefault();
+                handlePlayButton();
+            }
+        });
+    </script>
+</body>
+
+</html>
