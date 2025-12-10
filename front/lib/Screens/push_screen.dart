@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:convert' show utf8;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../services/context_event_service.dart';
@@ -177,7 +178,9 @@ class _PushScreenState extends State<PushScreen> {
                 },
               );
 
-          print('[PushScreen] 미사용 알림 응답 상태: ${response.statusCode} (URL: $url)');
+          print(
+            '[PushScreen] 미사용 알림 응답 상태: ${response.statusCode} (URL: $url)',
+          );
           if (response.statusCode == 200) {
             data =
                 jsonDecode(utf8.decode(response.bodyBytes))
@@ -221,7 +224,7 @@ class _PushScreenState extends State<PushScreen> {
         final hasNotification = data['has_notification'] as bool? ?? false;
 
         print('[PushScreen] 미사용 알림 응답: has_notification=$hasNotification');
-        
+
         if (hasNotification) {
           final notification = data['notification'] as Map<String, dynamic>?;
           print('[PushScreen] 미사용 알림 데이터: $notification');
@@ -232,7 +235,9 @@ class _PushScreenState extends State<PushScreen> {
               _unusedRoutineId = notification['routine_id'] as int?;
               _unusedRoutineName = notification['routine_name'] as String?;
             });
-            print('[PushScreen] 미사용 알림 설정 완료: first_line=$_unusedFirstLine, second_line=$_unusedSecondLine');
+            print(
+              '[PushScreen] 미사용 알림 설정 완료: first_line=$_unusedFirstLine, second_line=$_unusedSecondLine',
+            );
           } else {
             print('[PushScreen] ⚠️ 미사용 알림: notification이 null입니다');
             setState(() {
@@ -247,7 +252,7 @@ class _PushScreenState extends State<PushScreen> {
           final reason = data['reason'] as String?;
           final routinesChecked = data['routines_checked'] as int?;
           final routineDetails = data['routine_details'] as List<dynamic>?;
-          
+
           print('[PushScreen] ⚠️ 미사용 알림이 없습니다 (has_notification=false)');
           print('[PushScreen]   - 이유: $reason');
           print('[PushScreen]   - 확인된 루틴 수: $routinesChecked');
@@ -255,10 +260,12 @@ class _PushScreenState extends State<PushScreen> {
             print('[PushScreen]   - 루틴 상세 정보:');
             for (var detail in routineDetails) {
               final detailMap = detail as Map<String, dynamic>;
-              print('[PushScreen]     * ${detailMap['routine_name']}: ${detailMap['time_period']} ${detailMap['executions_count']}/${detailMap['expected_count']}회 (${detailMap['schedule_type']}, 주기=${detailMap['schedule_frequency']})');
+              print(
+                '[PushScreen]     * ${detailMap['routine_name']}: ${detailMap['time_period']} ${detailMap['executions_count']}/${detailMap['expected_count']}회 (${detailMap['schedule_type']}, 주기=${detailMap['schedule_frequency']})',
+              );
             }
           }
-          
+
           setState(() {
             _unusedFirstLine = null;
             _unusedSecondLine = null;
@@ -273,6 +280,62 @@ class _PushScreenState extends State<PushScreen> {
       // 예외 발생 시 로그 출력
       print('[PushScreen] 미사용 알림 로딩 중 예외 발생: $e');
       // 에러 발생 시 알림 표시 안 함
+    }
+  }
+
+  Future<void> _sendStartCommandToBrowser() async {
+    // 백엔드 API를 통해 브라우저에 시작 명령 전송
+    List<String> urlsToTry = [baseUrl];
+    if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+      urlsToTry = ApiConfig.getAndroidBaseUrls();
+    }
+
+    print('[PushScreen] 세탁기 시작 명령 전송 시도 시작');
+    print('[PushScreen] 시도할 URL 목록: $urlsToTry');
+
+    bool success = false;
+    for (final url in urlsToTry) {
+      try {
+        final uri = Uri.parse('$url/device/start-washing-machine');
+        print('[PushScreen] API 호출 시도: $uri');
+
+        final response = await http
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+            )
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                throw Exception('요청 시간 초과');
+              },
+            );
+
+        print('[PushScreen] 응답 상태 코드: ${response.statusCode}');
+        print('[PushScreen] 응답 본문: ${response.body}');
+
+        if (response.statusCode == 200) {
+          final responseBody = jsonDecode(utf8.decode(response.bodyBytes));
+          print('[PushScreen] ✅ 세탁기 시작 명령 전송 성공: $url');
+          print('[PushScreen] 응답 본문: $responseBody');
+          success = true;
+          break;
+        } else {
+          print('[PushScreen] ⚠️ 세탁기 시작 명령 전송 실패: HTTP ${response.statusCode}');
+          print('[PushScreen] 응답 본문: ${response.body}');
+        }
+      } catch (e, stackTrace) {
+        print('[PushScreen] ❌ 세탁기 시작 명령 전송 실패 ($url): $e');
+        print('[PushScreen] 스택 트레이스: $stackTrace');
+        continue;
+      }
+    }
+
+    if (!success) {
+      print('[PushScreen] ❌ 모든 URL 시도 실패 - 세탁기 시작 명령을 전송할 수 없습니다.');
     }
   }
 
@@ -351,12 +414,58 @@ class _PushScreenState extends State<PushScreen> {
                               setDialogState(() {
                                 selectedButton = 'execute';
                               });
-                              Future.delayed(
-                                const Duration(milliseconds: 300),
-                                () {
-                                  if (context.mounted) {
-                                    Navigator.of(context).pop();
-                                    // 실행하기: 루틴 실행 API 호출 후 루틴 화면으로 이동
+                              Future.delayed(const Duration(milliseconds: 300), () {
+                                if (context.mounted) {
+                                  Navigator.of(context).pop();
+
+                                  // 세탁기 알림인지 확인
+                                  final isWashingMachine =
+                                      _unusedRoutineName != null &&
+                                      (_unusedRoutineName!.contains('세탁기') ||
+                                          _unusedRoutineName!.contains('세탁'));
+
+                                  if (isWashingMachine) {
+                                    // 세탁기 알림인 경우: 원격 브라우저에 시작 명령 전송
+                                    _sendStartCommandToBrowser();
+
+                                    // 루틴 실행 API 호출 (자동 체크를 위해)
+                                    if (_unusedRoutineId != null) {
+                                      RoutineService.executeRoutine(
+                                        routineId: _unusedRoutineId!,
+                                        userId: 1,
+                                      ).then((success) {
+                                        if (success) {
+                                          print(
+                                            '[PushScreen] 루틴 실행 성공: $_unusedRoutineId',
+                                          );
+                                        } else {
+                                          print(
+                                            '[PushScreen] 루틴 실행 실패: $_unusedRoutineId',
+                                          );
+                                        }
+                                      });
+
+                                      // 오늘 날짜로 선택된 루틴 추가
+                                      final today = DateTime.now();
+                                      final dateKey =
+                                          '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+                                      final currentSelected =
+                                          routine_module
+                                              .getSelectedRoutinesForDate(
+                                                dateKey,
+                                              ) ??
+                                          <int>{};
+                                      currentSelected.add(_unusedRoutineId!);
+                                      routine_module.setSelectedRoutinesForDate(
+                                        dateKey,
+                                        currentSelected,
+                                      );
+                                      print(
+                                        '[PushScreen] 루틴 ID $_unusedRoutineId를 오늘 날짜($dateKey)의 선택된 루틴으로 추가',
+                                      );
+                                    }
+                                  } else {
+                                    // 다른 루틴인 경우: 기존 로직 (루틴 실행 API 호출 후 루틴 화면으로 이동)
                                     if (_unusedRoutineId != null) {
                                       // 먼저 루틴 실행 API 호출 (자동 체크를 위해)
                                       RoutineService.executeRoutine(
@@ -364,33 +473,53 @@ class _PushScreenState extends State<PushScreen> {
                                         userId: 1,
                                       ).then((success) {
                                         if (success) {
-                                          print('[PushScreen] 루틴 실행 성공: $_unusedRoutineId');
+                                          print(
+                                            '[PushScreen] 루틴 실행 성공: $_unusedRoutineId',
+                                          );
                                         } else {
-                                          print('[PushScreen] 루틴 실행 실패: $_unusedRoutineId');
+                                          print(
+                                            '[PushScreen] 루틴 실행 실패: $_unusedRoutineId',
+                                          );
                                         }
                                       });
-                                      
+
                                       // 오늘 날짜로 선택된 루틴 추가
                                       final today = DateTime.now();
-                                      final dateKey = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-                                      final currentSelected = routine_module.getSelectedRoutinesForDate(dateKey) ?? <int>{};
+                                      final dateKey =
+                                          '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+                                      final currentSelected =
+                                          routine_module
+                                              .getSelectedRoutinesForDate(
+                                                dateKey,
+                                              ) ??
+                                          <int>{};
                                       currentSelected.add(_unusedRoutineId!);
-                                      routine_module.setSelectedRoutinesForDate(dateKey, currentSelected);
-                                      print('[PushScreen] 루틴 ID $_unusedRoutineId를 오늘 날짜($dateKey)의 선택된 루틴으로 추가');
+                                      routine_module.setSelectedRoutinesForDate(
+                                        dateKey,
+                                        currentSelected,
+                                      );
+                                      print(
+                                        '[PushScreen] 루틴 ID $_unusedRoutineId를 오늘 날짜($dateKey)의 선택된 루틴으로 추가',
+                                      );
                                     }
                                     Navigator.pushAndRemoveUntil(
                                       context,
                                       PageRouteBuilder(
-                                        pageBuilder: (context, animation, secondaryAnimation) =>
-                                            const RoutineScreen(),
+                                        pageBuilder:
+                                            (
+                                              context,
+                                              animation,
+                                              secondaryAnimation,
+                                            ) => const RoutineScreen(),
                                         transitionDuration: Duration.zero,
-                                        reverseTransitionDuration: Duration.zero,
+                                        reverseTransitionDuration:
+                                            Duration.zero,
                                       ),
                                       (route) => false,
                                     );
                                   }
-                                },
-                              );
+                                }
+                              });
                             },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 150),
