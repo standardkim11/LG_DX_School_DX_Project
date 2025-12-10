@@ -1061,12 +1061,19 @@ class _ViewAllScreenState extends State<ViewAllScreen>
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('나의 루틴 목록', style: AppTextStyles.sectionTitle(context)),
-          const SizedBox(height: 15),
+          Text(
+            '나의 루틴 목록',
+            style: AppTextStyles.sectionTitle(context).copyWith(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 20),
           // 그리드 레이아웃: 2열
           _buildGridItems(),
         ],
@@ -1085,7 +1092,7 @@ class _ViewAllScreenState extends State<ViewAllScreen>
 
       // 두 번째 아이템 (있으면)
       if (i + 1 < _allRoutines.length) {
-        rowItems.add(const SizedBox(width: 8));
+        rowItems.add(const SizedBox(width: 12));
         rowItems.add(Expanded(child: _buildRoutineCard(_allRoutines[i + 1])));
       } else {
         // 홀수 개일 때 빈 공간
@@ -1097,7 +1104,7 @@ class _ViewAllScreenState extends State<ViewAllScreen>
       );
 
       if (i + 2 < _allRoutines.length) {
-        rows.add(const SizedBox(height: 12));
+        rows.add(const SizedBox(height: 16));
       }
     }
 
@@ -1111,95 +1118,117 @@ class _ViewAllScreenState extends State<ViewAllScreen>
       onTap: () => _toggleRoutineSelection(routine.id),
       child: Container(
         width: double.infinity,
-        height: 88,
-        decoration: ShapeDecoration(
+        height: 100,
+        decoration: BoxDecoration(
           color: AppColors.backgroundWhite,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isChecked ? AppColors.textAccent : AppColors.borderLight,
+            width: isChecked ? 2 : 1,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 0),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 16,
-                          height: 16,
-                          decoration: ShapeDecoration(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          color: isChecked
+                              ? AppColors.textAccent
+                              : Colors.transparent,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            width: isChecked ? 0 : 2,
                             color: isChecked
                                 ? AppColors.textAccent
-                                : Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              side: BorderSide(
-                                width: isChecked ? 0 : 1,
-                                color: isChecked
-                                    ? AppColors.textAccent
-                                    : AppColors.textUnselected,
-                              ),
-                            ),
-                          ),
-                          child: isChecked
-                              ? const Center(
-                                  child: Icon(
-                                    Icons.check,
-                                    size: 12,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : null,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            routine.name,
-                            style: AppTextStyles.todoTitle(context),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                                : AppColors.textUnselected,
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Padding(
-                      padding: const EdgeInsets.only(left: 26),
-                      child: Text(
-                        routine.getTimeDisplay(),
-                        style: AppTextStyles.todoCategory(context),
+                        child: isChecked
+                            ? const Center(
+                                child: Icon(
+                                  Icons.check,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          routine.name,
+                          style: AppTextStyles.todoTitle(context).copyWith(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isChecked
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 32),
+                    child: Text(
+                      routine.getTimeDisplay(),
+                      style: AppTextStyles.todoCategory(context).copyWith(
+                        fontSize: 13,
+                        color: AppColors.textSecondary.withOpacity(0.7),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             // 삭제 버튼 (연필 아이콘 위에 배치)
             Positioned(
-              right: 8,
-              bottom: 40, // 연필 아이콘 위에 배치
+              right: 12,
+              top: 12,
               child: GestureDetector(
                 onTap: () {
                   // 삭제 확인 다이얼로그 표시
                   _showDeleteConfirmDialog(routine);
                 },
                 behavior: HitTestBehavior.opaque,
-                child: const Icon(
-                  Icons.close,
-                  size: 24,
-                  color: Color(0xFF4B57BB), // 연필 아이콘과 동일한 색상
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: AppColors.backgroundGray,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.close,
+                    size: 16,
+                    color: Color(0xFF4B57BB),
+                  ),
                 ),
               ),
             ),
             // 수정 버튼 (연필 아이콘)
             Positioned(
-              right: 8,
-              bottom: 8,
+              right: 12,
+              bottom: 12,
               child: GestureDetector(
                 onTap: () {
                   // 수정 버튼 클릭 시 루틴 수정 페이지로 이동 (루틴 데이터 전달)
@@ -1211,36 +1240,25 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                   );
                 },
                 behavior: HitTestBehavior.opaque, // 클릭 영역 확보
-                child: Image.asset(
-                  'assets/viewsave_screen/Edit_icon.png',
-                  width: 24,
-                  height: 24,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: ShapeDecoration(
-                        color: const Color(0xFF4B57BB),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                      child: const Text(
-                        '수정',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 8,
-                          fontFamily: 'LG Smart_H',
-                          fontWeight: FontWeight.w400,
-                          height: 2.50,
-                        ),
-                      ),
-                    );
-                  },
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: AppColors.backgroundGray,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Image.asset(
+                    'assets/viewsave_screen/Edit_icon.png',
+                    width: 16,
+                    height: 16,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(
+                        Icons.edit,
+                        size: 16,
+                        color: Color(0xFF4B57BB),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
