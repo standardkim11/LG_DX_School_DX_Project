@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import '../components/app_colors.dart';
 import '../components/app_text_styles.dart';
 import '../components/tab_bar.dart';
@@ -9,6 +13,7 @@ import 'dashboard_screen.dart';
 import 'priority.dart';
 import 'routinesave_screen.dart';
 import '../Services/routine_service.dart';
+import '../Services/config.dart';
 
 class ViewAllScreen extends StatefulWidget {
   final String? selectedDateKey; // 선택된 날짜 키 (YYYY-MM-DD 형식)
@@ -261,7 +266,165 @@ class _ViewAllScreenState extends State<ViewAllScreen>
     }
   }
 
-  void _showWeatherWarningDialog(List<ViewAllRoutineItem> selectedRoutines) {
+  Future<void> _showWeatherWarningDialog(
+    List<ViewAllRoutineItem> selectedRoutines,
+  ) async {
+    // 선택된 루틴의 우선순위 점수를 계산하여 가장 높은 루틴 추천
+    String weatherMessage = '오늘 날씨는 맑음이에요.';
+
+    try {
+      if (selectedRoutines.isEmpty) {
+        weatherMessage = '오늘 날씨는 맑음이에요.';
+      } else {
+        // 선택된 루틴의 우선순위 점수 계산
+        final routineIds = selectedRoutines.map((r) => r.id).toList();
+
+        List<String> urlsToTry = [
+          ApiConfig.getBaseUrl(
+            isWeb: kIsWeb,
+            isAndroid: !kIsWeb && Platform.isAndroid,
+            isIOS: !kIsWeb && Platform.isIOS,
+          ),
+        ];
+        if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+          urlsToTry = ApiConfig.getAndroidBaseUrls();
+        }
+
+        Map<int, double>? scores;
+        for (final url in urlsToTry) {
+          try {
+            final uri = Uri.parse('$url/recommend/priority/selected');
+            final response = await http
+                .post(
+                  uri,
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                  },
+                  body: jsonEncode({'user_id': 1, 'routine_ids': routineIds}),
+                )
+                .timeout(
+                  const Duration(seconds: 10),
+                  onTimeout: () {
+                    throw Exception('요청 시간 초과');
+                  },
+                );
+
+            if (response.statusCode == 200) {
+              final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
+              scores = {};
+              for (final item in data) {
+                final routineId = item['routine_id'] as int;
+                final score = (item['pred_priority_score'] as num).toDouble();
+                scores[routineId] = score;
+              }
+              break;
+            }
+          } catch (e) {
+            print('[ViewAllScreen] 우선순위 점수 API 호출 실패 ($url): $e');
+            continue;
+          }
+        }
+
+        // 우선순위 점수가 가장 높은 루틴 찾기
+        if (scores != null && scores.isNotEmpty) {
+          ViewAllRoutineItem? bestRoutine;
+          double bestScore = -1.0;
+
+          for (final routine in selectedRoutines) {
+            final score = scores[routine.id] ?? 0.0;
+            if (score > bestScore) {
+              bestScore = score;
+              bestRoutine = routine;
+            }
+          }
+
+          if (bestRoutine != null) {
+            // 날씨 정보 가져오기
+            int? weatherCode;
+            List<String> weatherUrlsToTry = [
+              ApiConfig.getBaseUrl(
+                isWeb: kIsWeb,
+                isAndroid: !kIsWeb && Platform.isAndroid,
+                isIOS: !kIsWeb && Platform.isIOS,
+              ),
+            ];
+            if (!kIsWeb &&
+                Platform.isAndroid &&
+                ApiConfig.useEmulator == null) {
+              weatherUrlsToTry = ApiConfig.getAndroidBaseUrls();
+            }
+
+            for (final url in weatherUrlsToTry) {
+              try {
+                final uri = Uri.parse('$url/recommend/weather?user_id=1');
+                final response = await http
+                    .get(
+                      uri,
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                      },
+                    )
+                    .timeout(
+                      const Duration(seconds: 10),
+                      onTimeout: () {
+                        throw Exception('요청 시간 초과');
+                      },
+                    );
+
+                if (response.statusCode == 200) {
+                  final data =
+                      jsonDecode(utf8.decode(response.bodyBytes))
+                          as Map<String, dynamic>;
+                  weatherCode = data['weather_code'] as int?;
+                  break;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+
+            // 한국어 조사 처리
+            String particle = '';
+            final routineName = bestRoutine.name;
+            final lastChar = routineName.runes.last;
+            if (lastChar >= 0xAC00 && lastChar <= 0xD7A3) {
+              final hasFinalConsonant = (lastChar - 0xAC00) % 28 != 0;
+              particle = hasFinalConsonant ? '을' : '를';
+            } else {
+              particle = '을';
+            }
+
+            // 날씨에 따른 추천 메시지 생성
+            if (weatherCode == 2) {
+              // 비
+              weatherMessage =
+                  '비가와서 $routineName$particle 추천드려요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+            } else if (weatherCode == 3) {
+              // 눈
+              weatherMessage =
+                  '눈이와서 $routineName$particle 추천드려요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+            } else if (weatherCode == 1) {
+              // 흐림
+              weatherMessage =
+                  '흐려서 $routineName$particle 추천드려요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+            } else {
+              // 맑음
+              weatherMessage =
+                  '맑아서 $routineName$particle 하기에 좋은 날이에요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('[ViewAllScreen] 추천 메시지 생성 중 예외 발생: $e');
+      weatherMessage = '오늘 날씨는 맑음이에요.';
+    }
+
+    // 날씨 정보를 로드한 후 다이얼로그 표시 (API 실패해도 기본값으로 표시)
+    if (!mounted) return;
+
     showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
@@ -282,28 +445,78 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '비가 예정된 오늘,\n세탁기를 돌리실 건가요?',
+                      weatherMessage,
                       style: AppTextStyles.sectionTitle(
                         context,
-                      ).copyWith(fontSize: 18, fontWeight: FontWeight.w600),
+                      ).copyWith(fontSize: 16, fontWeight: FontWeight.w600),
                       textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 24),
                     Row(
                       children: [
                         Expanded(
                           child: GestureDetector(
-                            onTap: () {
+                            onTap: () async {
                               setState(() {
                                 selectedButton = true;
                               });
                               Future.delayed(
                                 const Duration(milliseconds: 150),
-                                () {
+                                () async {
                                   if (context.mounted) {
                                     Navigator.pop(context);
-                                    // YES: 세탁기 포함하여 전달
-                                    _navigateToPriorityScreen(selectedRoutines);
+                                    // YES: 세탁기가 없으면 추가
+                                    final hasWashingRoutine = selectedRoutines
+                                        .any(
+                                          (routine) =>
+                                              routine.name
+                                                  .toLowerCase()
+                                                  .contains('세탁') ||
+                                              routine.name
+                                                  .toLowerCase()
+                                                  .contains('빨래') ||
+                                              routine.routineType
+                                                  .toLowerCase()
+                                                  .contains('wash'),
+                                        );
+
+                                    List<ViewAllRoutineItem> finalRoutines =
+                                        List.from(selectedRoutines);
+
+                                    if (!hasWashingRoutine) {
+                                      // 세탁기 루틴 찾기
+                                      try {
+                                        final washingRoutine = _allRoutines
+                                            .firstWhere(
+                                              (routine) =>
+                                                  routine.name
+                                                      .toLowerCase()
+                                                      .contains('세탁') ||
+                                                  routine.name
+                                                      .toLowerCase()
+                                                      .contains('빨래') ||
+                                                  routine.routineType
+                                                      .toLowerCase()
+                                                      .contains('wash'),
+                                            );
+
+                                        // 세탁기 루틴이 존재하면 추가
+                                        finalRoutines.add(washingRoutine);
+                                        // 선택된 루틴 ID에도 추가
+                                        _selectedRoutineIds.add(
+                                          washingRoutine.id,
+                                        );
+                                      } catch (e) {
+                                        // 세탁기 루틴이 없으면 추가하지 않음
+                                        print(
+                                          '[ViewAllScreen] 세탁기 루틴을 찾을 수 없습니다: $e',
+                                        );
+                                      }
+                                    }
+
+                                    _navigateToPriorityScreen(finalRoutines);
                                   }
                                 },
                               );
@@ -343,25 +556,8 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                                 () {
                                   if (context.mounted) {
                                     Navigator.pop(context);
-                                    // NO: 세탁기 관련 루틴 제외
-                                    final routinesWithoutWashing =
-                                        selectedRoutines
-                                            .where(
-                                              (routine) =>
-                                                  !routine.name
-                                                      .toLowerCase()
-                                                      .contains('세탁') &&
-                                                  !routine.name
-                                                      .toLowerCase()
-                                                      .contains('빨래') &&
-                                                  !routine.routineType
-                                                      .toLowerCase()
-                                                      .contains('wash'),
-                                            )
-                                            .toList();
-                                    _navigateToPriorityScreen(
-                                      routinesWithoutWashing,
-                                    );
+                                    // NO: 체크된 루틴만 그대로 전달 (세탁기 추가하지 않음)
+                                    _navigateToPriorityScreen(selectedRoutines);
                                   }
                                 },
                               );
@@ -399,6 +595,132 @@ class _ViewAllScreenState extends State<ViewAllScreen>
         );
       },
     );
+  }
+
+  /// 삭제 확인 다이얼로그 표시
+  Future<void> _showDeleteConfirmDialog(ViewAllRoutineItem routine) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppColors.backgroundWhite,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('루틴 삭제', style: AppTextStyles.todoTitle(context)),
+                const SizedBox(height: 16),
+                Text(
+                  '${routine.name} 루틴을 삭제하시겠습니까?',
+                  style: AppTextStyles.todoCategory(context),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).pop(false); // 취소
+                        },
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: AppColors.backgroundGray,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '취소',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 16,
+                              fontFamily: 'LG Smart_H',
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).pop(true); // 삭제
+                        },
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Text(
+                            '삭제',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontFamily: 'LG Smart_H',
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (result == true) {
+      // 삭제 확인
+      await _deleteRoutine(routine);
+    }
+  }
+
+  /// 루틴 삭제 실행
+  Future<void> _deleteRoutine(ViewAllRoutineItem routine) async {
+    print('[ViewAllScreen] 루틴 삭제 시작: ${routine.id}');
+
+    final success = await RoutineService.deleteRoutine(routineId: routine.id);
+
+    if (success) {
+      print('[ViewAllScreen] 루틴 삭제 성공: ${routine.id}');
+      // 선택된 루틴 ID에서도 제거
+      _selectedRoutineIds.remove(routine.id);
+      // 루틴 목록 새로고침
+      await _loadAllRoutines();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${routine.name} 루틴이 삭제되었습니다.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      print('[ViewAllScreen] 루틴 삭제 실패: ${routine.id}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('루틴 삭제에 실패했습니다.'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _navigateToPriorityScreen(List<ViewAllRoutineItem> selectedRoutines) {
@@ -761,6 +1083,28 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                 ],
               ),
             ),
+            // 삭제 버튼 (연필 아이콘 위에 배치)
+            Positioned(
+              right: 8,
+              bottom: 40, // 연필 아이콘 위에 배치
+              child: GestureDetector(
+                onTap: () {
+                  // 삭제 확인 다이얼로그 표시
+                  _showDeleteConfirmDialog(routine);
+                },
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, size: 16, color: Colors.white),
+                ),
+              ),
+            ),
+            // 수정 버튼 (연필 아이콘)
             Positioned(
               right: 8,
               bottom: 8,

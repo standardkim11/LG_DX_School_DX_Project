@@ -23,6 +23,16 @@ ON routine_executions(user_id, routine_id, start_time DESC);
 CREATE INDEX idx_exec_status 
 ON routine_executions(status);
 
+-- 5. 대시보드 월간 집계를 위한 인덱스 (user_id, start_time, status 복합)
+-- 대시보드 API의 월간 완료/실패 카운트 쿼리 최적화
+CREATE INDEX idx_exec_dashboard
+ON routine_executions(user_id, start_time, status);
+
+-- 6. 습관 로그 조회를 위한 인덱스 (user_id, routine_id, start_time, status 복합)
+-- 대시보드 API의 습관 로그 조회 쿼리 최적화
+CREATE INDEX idx_exec_habit
+ON routine_executions(user_id, routine_id, start_time, status);
+
 -- 주석: 인덱스는 쿼리 패턴에 따라 자동으로 선택되므로
 -- 여러 인덱스를 생성해도 성능에 부정적 영향을 주지 않습니다.
 -- 오히려 쿼리 최적화기가 가장 적합한 인덱스를 선택합니다.

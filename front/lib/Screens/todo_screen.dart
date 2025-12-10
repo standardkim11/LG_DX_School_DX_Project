@@ -26,8 +26,13 @@ class _TodoScreenStateManager {
   static set selectedDateIndex(int value) => _selectedDateIndex = value;
 
   static String? getCheckState(String key) => _checkStates[key];
-  static void setCheckState(String key, String value) =>
+  static void setCheckState(String key, String? value) {
+    if (value == null) {
+      _checkStates.remove(key);
+    } else {
       _checkStates[key] = value;
+    }
+  }
 }
 
 class _TodoScreenState extends State<TodoScreen> {
@@ -81,11 +86,9 @@ class _TodoScreenState extends State<TodoScreen> {
   // 선택된 날짜 가져오기
   DateTime _getSelectedDate() {
     final now = DateTime.now();
-    final baseDate = DateTime(now.year, now.month, 12);
-    final currentWeekday = baseDate.weekday;
-    final daysUntilFriday = (5 - currentWeekday + 7) % 7;
-    final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
-    return referenceDate.add(Duration(days: _selectedDateIndex - 15));
+    final today = DateTime(now.year, now.month, now.day);
+    // 오늘 날짜를 기준으로 인덱스 15로 설정했으므로, 오늘부터 계산
+    return today.add(Duration(days: _selectedDateIndex - 15));
   }
 
   // 날짜를 키 형식으로 변환
@@ -102,33 +105,30 @@ class _TodoScreenState extends State<TodoScreen> {
     super.initState();
     _dateScrollController = ScrollController();
 
-    // 저장된 날짜 인덱스로 복원
-    _selectedDateIndex = _TodoScreenStateManager.selectedDateIndex;
+    // 항상 오늘 날짜 인덱스(15)로 설정
+    _TodoScreenStateManager.selectedDateIndex = 15;
+    _selectedDateIndex = 15;
 
-    // 12일 금요일의 날짜 계산
+    // 오늘 날짜 계산
     final now = DateTime.now();
-    final baseDate = DateTime(now.year, now.month, 12);
-    final currentWeekday = baseDate.weekday;
-    final daysUntilFriday = (5 - currentWeekday + 7) % 7;
-    final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
-    final date12 = referenceDate; // 기준일 (인덱스 15)
-    final dateKey12 = _formatDateKey(date12);
+    final today = DateTime(now.year, now.month, now.day);
+    final dateKeyToday = _formatDateKey(today); // 오늘 날짜 키
 
-    // 기존에 다른 날짜에 저장된 할 일들을 12일로 이동
-    // 모든 날짜 키를 확인하여 데이터가 있으면 12일로 이동
+    // 기존에 다른 날짜에 저장된 할 일들을 오늘 날짜로 이동
+    // 모든 날짜 키를 확인하여 데이터가 있으면 오늘 날짜로 이동
     final allDateKeys = _todosByDate.keys.toList();
     List<Map<String, dynamic>> allTodos = [];
     for (var key in allDateKeys) {
-      if (key != dateKey12) {
+      if (key != dateKeyToday) {
         allTodos.addAll(_todosByDate[key] ?? []);
         _todosByDate.remove(key); // 기존 날짜 키 삭제
       } else {
-        // 12일에 이미 데이터가 있으면 그것도 포함
+        // 오늘 날짜에 이미 데이터가 있으면 그것도 포함
         allTodos.addAll(_todosByDate[key] ?? []);
       }
     }
 
-    // 12일의 할 일 초기화 (기존 할 일들을 12일에 할당)
+    // 오늘 날짜의 할 일 초기화 (기존 할 일들을 오늘 날짜에 할당)
     // 기존 데이터가 있으면 사용, 없으면 기본 데이터 사용
     if (allTodos.isNotEmpty) {
       // 중복 제거 (같은 title과 category를 가진 항목 제거)
@@ -139,9 +139,9 @@ class _TodoScreenState extends State<TodoScreen> {
           uniqueTodos[key] = todo;
         }
       }
-      _todosByDate[dateKey12] = uniqueTodos.values.toList();
-    } else if (!_todosByDate.containsKey(dateKey12)) {
-      _todosByDate[dateKey12] = [
+      _todosByDate[dateKeyToday] = uniqueTodos.values.toList();
+    } else if (!_todosByDate.containsKey(dateKeyToday)) {
+      _todosByDate[dateKeyToday] = [
         {
           'title': '18:00 지나랑 밥 🍚',
           'category': '친구',
@@ -276,11 +276,24 @@ class _TodoScreenState extends State<TodoScreen> {
                     child: CustomTabBar(
                       selectedIndex: _selectedTabIndex,
                       onTabChanged: (index) {
-                        // 현재 선택된 탭을 다시 누르면 12일로 이동
-                        if (index == _selectedTabIndex) {
+                        // 현재 선택된 탭(to-do)을 다시 누르면 오늘 날짜로 이동
+                        if (index == _selectedTabIndex && index == 0) {
                           setState(() {
-                            _selectedDateIndex = 15; // 12일 금요일 (인덱스 15)
+                            _selectedDateIndex = 15; // 오늘 날짜 (인덱스 15)
                             _TodoScreenStateManager.selectedDateIndex = 15;
+                          });
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _scrollToSelectedDate(context);
+                          });
+                          return;
+                        }
+                        
+                        // to-do 탭(index 0)으로 전환할 때 오늘 날짜로 이동
+                        if (index == 0) {
+                          setState(() {
+                            _selectedDateIndex = 15; // 오늘 날짜 (인덱스 15)
+                            _TodoScreenStateManager.selectedDateIndex = 15;
+                            _selectedTabIndex = index;
                           });
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             _scrollToSelectedDate(context);
@@ -441,15 +454,13 @@ class _TodoScreenState extends State<TodoScreen> {
   }
 
   Widget _buildDateCalendar(BuildContext context) {
-    // 기준일: 12일 금요일 찾기
+    // 기준일: 오늘 날짜 (매번 현재 날짜를 가져옴)
     final now = DateTime.now();
-    final baseDate = DateTime(now.year, now.month, 12);
-    // 금요일은 weekday 5, 현재 12일의 요일을 확인하고 금요일로 조정
-    final currentWeekday = baseDate.weekday; // 1=월요일, 7=일요일
-    final daysUntilFriday = (5 - currentWeekday + 7) % 7;
-    final referenceDate = baseDate.add(Duration(days: daysUntilFriday));
+    final today = DateTime(now.year, now.month, now.day);
+    final referenceDate = today; // 오늘을 기준으로 설정
 
     // 앞뒤로 15일씩만 생성 (총 31일: 15일 전부터 15일 후까지)
+    // 인덱스 15가 오늘 날짜가 되도록 설정
     final dates = List.generate(31, (index) {
       final date = referenceDate.add(
         Duration(days: index - 15),
@@ -556,6 +567,27 @@ class _TodoScreenState extends State<TodoScreen> {
                         cardKey:
                             'todo_${todo['title']}_${todo['category']}_$originalIndex',
                         onCheckChanged: () => _toggleCheck(originalIndex),
+                        onDelete: () {
+                          // Delete 버튼 클릭 시 해당 날짜의 todo 목록에서 제거
+                          setState(() {
+                            final selectedDate = _getSelectedDate();
+                            final dateKey = _formatDateKey(selectedDate);
+                            final todos = _todosByDate[dateKey] ?? [];
+                            
+                            // 제거할 항목 찾기 (title과 category로 매칭)
+                            todos.removeWhere(
+                              (t) =>
+                                  t['title'] == todo['title'] &&
+                                  t['category'] == todo['category'],
+                            );
+                            
+                            _todosByDate[dateKey] = todos;
+                            
+                            // 체크 상태도 제거
+                            final key = _getTodoKey(todo);
+                            _TodoScreenStateManager.setCheckState(key, null); // null을 전달하면 키가 제거됨
+                          });
+                        },
                       ),
                     ),
                   );

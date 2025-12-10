@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import '../Services/config.dart';
+import 'routine_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -104,26 +105,83 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     try {
-      // API 호출 - 경로: /api/chat/chat (url_prefix="/api/chat" + route="/chat")
-      // 모바일/에뮬레이터에서는 localhost 대신 10.0.2.2 (Android 에뮬레이터) 또는 실제 IP 사용
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/chat/chat'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: jsonEncode({'user_id': userId, 'message': messageText}),
-          )
-          .timeout(
-            const Duration(seconds: 30),
-            onTimeout: () {
-              throw Exception('요청 시간 초과');
-            },
-          );
+      // Android인 경우 여러 URL 시도 (에뮬레이터와 실제 기기 모두 지원)
+      List<String> urlsToTry = [baseUrl];
+      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+        // 자동 감지 모드: 에뮬레이터와 실제 기기 모두 시도
+        urlsToTry = ApiConfig.getAndroidBaseUrls();
+      }
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+      // 여러 URL 시도
+      http.Response? response;
+      String? successfulUrl;
+
+      print('[ChatScreen] 채팅 API 연결 시도 시작: ${urlsToTry.length}개 URL');
+      for (int i = 0; i < urlsToTry.length; i++) {
+        final url = urlsToTry[i];
+        print('[ChatScreen] 채팅 API 시도 ${i + 1}/${urlsToTry.length}: $url');
+        try {
+          // 오늘 날짜에 선택된 루틴 ID 가져오기
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+          final todayKey =
+              '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+          final selectedRoutineIds = getSelectedRoutinesForDate(todayKey);
+          final routineIdsList = selectedRoutineIds != null
+              ? selectedRoutineIds.toList()
+              : null;
+
+          print('[ChatScreen] 오늘 날짜: $todayKey');
+          print('[ChatScreen] 선택된 루틴 ID들: $routineIdsList');
+
+          response = await http
+              .post(
+                Uri.parse('$url/chat/chat'),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+                body: jsonEncode({
+                  'user_id': userId,
+                  'message': messageText,
+                  'selected_routine_ids': routineIdsList, // 선택된 루틴 ID들 전달
+                }),
+              )
+              .timeout(
+                const Duration(seconds: 60), // 채팅은 응답 시간이 길 수 있으므로 60초로 설정
+                onTimeout: () {
+                  throw Exception('요청 시간 초과');
+                },
+              );
+
+          if (response.statusCode == 200) {
+            successfulUrl = url;
+            print('[ChatScreen] 채팅 API 성공: $url');
+            break; // 성공하면 즉시 종료
+          } else {
+            print('[ChatScreen] 채팅 API HTTP 에러 ($url): ${response.statusCode}');
+            if (i < urlsToTry.length - 1) {
+              continue; // 다음 URL 시도
+            }
+          }
+        } catch (e) {
+          print('[ChatScreen] 채팅 API 연결 실패 ($url): $e');
+          if (i == urlsToTry.length - 1) {
+            // 마지막 URL도 실패
+            print('[ChatScreen] 채팅 API 모든 연결 시도 실패');
+            throw e; // 모든 URL 실패 시 예외 던지기
+          }
+          continue; // 다음 URL 시도
+        }
+      }
+
+      if (response == null) {
+        throw Exception('모든 URL 연결 시도 실패');
+      }
+
+      // response가 null이 아니면 성공한 응답
+      if (response!.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
         final reply = data['reply'] as String? ?? '응답을 받지 못했습니다.';
 
         setState(() {
@@ -131,8 +189,47 @@ class _ChatScreenState extends State<ChatScreen> {
           _isLoading = false;
         });
       } else {
-        final errorBody = response.body;
-        throw Exception('서버 오류: ${response.statusCode}\n$errorBody');
+        // 에러 응답 파싱 시도
+        try {
+          final errorData = jsonDecode(response.body);
+          final errorMsg =
+              errorData['message'] as String? ?? errorData['error'] as String?;
+          final details = errorData['details'] as String?;
+
+          String errorMessage = '서버 오류가 발생했습니다.';
+
+          // 할당량 초과 에러 확인
+          final fullErrorText = '${details ?? ''} ${errorMsg ?? ''}';
+          if (fullErrorText.contains('quota') ||
+              fullErrorText.contains('429') ||
+              fullErrorText.contains('exceeded')) {
+            errorMessage = 'AI 서비스 사용량이 초과되었습니다.\n잠시 후 다시 시도해주세요.';
+          } else if (errorMsg != null) {
+            if (errorMsg.contains('GEMINI_API_KEY')) {
+              errorMessage =
+                  'Google Gemini API 키가 설정되지 않았습니다.\n서버 관리자에게 문의해주세요.';
+            } else {
+              errorMessage = details ?? errorMsg;
+            }
+          } else if (details != null) {
+            errorMessage = details;
+          }
+
+          setState(() {
+            _messages.add({
+              'text': errorMessage,
+              'isUser': false,
+              'fontSize': 15.0,
+            });
+            _isLoading = false;
+          });
+          _scrollToBottom();
+          return;
+        } catch (e) {
+          // JSON 파싱 실패 시 기본 에러 처리
+          final errorBody = response.body;
+          throw Exception('서버 오류: ${response.statusCode}\n$errorBody');
+        }
       }
     } catch (e) {
       String errorMessage = '죄송합니다. 연결에 문제가 발생했습니다.';
@@ -262,27 +359,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 bottom: 24,
                                 top: 16,
                               ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(width: 16),
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    child: const SizedBox(
-                                      width: 32,
-                                      height: 32,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 3,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Color(0xFF4B57BB),
-                                            ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              child: _buildLoadingIndicator(),
                             );
                           }
 
@@ -381,6 +458,52 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLoadingIndicator() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(width: 16),
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Color(0xFF111111),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  '답변을 생성하고 있어요...',
+                  style: TextStyle(
+                    color: Color(0xFF111111),
+                    fontSize: 15.0,
+                    fontFamily: 'LG Smart_H',
+                    fontWeight: FontWeight.w400,
+                    height: 1.47,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+      ],
     );
   }
 

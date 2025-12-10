@@ -55,10 +55,13 @@ class ApiConfig {
 
   /// Android에서 사용할 수 있는 모든 가능한 base URL 목록 반환
   /// (에뮬레이터와 실제 기기 모두 지원)
+  /// 실제 기기에서는 실제 네트워크 IP를 먼저 시도하도록 순서 조정
   static List<String> getAndroidBaseUrls() {
+    // 실제 기기에서는 실제 네트워크 IP를 먼저 시도하는 것이 더 빠름
+    // 에뮬레이터에서는 10.0.2.2가 작동하지만, 실제 기기에서는 Network unreachable 오류 발생
     return [
+      'http://$localNetworkIp:$port/api', // 실제 기기 (우선 시도)
       'http://$androidEmulatorIp:$port/api', // 에뮬레이터
-      'http://$localNetworkIp:$port/api', // 실제 기기
     ];
   }
 }

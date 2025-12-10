@@ -68,13 +68,13 @@ class HomeScreen extends StatelessWidget {
                           SizedBox(width: gapWidth),
                           GestureDetector(
                             onTap: () {
-                              // 오늘 날짜로 설정
+                              // 오늘 날짜로 설정하고 routine 탭으로 이동
                               routine.setRoutineScreenToToday();
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) =>
-                                      const lg.RoutineScreen(),
+                                      const routine.RoutineScreen(),
                                 ),
                               );
                             },

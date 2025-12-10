@@ -44,17 +44,19 @@ class DashboardService {
     if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
       // 자동 감지 모드: 에뮬레이터와 실제 기기 모두 시도
       urlsToTry = ApiConfig.getAndroidBaseUrls();
-      print('[DashboardService] 병렬 모드: ${urlsToTry.length}개 URL 시도');
     }
 
-    // 병렬로 여러 URL 시도 (첫 번째 성공한 응답 사용)
-    final futures = urlsToTry.map((url) async {
+    // 성능 최적화: 순차적으로 시도 (실제 기기에서는 10.0.2.2 타임아웃 시간 낭비 방지)
+    // 첫 번째 URL부터 시도하고, 성공하면 즉시 반환
+    print('[DashboardService] 연결 시도 시작: ${urlsToTry.length}개 URL');
+    for (int i = 0; i < urlsToTry.length; i++) {
+      final url = urlsToTry[i];
+      print('[DashboardService] 시도 ${i + 1}/${urlsToTry.length}: $url');
       try {
         final uri = Uri.parse(
           '$url/recommend/dashboard',
         ).replace(queryParameters: queryParams);
 
-        print('[DashboardService] HTTP GET 요청 시작: $uri');
         final stopwatch = Stopwatch()..start();
 
         final response = await http
@@ -66,20 +68,14 @@ class DashboardService {
               },
             )
             .timeout(
-              const Duration(seconds: 30), // 타임아웃 증가 (30초)
+              const Duration(seconds: 10), // 실제 기기에서는 빠른 실패로 다음 URL 시도
               onTimeout: () {
                 stopwatch.stop();
-                print(
-                  '[DashboardService] 요청 타임아웃 (${stopwatch.elapsedMilliseconds}ms 소요) - $url',
-                );
-                throw Exception('요청 시간 초과 - 백엔드 서버가 실행 중인지 확인해주세요');
+                throw Exception('요청 시간 초과');
               },
             );
 
         stopwatch.stop();
-        print(
-          '[DashboardService] HTTP 응답 수신 완료 (${stopwatch.elapsedMilliseconds}ms 소요) - $url',
-        );
 
         if (response.statusCode == 200) {
           final data = jsonDecode(utf8.decode(response.bodyBytes));
@@ -95,44 +91,36 @@ class DashboardService {
           };
 
           try {
-            return DashboardResponse.fromJson(transformedData);
+            final result = DashboardResponse.fromJson(transformedData);
+            print(
+              '[DashboardService] 성공: $url (${stopwatch.elapsedMilliseconds}ms 소요)',
+            );
+            return result;
           } catch (e, stackTrace) {
-            print('DashboardResponse.fromJson Error: $e');
-            print('Stack trace: $stackTrace');
-            print('Failed to parse data: $transformedData');
-            rethrow;
+            print('[DashboardService] JSON 파싱 에러 ($url): $e');
+            print('[DashboardService] Stack trace: $stackTrace');
+            print('[DashboardService] Failed to parse data: $transformedData');
+            // 다음 URL 시도 계속
+            continue;
           }
         } else {
-          print(
-            'Dashboard API Error: ${response.statusCode} - ${response.body}',
-          );
-          throw Exception('HTTP ${response.statusCode}');
+          // HTTP 에러
+          print('[DashboardService] HTTP 에러 ($url): ${response.statusCode}');
+          continue;
         }
       } catch (e) {
-        print('[DashboardService] $url 연결 실패: $e');
-        rethrow;
-      }
-    }).toList();
-
-    // 첫 번째 성공한 응답 반환
-    Exception? lastException;
-    for (final future in futures) {
-      try {
-        final result = await future;
-        print('[DashboardService] 성공');
-        return result;
-      } catch (e) {
-        lastException = e is Exception ? e : Exception(e.toString());
-        // 다음 future 시도
+        // 모든 URL 시도 실패 시 로그 출력
+        print('[DashboardService] 연결 실패 ($url): $e');
+        if (i == urlsToTry.length - 1) {
+          // 마지막 URL도 실패
+          print('[DashboardService] 모든 URL 연결 시도 실패');
+        }
         continue;
       }
     }
 
-    // 모든 URL 시도 실패
-    final errorMessage = lastException != null
-        ? '모든 연결 시도 실패: ${lastException.toString()}'
-        : '모든 연결 시도 실패';
-    print(errorMessage);
-    throw Exception(errorMessage);
+    // 모든 URL 시도 실패 시 에러 던지기
+    print('[DashboardService] 최종 실패: 모든 URL 연결 시도 완료');
+    throw Exception('모든 연결 시도 실패 - 백엔드 서버가 실행 중인지 확인해주세요');
   }
 }

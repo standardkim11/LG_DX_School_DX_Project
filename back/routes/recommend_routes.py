@@ -2,13 +2,13 @@ from flask import Blueprint, current_app, request, jsonify
 from datetime import datetime, time, date, timedelta
 import pandas as pd  # type: ignore
 from sqlalchemy.exc import DatabaseError  # type: ignore
-from sqlalchemy import or_  # type: ignore
+from sqlalchemy import or_, func, cast, String, case, text  # type: ignore
 from Project.extensions import db
 from models import User, Routine, Notification, RoutineExecution , UserDevice  ,WeatherInfo, DeviceLog
 import re
 
-from .maping import encode_routine_type, encode_schedule_type, encode_weather, REVERSE_ROUTINE_TYPE, REVERSE_SCHEDULE_TYPE, REVERSE_WEATHER
-from .maping import parse_preferred_time, is_scheduled_today, is_done_today, is_failed_today, is_goal_achieved, normalize_routine_name
+from .maping import encode_routine_type, encode_schedule_type, encode_weather, REVERSE_ROUTINE_TYPE, REVERSE_SCHEDULE_TYPE, REVERSE_WEATHER, detect_routine_type_from_name
+from .maping import parse_preferred_time, is_scheduled_today, is_done_today, is_failed_today, is_goal_achieved, normalize_routine_name, get_korean_object_particle
 from .utils import distance_km, today_date, safe_commit, error_response
 
 
@@ -216,19 +216,51 @@ def context_event():
     pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
 
     # 4) 모델 input rows 생성
+    # 성능 최적화: 모든 루틴의 마지막 실행 기록을 한 번의 쿼리로 조회 (N+1 쿼리 문제 해결)
+    routine_ids = [r.id for r in routines]
+    last_logs_query = (
+        db.session.query(
+            RoutineExecution.routine_id,
+            RoutineExecution.run_time,
+            RoutineExecution.recommended_flag,
+            func.row_number()
+            .over(
+                partition_by=RoutineExecution.routine_id,
+                order_by=RoutineExecution.start_time.desc()
+            )
+            .label('rn')
+        )
+        .filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id.in_(routine_ids)
+        )
+        .subquery()
+    )
+    
+    # 각 루틴별로 가장 최근 실행 기록만 가져오기
+    last_logs_map = {}
+    if routine_ids:
+        last_logs = (
+            db.session.query(last_logs_query)
+            .filter(last_logs_query.c.rn == 1)
+            .all()
+        )
+        for log in last_logs:
+            last_logs_map[log.routine_id] = {
+                'run_time': log.run_time,
+                'recommended_flag': log.recommended_flag
+            }
+    
     rows = []
     for r in routines:
         rt = encode_routine_type(r.routine_type)
         st = encode_schedule_type(r.schedule_type)
         preferred_hour = parse_preferred_time(r.preferred_time)
 
-        last_log = RoutineExecution.query.filter_by(
-            user_id=user_id, routine_id=r.id
-        ).order_by(RoutineExecution.start_time.desc()).first()
-
+        last_log = last_logs_map.get(r.id)
         if last_log:
-            run_time = int(last_log.run_time or r.run_minutes or 30)
-            recommended_flag = int(bool(last_log.recommended_flag))
+            run_time = int(last_log['run_time'] or r.run_minutes or 30)
+            recommended_flag = int(bool(last_log['recommended_flag']))
         else:
             run_time = int(r.run_minutes or 30)
             recommended_flag = 0
@@ -386,17 +418,68 @@ def get_priority_today():
 
 
     # 날씨 가져오기 (없으면 default)
+    # 디버깅: 모든 날씨 정보 조회해서 로그 출력
+    all_weather = WeatherInfo.query.all()
+    current_app.logger.info(f"🔍 [Priority API] DB에 저장된 모든 날씨 정보:")
+    for w in all_weather:
+        current_app.logger.info(f"  - id={w.id}, date={w.date} (type={type(w.date).__name__}), weather={w.weather}")
+    
+    current_app.logger.info(f"🔍 [Priority API] 조회하려는 날짜: {today} (type={type(today).__name__})")
+    
     weather = WeatherInfo.query.filter_by(date=today).first()
-    temp = float(weather.temperature) if weather and weather.temperature else 20.0
-    humi = float(weather.humidity) if weather and weather.humidity else 60.0
-    weather_code = encode_weather(weather.weather) if weather and weather.weather is not None else 0
-    pm25 = float(weather.pm25) if weather and weather.pm25 else 40.0
-    pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
+    
+    # 날씨 정보가 없으면 기본값으로 "맑음" 사용
+    if not weather:
+        temp = 20.0
+        humi = 60.0
+        weather_code = 0
+        pm25 = 40.0
+        pm10 = 60.0
+        current_app.logger.warning(f"⚠️ [Priority API] 날씨 정보 없음: date={today}, 기본값 사용 (weather_code=0: 맑음)")
+    else:
+        temp = float(weather.temperature) if weather.temperature else 20.0
+        humi = float(weather.humidity) if weather.humidity else 60.0
+        weather_code = encode_weather(weather.weather) if weather.weather is not None else 0
+        pm25 = float(weather.pm25) if weather.pm25 else 40.0
+        pm10 = float(weather.pm10) if weather.pm10 else 60.0
+        current_app.logger.info(f"✅ [Priority API] 날씨 정보 로드 성공: date={today}, weather={weather.weather}, weather_code={weather_code}")
 
+    # 성능 최적화: 모든 루틴의 마지막 실행 기록을 한 번의 쿼리로 조회 (N+1 쿼리 문제 해결)
+    routine_ids = [r.id for r in routines]
+    last_logs_query = (
+        db.session.query(
+            RoutineExecution.routine_id,
+            RoutineExecution.run_time,
+            RoutineExecution.recommended_flag,
+            func.row_number()
+            .over(
+                partition_by=RoutineExecution.routine_id,
+                order_by=RoutineExecution.start_time.desc()
+            )
+            .label('rn')
+        )
+        .filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id.in_(routine_ids)
+        )
+        .subquery()
+    )
+    
+    # 각 루틴별로 가장 최근 실행 기록만 가져오기
+    last_logs_map = {}
+    if routine_ids:
+        last_logs = (
+            db.session.query(last_logs_query)
+            .filter(last_logs_query.c.rn == 1)
+            .all()
+        )
+        for log in last_logs:
+            last_logs_map[log.routine_id] = {
+                'run_time': log.run_time,
+                'recommended_flag': log.recommended_flag
+            }
+    
     rows = []
-
-    rows = []
-
     for r in routines:
         # ROUTINE_TYPE (문자열/숫자 → 숫자)
         rt = encode_routine_type(r.routine_type)
@@ -407,14 +490,11 @@ def get_priority_today():
         # PREFERRED_TIME (문자열/숫자 → 시 단위 정수)
         preferred_hour = parse_preferred_time(r.preferred_time)
 
-        # 최근 실행 기록
-        last_log = RoutineExecution.query.filter_by(
-            user_id=user_id, routine_id=r.id
-        ).order_by(RoutineExecution.start_time.desc()).first()
-
+        # 최근 실행 기록 (배치 조회된 데이터 사용)
+        last_log = last_logs_map.get(r.id)
         if last_log:
-            run_time = int(last_log.run_time or r.run_minutes or 30)
-            recommended_flag = int(bool(last_log.recommended_flag))
+            run_time = int(last_log['run_time'] or r.run_minutes or 30)
+            recommended_flag = int(bool(last_log['recommended_flag']))
         else:
             run_time = int(r.run_minutes or 30)
             recommended_flag = 0
@@ -550,19 +630,52 @@ def get_priority_for_selected_routines():
     pm25 = float(weather.pm25) if weather and weather.pm25 else 40.0
     pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
 
+    # 성능 최적화: 모든 루틴의 마지막 실행 기록을 한 번의 쿼리로 조회 (N+1 쿼리 문제 해결)
+    routine_ids_list = [r.id for r in routines]
+    last_logs_query = (
+        db.session.query(
+            RoutineExecution.routine_id,
+            RoutineExecution.run_time,
+            RoutineExecution.recommended_flag,
+            func.row_number()
+            .over(
+                partition_by=RoutineExecution.routine_id,
+                order_by=RoutineExecution.start_time.desc()
+            )
+            .label('rn')
+        )
+        .filter(
+            RoutineExecution.user_id == user_id,
+            RoutineExecution.routine_id.in_(routine_ids_list)
+        )
+        .subquery()
+    )
+    
+    # 각 루틴별로 가장 최근 실행 기록만 가져오기
+    last_logs_map = {}
+    if routine_ids_list:
+        last_logs = (
+            db.session.query(last_logs_query)
+            .filter(last_logs_query.c.rn == 1)
+            .all()
+        )
+        for log in last_logs:
+            last_logs_map[log.routine_id] = {
+                'run_time': log.run_time,
+                'recommended_flag': log.recommended_flag
+            }
+    
     rows = []
     for r in routines:
         rt = encode_routine_type(r.routine_type)
         st = encode_schedule_type(r.schedule_type)
         preferred_hour = parse_preferred_time(r.preferred_time)
 
-        last_log = RoutineExecution.query.filter_by(
-            user_id=user_id, routine_id=r.id
-        ).order_by(RoutineExecution.start_time.desc()).first()
-
+        # 최근 실행 기록 (배치 조회된 데이터 사용)
+        last_log = last_logs_map.get(r.id)
         if last_log:
-            run_time = int(last_log.run_time or r.run_minutes or 30)
-            recommended_flag = int(bool(last_log.recommended_flag))
+            run_time = int(last_log['run_time'] or r.run_minutes or 30)
+            recommended_flag = int(bool(last_log['recommended_flag']))
         else:
             run_time = int(r.run_minutes or 30)
             recommended_flag = 0
@@ -639,6 +752,11 @@ def create_routine():
     if not user_id or not name:
         return jsonify({"error": "user_id and name are required"}), 400
 
+    # routine_type이 없으면 루틴 이름에서 자동 감지
+    if not routine_type:
+        routine_type = detect_routine_type_from_name(name)
+        current_app.logger.info(f"[CreateRoutine] routine_type 자동 감지: '{name}' -> '{routine_type}'")
+
     # schedule_frequency 처리 (기본값 1)
     schedule_frequency = data.get("schedule_frequency", 1)
     if schedule_frequency is not None:
@@ -700,7 +818,17 @@ def update_routine(routine_id):
     if not routine:
         return jsonify({"error": "routine not found"}), 404
 
-    for field in ["name", "routine_type", "schedule_type",
+    # name이 변경되면 routine_type도 자동으로 업데이트 (routine_type이 명시적으로 제공되지 않은 경우)
+    if "name" in data:
+        new_name = data["name"]
+        setattr(routine, "name", new_name)
+        # routine_type이 명시적으로 제공되지 않았으면 자동 감지
+        if "routine_type" not in data:
+            detected_type = detect_routine_type_from_name(new_name)
+            routine.routine_type = detected_type
+            current_app.logger.info(f"[UpdateRoutine] routine_type 자동 감지: '{new_name}' -> '{detected_type}'")
+    
+    for field in ["routine_type", "schedule_type",
                   "preferred_time", "run_minutes", "serial_no"]:
         if field in data:
             setattr(routine, field, data[field])
@@ -773,10 +901,14 @@ def execute_routine(routine_id):
     end_time = None
     run_time = data.get("run_time", routine.run_minutes)
 
+    # status는 숫자로 저장됨 (DB는 NUMBER(2,0))
+    # 0=pending, 1=running, 2=done(완료), 3=failed(실패)
+    status_int = int(status) if isinstance(status, (int, float, str)) and str(status).isdigit() else 2
+    
     exec_log = RoutineExecution(
         user_id=user_id,
         routine_id=routine_id,
-        status=status,
+        status=status_int,
         start_time=start_time,
         end_time=end_time,
         run_time=run_time,
@@ -934,8 +1066,9 @@ def get_today_routines():
 @recommend_bp.route("/weather", methods=["GET"])
 def get_weather():
     """오늘의 날씨 정보 반환
-    GET /api/recommend/weather?date=2025-01-15 (옵션: 없으면 오늘)
+    GET /api/recommend/weather?user_id=1&date=2025-01-15 (옵션: date 없으면 오늘)
     """
+    user_id = request.args.get("user_id", type=int, default=1)
     date_str = request.args.get("date")
     if date_str:
         try:
@@ -945,31 +1078,252 @@ def get_weather():
     else:
         target_date = today_date()
     
-    weather = WeatherInfo.query.filter_by(date=target_date).first()
+    # 디버깅: 모든 날씨 정보 조회해서 로그 출력
+    all_weather = WeatherInfo.query.all()
+    current_app.logger.info(f"🔍 [Weather API] DB에 저장된 모든 날씨 정보 (총 {len(all_weather)}개):")
+    for w in all_weather:
+        date_str = w.date.isoformat() if w.date else "None"
+        target_str = target_date.isoformat()
+        is_match = date_str == target_str
+        current_app.logger.info(f"  - id={w.id}, date={date_str} (type={type(w.date).__name__}), weather={w.weather}, matches={is_match}")
+    
+    current_app.logger.info(f"🔍 [Weather API] 조회하려는 날짜: {target_date.isoformat()} (type={type(target_date).__name__})")
+    
+    # 날짜 비교를 명시적으로 수행
+    weather = None
+    for w in all_weather:
+        if w.date and w.date == target_date:
+            weather = w
+            current_app.logger.info(f"✅ [Weather API] 날짜 매칭 성공: {w.date.isoformat()} == {target_date.isoformat()}")
+            break
+    
+    if not weather:
+        # SQLAlchemy 쿼리로도 한 번 더 시도
+        weather = WeatherInfo.query.filter_by(date=target_date).first()
+        if weather:
+            current_app.logger.info(f"✅ [Weather API] SQLAlchemy 쿼리로 날씨 정보 조회 성공")
+        else:
+            current_app.logger.warning(f"⚠️ [Weather API] 날씨 정보 없음: date={target_date.isoformat()}, 기본값 사용 (weather_code=0: 맑음)")
     
     # 날씨 정보가 없으면 기본값으로 "맑음" 사용
     if not weather:
         weather_code = 0  # 맑음
         weather_label = "맑음"
-        pm25 = None
-        pm10 = None
+        temp = 20.0
+        humi = 60.0
+        pm25 = 40.0  # 기본값 사용 (XGBoost 모델에 숫자형 필요)
+        pm10 = 60.0  # 기본값 사용 (XGBoost 모델에 숫자형 필요)
     else:
+        current_app.logger.info(f"✅ [Weather API] 날씨 정보 조회 성공: date={weather.date.isoformat() if weather.date else 'None'}, weather={weather.weather}, weather_type={type(weather.weather)}")
         weather_code = encode_weather(weather.weather) if weather.weather else 0
         weather_label = REVERSE_WEATHER.get(weather_code, "맑음")
-        pm25 = float(weather.pm25) if weather.pm25 else None
-        pm10 = float(weather.pm10) if weather.pm10 else None
+        temp = float(weather.temperature) if weather.temperature else 20.0
+        humi = float(weather.humidity) if weather.humidity else 60.0
+        # PM25와 PM10을 숫자형으로 변환 (None이면 기본값 사용)
+        try:
+            pm25 = float(weather.pm25) if weather.pm25 is not None else 40.0
+        except (ValueError, TypeError):
+            pm25 = 40.0
+        try:
+            pm10 = float(weather.pm10) if weather.pm10 is not None else 60.0
+        except (ValueError, TypeError):
+            pm10 = 60.0
+        current_app.logger.info(f"✅ [Weather API] 날씨 코드 변환: weather='{weather.weather}' (repr: {repr(weather.weather)}) -> weather_code={weather_code}, weather_label='{weather_label}'")
+        
+        # 날씨 코드가 0(맑음)인데 원본이 "비"인 경우 경고
+        if weather_code == 0 and weather.weather and ('비' in str(weather.weather) or 'rain' in str(weather.weather).lower()):
+            current_app.logger.error(f"❌ [Weather API] 날씨 인코딩 오류! 원본='{weather.weather}'인데 weather_code=0(맑음)으로 변환됨!")
     
-    # 날씨 기반 추천 메시지 생성
+    # 사용자의 활성 루틴 조회 (날씨에 따라 추천할 루틴 찾기)
+    try:
+        user_routines = Routine.query.filter_by(
+            user_id=user_id,
+            is_active=True
+        ).all()
+    except Exception as e:
+        current_app.logger.warning(f"Failed to query routines for user {user_id}: {e}")
+        user_routines = []
+    
+    # 날씨 기반 추천 메시지 생성 (우선순위 점수 기반)
+    # 모든 활성 루틴에 대해 우선순위 점수를 계산하여 가장 높은 점수의 루틴 추천
     recommendation_messages = []
     
-    if weather_code == 2:  # 비
-        recommendation_messages.append("비가 예정된 오늘, 세탁기 돌리고 건조기 돌리는 것을 추천드려요.")
-    elif weather_code == 3:  # 눈
-        recommendation_messages.append("눈이 예정된 오늘, 외출 시 주의하세요.")
-    elif weather_code == 1:  # 흐림
-        recommendation_messages.append("흐린 날씨예요. 실내 활동을 추천드립니다.")
-    else:  # 맑음 (0)
-        recommendation_messages.append("맑은 날씨예요. 세탁기 돌리는건 어떠세요?")
+    # 모든 활성 루틴을 후보로 사용 (날씨 조건으로 필터링하지 않음)
+    candidate_routines = user_routines
+    current_app.logger.info(f"🔍 [Weather API] 후보 루틴 수: {len(candidate_routines)}")
+    if candidate_routines:
+        current_app.logger.info(f"🔍 [Weather API] 후보 루틴 목록: {[r.name for r in candidate_routines]}")
+    
+    # 후보 루틴이 있으면 우선순위 점수 계산하여 가장 높은 점수의 루틴 추천
+    if candidate_routines:
+        try:
+            # ML 모델이 로드되어 있는지 확인
+            model = current_app.model  # type: ignore
+            feature_cols = current_app.feature_cols  # type: ignore
+            
+            current_app.logger.info(f"🔍 [Weather API] ML 모델 상태: model={'있음' if model is not None else '없음'}, feature_cols={'있음' if feature_cols is not None else '없음'}")
+            
+            if model is not None and feature_cols is not None:
+                # 우선순위 점수 계산
+                now = datetime.now()
+                exec_hour = now.hour
+                exec_dow = now.weekday()
+                
+                # 최근 실행 기록 조회
+                routine_ids_list = [r.id for r in candidate_routines]
+                last_logs_query = (
+                    db.session.query(
+                        RoutineExecution.routine_id,
+                        RoutineExecution.run_time,
+                        RoutineExecution.recommended_flag,
+                        func.row_number()
+                        .over(
+                            partition_by=RoutineExecution.routine_id,
+                            order_by=RoutineExecution.start_time.desc()
+                        )
+                        .label('rn')
+                    )
+                    .filter(
+                        RoutineExecution.user_id == user_id,
+                        RoutineExecution.routine_id.in_(routine_ids_list)
+                    )
+                    .subquery()
+                )
+                
+                last_logs_map = {}
+                if routine_ids_list:
+                    last_logs = (
+                        db.session.query(last_logs_query)
+                        .filter(last_logs_query.c.rn == 1)
+                        .all()
+                    )
+                    for log in last_logs:
+                        last_logs_map[log.routine_id] = {
+                            'run_time': log.run_time,
+                            'recommended_flag': log.recommended_flag
+                        }
+                
+                # 우선순위 점수 계산을 위한 데이터 준비
+                rows = []
+                for r in candidate_routines:
+                    rt = encode_routine_type(r.routine_type)
+                    st = encode_schedule_type(r.schedule_type)
+                    preferred_hour = parse_preferred_time(r.preferred_time)
+                    
+                    last_log = last_logs_map.get(r.id)
+                    if last_log:
+                        run_time = int(last_log['run_time'] or r.run_minutes or 30)
+                        recommended_flag = int(bool(last_log['recommended_flag']))
+                    else:
+                        run_time = int(r.run_minutes or 30)
+                        recommended_flag = 0
+                    
+                    rows.append({
+                        "ROUTINE_ID": r.id,
+                        "ROUTINE_NAME": r.name,
+                        "ROUTINE_TYPE": rt,
+                        "SCHEDULE_TYPE": st,
+                        "PREFERRED_TIME": preferred_hour,
+                        "RUN_TIME": run_time,
+                        "EXEC_HOUR": exec_hour,
+                        "EXEC_DOW": exec_dow,
+                        "RUN_MINUTES": int(r.run_minutes or 30),
+                        "RECOMMENDED_FLAG": recommended_flag,
+                        "TEMPERATURE": temp,
+                        "HUMIDITY": humi,
+                        "WEATHER": weather_code,
+                        "PM25": pm25,
+                        "PM10": pm10,
+                    })
+                
+                # 우선순위 점수 계산
+                df = pd.DataFrame(rows)
+                missing = [c for c in feature_cols if c not in df.columns]
+                if not missing:
+                    X = df[feature_cols]
+                    preds = model.predict(X)
+                    df["pred_priority_score"] = preds
+                    
+                    # 가장 높은 점수의 루틴 선택
+                    best_routine = df.loc[df["pred_priority_score"].idxmax()]
+                    best_routine_name = best_routine["ROUTINE_NAME"]
+                    best_routine_score = best_routine["pred_priority_score"]
+                    particle = get_korean_object_particle(best_routine_name)
+                    
+                    # 디버깅: 모든 루틴의 점수 로그 출력
+                    current_app.logger.info(f"🔍 [Weather API] 우선순위 점수 계산 결과 (총 {len(df)}개 루틴):")
+                    for idx, row in df.iterrows():
+                        current_app.logger.info(f"  - {row['ROUTINE_NAME']}: {row['pred_priority_score']:.4f}")
+                    current_app.logger.info(f"✅ [Weather API] 선택된 루틴: {best_routine_name} (점수: {best_routine_score:.4f})")
+                    
+                    # 추천 이유 설명 추가
+                    if weather_code == 2:  # 비
+                        recommendation_messages.append(f"비가와서 {best_routine_name}{particle} 추천드려요.")
+                        recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+                    elif weather_code == 3:  # 눈
+                        recommendation_messages.append(f"눈이와서 {best_routine_name}{particle} 추천드려요.")
+                        recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+                    elif weather_code == 1:  # 흐림
+                        recommendation_messages.append(f"흐려서 {best_routine_name}{particle} 추천드려요.")
+                        recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+                    else:  # 맑음
+                        recommendation_messages.append(f"맑아서 {best_routine_name}{particle} 하기에 좋은 날이에요.")
+                        recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+                else:
+                    # ML 모델 feature가 없으면 첫 번째 루틴 사용
+                    best_routine = candidate_routines[0]
+                    particle = get_korean_object_particle(best_routine.name)
+                    
+                    # 추천 이유 설명 추가
+                    if weather_code == 2:  # 비
+                        recommendation_messages.append(f"비가와서 {best_routine.name}{particle} 추천드려요.")
+                        recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+                    elif weather_code == 3:  # 눈
+                        recommendation_messages.append(f"눈이와서 {best_routine.name}{particle} 추천드려요.")
+                        recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+                    elif weather_code == 1:  # 흐림
+                        recommendation_messages.append(f"흐려서 {best_routine.name}{particle} 추천드려요.")
+                        recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+                    else:  # 맑음
+                        recommendation_messages.append(f"맑아서 {best_routine.name}{particle} 하기에 좋은 날이에요.")
+                        recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+            else:
+                # ML 모델이 없으면 첫 번째 루틴 사용
+                best_routine = candidate_routines[0]
+                particle = get_korean_object_particle(best_routine.name)
+                
+                # 추천 이유 설명 추가
+                if weather_code == 2:  # 비
+                    recommendation_messages.append(f"비가 예정된 오늘, {best_routine.name}{particle} 추천드려요.")
+                    recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+                elif weather_code == 3:  # 눈
+                    recommendation_messages.append(f"{best_routine.name}{particle} 하기에 좋은 날씨예요.")
+                    recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+                elif weather_code == 1:  # 흐림
+                    recommendation_messages.append(f"{best_routine.name}{particle} 하기에 좋은 날씨예요.")
+                    recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+                else:  # 맑음
+                    recommendation_messages.append(f"맑은 날씨예요. {best_routine.name}{particle} 하기에 좋은 날이에요.")
+                    recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+        except Exception as e:
+            current_app.logger.error(f"❌ [Weather API] 우선순위 점수 계산 실패: {e}")
+            # 에러 발생 시 첫 번째 루틴 사용
+            best_routine = candidate_routines[0]
+            particle = get_korean_object_particle(best_routine.name)
+            
+            # 추천 이유 설명 추가
+            if weather_code == 2:  # 비
+                recommendation_messages.append(f"비가와서 {best_routine.name}{particle} 추천드려요.")
+                recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+            elif weather_code == 3:  # 눈
+                recommendation_messages.append(f"눈이와서 {best_routine.name}{particle} 추천드려요.")
+                recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+            elif weather_code == 1:  # 흐림
+                recommendation_messages.append(f"흐려서 {best_routine.name}{particle} 추천드려요.")
+                recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
+            else:  # 맑음
+                recommendation_messages.append(f"맑아서 {best_routine.name}{particle} 하기에 좋은 날이에요.")
+                recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
     
     # 미세먼지 수치 확인 (pm25: 35 이상, pm10: 75 이상이면 나쁨)
     if pm25 is not None and pm25 >= 35:
@@ -980,7 +1334,7 @@ def get_weather():
     # 메시지들을 줄바꿈으로 연결
     recommendation_message = "\n".join(recommendation_messages) if recommendation_messages else None
     
-    return jsonify({
+    response_data = {
         "date": target_date.isoformat(),
         "weather": weather.weather if weather else "맑음",
         "weather_code": weather_code,
@@ -990,7 +1344,9 @@ def get_weather():
         "pm25": pm25,
         "pm10": pm10,
         "recommendation_message": recommendation_message,
-    }), 200
+    }
+    current_app.logger.info(f"✅ [Weather API] 최종 응답 데이터: {response_data}")
+    return jsonify(response_data), 200
 
 
 @recommend_bp.route("/unused-notification", methods=["GET"])
@@ -1017,7 +1373,15 @@ def get_unused_notification():
     # 현재 날짜 기준으로 이번 달 계산
     now = datetime.now()
     current_month_start = date(now.year, now.month, 1)
-    current_month_end = date(now.year, now.month + 1, 1) - timedelta(days=1) if now.month < 12 else date(now.year + 1, 1, 1) - timedelta(days=1)
+    if now.month < 12:
+        current_month_end = date(now.year, now.month + 1, 1) - timedelta(days=1)
+    else:
+        current_month_end = date(now.year + 1, 1, 1) - timedelta(days=1)
+    
+    # 디버깅: 날짜 범위 확인
+    current_app.logger.info(f"🔍 [UnusedNotification] 현재 시간: {now}")
+    current_app.logger.info(f"🔍 [UnusedNotification] 이번 달 시작: {current_month_start}")
+    current_app.logger.info(f"🔍 [UnusedNotification] 이번 달 종료: {current_month_end}")
     
     # 활성화된 루틴 중에서 주기적으로 실행해야 하는 루틴 찾기 (WEEKLY, MONTHLY 등)
     routines = Routine.query.filter_by(
@@ -1030,36 +1394,138 @@ def get_unused_notification():
     notifications = []
     
     for routine in routines:
-        # 이번 달 실행 횟수 계산
+        # 이번 달 실행 횟수 계산 (status는 숫자로 저장됨: 2=완료)
+        # 디버깅: 실제 쿼리 조건 확인
+        current_app.logger.info(f"🔍 [UnusedNotification] 루틴 ID={routine.id}, 이름={routine.name}")
+        current_app.logger.info(f"🔍 [UnusedNotification] 날짜 범위: {current_month_start} ~ {current_month_end}")
+        
+        # 이번 달 범위의 실행 기록만 확인
+        month_start_dt = datetime.combine(current_month_start, time.min)
+        month_end_dt = datetime.combine(current_month_end, time.max)
+        
+        current_app.logger.info(f"🔍 [UnusedNotification] 쿼리 조건:")
+        current_app.logger.info(f"  - user_id={user_id}")
+        current_app.logger.info(f"  - routine_id={routine.id}")
+        current_app.logger.info(f"  - status=2")
+        current_app.logger.info(f"  - start_time >= {month_start_dt}")
+        current_app.logger.info(f"  - start_time <= {month_end_dt}")
+        
+        # SQLAlchemy 세션 새로고침 (캐시 무효화)
+        db.session.expire_all()
+        
+        # 인덱스를 활용한 COUNT 쿼리 (성능 최적화 및 정확성 보장)
+        # idx_exec_goal 인덱스 (user_id, routine_id, start_time, status) 활용
         executions_this_month = RoutineExecution.query.filter(
             RoutineExecution.user_id == user_id,
             RoutineExecution.routine_id == routine.id,
-            RoutineExecution.status == 'COMPLETED',
-            RoutineExecution.start_time >= datetime.combine(current_month_start, time.min),
-            RoutineExecution.start_time <= datetime.combine(current_month_end, time.max)
+            RoutineExecution.status == 2,
+            RoutineExecution.start_time >= month_start_dt,
+            RoutineExecution.start_time <= month_end_dt
         ).count()
         
-        # 예상 실행 횟수 계산
+        current_app.logger.info(f"🔍 [UnusedNotification] 이번 달 실행 횟수 (인덱스 기반 COUNT): {executions_this_month}")
+        
+        # 디버깅용: 실제 레코드도 확인 (인덱스와 일치하는지 검증)
+        if executions_this_month > 0:
+            matching_executions = RoutineExecution.query.filter(
+                RoutineExecution.user_id == user_id,
+                RoutineExecution.routine_id == routine.id,
+                RoutineExecution.status == 2,
+                RoutineExecution.start_time >= month_start_dt,
+                RoutineExecution.start_time <= month_end_dt
+            ).all()
+            current_app.logger.info(f"🔍 [UnusedNotification] 매칭된 실행 기록 수: {len(matching_executions)}")
+            for exec in matching_executions:
+                current_app.logger.info(f"  - 매칭된 기록: id={exec.id}, status={exec.status}, start_time={exec.start_time}")
+        
+        # 예상 실행 횟수 계산 (schedule_frequency 고려)
         expected_count = 0
+        
+        # DB에서 직접 schedule_frequency 값을 확인 (SQLAlchemy 캐시 문제 방지)
+        try:
+            raw_result = db.session.execute(
+                text("SELECT SCHEDULE_FREQUENCY FROM ROUTINES WHERE ID = :routine_id"),
+                {"routine_id": routine.id}
+            ).fetchone()
+            db_schedule_frequency = raw_result[0] if raw_result else None
+            current_app.logger.info(f"🔍 [UnusedNotification] DB에서 직접 읽은 schedule_frequency: {db_schedule_frequency} (타입: {type(db_schedule_frequency)})")
+        except Exception as e:
+            current_app.logger.error(f"❌ [UnusedNotification] DB 직접 조회 실패: {e}")
+            db_schedule_frequency = None
+        
+        # schedule_frequency가 None이거나 0이면 기본값 1, 그 외에는 실제 값 사용
+        # DB에서 직접 읽은 값을 우선 사용, 없으면 ORM 객체의 값 사용
+        if db_schedule_frequency is not None and db_schedule_frequency > 0:
+            schedule_frequency = int(db_schedule_frequency)
+        elif routine.schedule_frequency is not None and routine.schedule_frequency > 0:
+            schedule_frequency = routine.schedule_frequency
+        else:
+            schedule_frequency = 1
+        
+        # 디버깅: schedule_frequency 확인 (더 자세한 정보)
+        current_app.logger.info(f"🔍 [UnusedNotification] 루틴 ID={routine.id}, 이름={routine.name}")
+        current_app.logger.info(f"🔍 [UnusedNotification] schedule_type={routine.schedule_type}")
+        current_app.logger.info(f"🔍 [UnusedNotification] ORM 객체의 schedule_frequency={routine.schedule_frequency} (타입: {type(routine.schedule_frequency)})")
+        current_app.logger.info(f"🔍 [UnusedNotification] DB에서 직접 읽은 schedule_frequency={db_schedule_frequency}")
+        current_app.logger.info(f"🔍 [UnusedNotification] 최종 계산된 schedule_frequency={schedule_frequency}")
+        
+        # 실행 횟수와 메시지 계산
+        executions_count = 0
+        time_period = ""
         if routine.schedule_type == 'WEEKLY':
-            # 주 1회이면 이번 달에 약 4-5회
-            days_in_month = (current_month_end - current_month_start).days + 1
-            expected_count = max(1, days_in_month // 7)
+            # 주 N회이면 이번 주 실행 횟수 계산
+            # 이번 주의 시작일 (월요일)과 종료일 (일요일) 계산
+            today = now.date()
+            days_since_monday = today.weekday() - 1  # 월요일이 0
+            week_start = today - timedelta(days=days_since_monday)
+            week_end = week_start + timedelta(days=6)
+            
+            week_start_dt = datetime.combine(week_start, time.min)
+            week_end_dt = datetime.combine(week_end, time.max)
+            
+            # 이번 주 실행 횟수 계산
+            executions_count = RoutineExecution.query.filter(
+                RoutineExecution.user_id == user_id,
+                RoutineExecution.routine_id == routine.id,
+                RoutineExecution.status == 2,
+                RoutineExecution.start_time >= week_start_dt,
+                RoutineExecution.start_time <= week_end_dt
+            ).count()
+            
+            expected_count = schedule_frequency  # 주당 횟수
+            time_period = "이번 주에"
+            # 디버깅: 주 단위 계산 결과 확인
+            current_app.logger.info(f"🔍 [UnusedNotification] WEEKLY 루틴 - 이번 주 범위: {week_start} ~ {week_end}, executions_count={executions_count}, expected_count={expected_count}")
         elif routine.schedule_type == 'MONTHLY':
-            # 월 1회이면 이번 달에 1회
-            expected_count = 1
+            # 월 N회이면 이번 달 실행 횟수 계산
+            executions_count = executions_this_month
+            expected_count = schedule_frequency
+            time_period = "이번달에"
+        elif routine.schedule_type == 'DAILY':
+            # 일 N회이면 이번 달 실행 횟수 계산
+            executions_count = executions_this_month
+            days_in_month = (current_month_end - current_month_start).days + 1
+            expected_count = days_in_month * schedule_frequency
+            time_period = "이번달에"
+        else:
+            # 기타 타입은 기본값
+            executions_count = executions_this_month
+            expected_count = schedule_frequency
+            time_period = "이번달에"
         
         # 실행 횟수가 부족한 경우 알림 생성
-        if executions_this_month < expected_count:
-            remaining = expected_count - executions_this_month
+        if executions_count < expected_count:
+            remaining = expected_count - executions_count
             routine_name = normalize_routine_name(routine.name)
             
             # 루틴 타입에 따라 메시지 생성
             if '세탁기' in routine_name or 'washing' in routine_name.lower() or '세탁' in routine_name:
-                first_line = f"이번달에 {routine_name}을(를) {executions_this_month}번밖에 안돌렸어요."
+                particle = get_korean_object_particle(routine_name)
+                first_line = f"{time_period} {routine_name}{particle} {executions_count}번 돌렸어요."
                 second_line = f"{remaining}번 더 돌리셔야해요. 지금 돌리실건가요?"
             else:
-                first_line = f"이번달에 {routine_name}을(를) {executions_this_month}번밖에 안하셨어요."
+                particle = get_korean_object_particle(routine_name)
+                first_line = f"{time_period} {routine_name}{particle} {executions_count}번 하셨어요."
                 second_line = f"{remaining}번 더 하셔야해요. 지금 하실건가요?"
             
             notifications.append({
@@ -1072,25 +1538,203 @@ def get_unused_notification():
                 "second_line": second_line,
             })
     
-    # 가장 부족한 루틴 하나만 반환 (또는 여러 개 반환 가능)
+    # 우선순위 점수 계산하여 가장 적절한 루틴 선택
     if notifications:
-        # remaining이 가장 큰 것부터 정렬
-        notifications.sort(key=lambda x: x["remaining"], reverse=True)
+        # ML 모델이 로드되어 있는지 확인
+        model = current_app.model  # type: ignore
+        feature_cols = current_app.feature_cols  # type: ignore
+        
+        if model is not None and feature_cols is not None:
+            # 우선순위 점수 계산을 위한 데이터 준비
+            now = datetime.now()
+            exec_hour = now.hour
+            exec_dow = now.weekday()
+            
+            # 날씨 정보 가져오기
+            today = now.date()
+            weather = WeatherInfo.query.filter_by(date=today).first()
+            temp = float(weather.temperature) if weather and weather.temperature else 20.0
+            humi = float(weather.humidity) if weather and weather.humidity else 60.0
+            weather_code = encode_weather(weather.weather) if weather and weather.weather is not None else 0
+            pm25 = float(weather.pm25) if weather and weather.pm25 else 40.0
+            pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
+            
+            # 알림 후보 루틴들의 ID 리스트
+            notification_routine_ids = [n["routine_id"] for n in notifications]
+            
+            # 최근 실행 기록 조회
+            last_logs_query = (
+                db.session.query(
+                    RoutineExecution.routine_id,
+                    RoutineExecution.run_time,
+                    RoutineExecution.recommended_flag,
+                    func.row_number()
+                    .over(
+                        partition_by=RoutineExecution.routine_id,
+                        order_by=RoutineExecution.start_time.desc()
+                    )
+                    .label('rn')
+                )
+                .filter(
+                    RoutineExecution.user_id == user_id,
+                    RoutineExecution.routine_id.in_(notification_routine_ids)
+                )
+                .subquery()
+            )
+            
+            last_logs_map = {}
+            if notification_routine_ids:
+                last_logs = (
+                    db.session.query(last_logs_query)
+                    .filter(last_logs_query.c.rn == 1)
+                    .all()
+                )
+                for log in last_logs:
+                    last_logs_map[log.routine_id] = {
+                        'run_time': log.run_time,
+                        'recommended_flag': log.recommended_flag
+                    }
+            
+            # 우선순위 점수 계산을 위한 데이터 준비
+            rows = []
+            routine_id_to_notification = {n["routine_id"]: n for n in notifications}
+            
+            for routine_id, notification in routine_id_to_notification.items():
+                routine = next((r for r in routines if r.id == routine_id), None)
+                if not routine:
+                    continue
+                
+                rt = encode_routine_type(routine.routine_type)
+                st = encode_schedule_type(routine.schedule_type)
+                preferred_hour = parse_preferred_time(routine.preferred_time)
+                
+                last_log = last_logs_map.get(routine.id)
+                if last_log:
+                    run_time = int(last_log['run_time'] or routine.run_minutes or 30)
+                    recommended_flag = int(bool(last_log['recommended_flag']))
+                else:
+                    run_time = int(routine.run_minutes or 30)
+                    recommended_flag = 0
+                
+                rows.append({
+                    "ROUTINE_ID": routine.id,
+                    "ROUTINE_NAME": routine.name,
+                    "ROUTINE_TYPE": rt,
+                    "SCHEDULE_TYPE": st,
+                    "PREFERRED_TIME": preferred_hour,
+                    "RUN_TIME": run_time,
+                    "EXEC_HOUR": exec_hour,
+                    "EXEC_DOW": exec_dow,
+                    "RUN_MINUTES": int(routine.run_minutes or 30),
+                    "RECOMMENDED_FLAG": recommended_flag,
+                    "TEMPERATURE": temp,
+                    "HUMIDITY": humi,
+                    "WEATHER": weather_code,
+                    "PM25": pm25,
+                    "PM10": pm10,
+                })
+            
+            # 우선순위 점수 계산
+            if rows:
+                df = pd.DataFrame(rows)
+                missing = [c for c in feature_cols if c not in df.columns]
+                if not missing:
+                    X = df[feature_cols]
+                    preds = model.predict(X)
+                    df["pred_priority_score"] = preds
+                    
+                    # 루틴 ID와 우선순위 점수 매핑
+                    routine_id_to_priority = dict(zip(df["ROUTINE_ID"], df["pred_priority_score"]))
+                    
+                    # 각 알림에 우선순위 점수 추가
+                    for notification in notifications:
+                        routine_id = notification["routine_id"]
+                        notification["priority_score"] = float(routine_id_to_priority.get(routine_id, 0.0))
+                    
+                    # 우선순위 점수가 높은 것부터 정렬, 같은 점수면 remaining이 큰 것부터
+                    notifications.sort(key=lambda x: (x.get("priority_score", 0.0), x["remaining"]), reverse=True)
+                    
+                    current_app.logger.info(f"🔍 [UnusedNotification] 우선순위 점수 계산 완료:")
+                    for i, notif in enumerate(notifications):
+                        current_app.logger.info(f"  {i+1}. {notif['routine_name']}: 우선순위={notif.get('priority_score', 0.0):.2f}, 실행={notif['executions_this_month']}/{notif['expected_count']}, 부족={notif['remaining']}회")
+                else:
+                    # feature가 없으면 remaining 기준으로 정렬
+                    current_app.logger.warning(f"⚠️ [UnusedNotification] ML 모델 feature 누락: {missing}, remaining 기준으로 정렬")
+                    notifications.sort(key=lambda x: x["remaining"], reverse=True)
+            else:
+                # rows가 없으면 remaining 기준으로 정렬
+                notifications.sort(key=lambda x: x["remaining"], reverse=True)
+        else:
+            # ML 모델이 없으면 remaining 기준으로 정렬
+            current_app.logger.warning(f"⚠️ [UnusedNotification] ML 모델이 로드되지 않음, remaining 기준으로 정렬")
+            notifications.sort(key=lambda x: x["remaining"], reverse=True)
+        
+        selected_notification = notifications[0]  # 가장 우선순위가 높은 루틴 반환
+        current_app.logger.info(f"✅ [UnusedNotification] 선택된 알림: {selected_notification['routine_name']} (우선순위: {selected_notification.get('priority_score', 0.0):.2f}, 부족: {selected_notification['remaining']}회)")
+        
         return jsonify({
             "has_notification": True,
-            "notification": notifications[0]  # 가장 부족한 루틴 하나만 반환
+            "notification": selected_notification
         }), 200
     else:
+        # 알림이 없는 이유 로깅 및 상세 정보 반환
+        current_app.logger.info(f"🔍 [UnusedNotification] 알림 없음 - 확인된 루틴 수: {len(routines)}")
+        reason = ""
+        routine_details = []
+        
+        if not routines:
+            reason = "WEEKLY/MONTHLY 타입의 활성 루틴이 없습니다"
+            current_app.logger.info(f"  - 이유: {reason}")
+        else:
+            reason = "모든 루틴이 예상 횟수를 채웠거나 초과했습니다"
+            current_app.logger.info(f"  - 이유: {reason}")
+            for routine in routines:
+                # 각 루틴의 실행 횟수와 예상 횟수 계산
+                if routine.schedule_type == 'WEEKLY':
+                    today = now.date()
+                    days_since_monday = today.weekday() - 1
+                    week_start = today - timedelta(days=days_since_monday)
+                    week_end = week_start + timedelta(days=6)
+                    week_start_dt = datetime.combine(week_start, time.min)
+                    week_end_dt = datetime.combine(week_end, time.max)
+                    executions_count = RoutineExecution.query.filter(
+                        RoutineExecution.user_id == user_id,
+                        RoutineExecution.routine_id == routine.id,
+                        RoutineExecution.status == 2,
+                        RoutineExecution.start_time >= week_start_dt,
+                        RoutineExecution.start_time <= week_end_dt
+                    ).count()
+                    expected_count = routine.schedule_frequency if routine.schedule_frequency else 1
+                    time_period = "이번 주"
+                else:  # MONTHLY
+                    executions_count = executions_this_month
+                    expected_count = routine.schedule_frequency if routine.schedule_frequency else 1
+                    time_period = "이번 달"
+                
+                routine_details.append({
+                    "routine_id": routine.id,
+                    "routine_name": routine.name,
+                    "schedule_type": routine.schedule_type,
+                    "schedule_frequency": routine.schedule_frequency,
+                    "executions_count": executions_count,
+                    "expected_count": expected_count,
+                    "time_period": time_period
+                })
+                current_app.logger.info(f"    - {routine.name} (ID={routine.id}): {time_period} {executions_count}/{expected_count}회")
+        
         return jsonify({
             "has_notification": False,
-            "notification": None
+            "notification": None,
+            "reason": reason,
+            "routines_checked": len(routines),
+            "routine_details": routine_details
         }), 200
 
 
 @recommend_bp.route("/robot-cleaner-notification", methods=["GET"])
 def get_robot_cleaner_notification():
     """
-    로봇청소기 알림 정보 반환
+    건조기 알림 정보 반환
     오늘 예상 실행 시간(preferred_time)이 지났는데 아직 실행되지 않은 경우 알림
     GET /api/recommend/robot-cleaner-notification?user_id=1
     """
@@ -1109,16 +1753,15 @@ def get_robot_cleaner_notification():
     if not user:
         return jsonify({"error": "user not found"}), 404
     
-    # 로봇청소기 루틴 찾기
+    # 건조기 루틴 찾기
     robot_cleaner_routine = Routine.query.filter_by(
         user_id=user_id,
         is_active=True
     ).filter(
         or_(
-            Routine.name.like('%로봇청소기%'),
-            Routine.name.like('%robot%'),
-            Routine.name.like('%청소기%'),
-            Routine.name.like('%cleaner%')
+            Routine.name.like('%건조기%'),
+            Routine.name.like('%dryer%'),
+            Routine.name.like('%DRYER%')
         )
     ).first()
     
@@ -1177,7 +1820,7 @@ def get_robot_cleaner_notification():
     today_execution = RoutineExecution.query.filter(
         RoutineExecution.user_id == user_id,
         RoutineExecution.routine_id == robot_cleaner_routine.id,
-        RoutineExecution.status == 2,  # 완료 상태
+        RoutineExecution.status == 2,  # 완료 상태 (숫자)
         RoutineExecution.start_time >= today_start,
         RoutineExecution.start_time < today_end
     ).first()
@@ -1195,9 +1838,9 @@ def get_robot_cleaner_notification():
     minutes_passed = time_passed_minutes % 60
     
     if hours_passed > 0:
-        message = f'로봇청소기 실행 시간이 {hours_passed}시간 지났어요.\n깨끗한 집을 위해 지금 실행시켜주세요'
+        message = f'건조기 실행 시간이 {hours_passed}시간 지났어요.\n지금 안돌리면 입을 옷이 없어요'
     else:
-        message = f'로봇청소기 실행 시간이 {minutes_passed}분 지났어요.\n깨끗한 집을 위해 지금 실행시켜주세요'
+        message = f'건조기 실행 시간이 {minutes_passed}분 지났어요.\n지금 안돌리면 입을 옷이 없어요'
     
     return jsonify({
         "has_notification": True,
@@ -1241,6 +1884,9 @@ def get_dashboard():
       }
     }
     """
+    import time as time_module
+    start_time = time_module.time()
+    
     user_id = request.args.get("user_id", type=int)
     if not user_id:
         return jsonify({"error": "user_id is required"}), 400
@@ -1256,49 +1902,40 @@ def get_dashboard():
         next_month_dt = datetime(year + 1, 1, 1)
     else:
         next_month_dt = datetime(year, month + 1, 1)
+    
+    current_app.logger.info(f"[DASHBOARD] 시작: user_id={user_id}, year={year}, month={month}")
 
     # -------------------------------
-    # 1) 월간 실행 로그 집계 (집계 쿼리로 최적화)
+    # 1) 월간 실행 로그 집계 (성능 최적화: 하나의 쿼리로 통합)
+    # CASE WHEN을 사용하여 인덱스를 한 번만 스캔하여 두 개의 COUNT를 계산
     # -------------------------------
-    from sqlalchemy import func
+    from sqlalchemy import func, case, or_, cast, String
     
-    # 한 번의 쿼리로 상태별 집계
-    status_counts_query = (
+    query_start = time_module.time()
+    status_counts = (
         db.session.query(
-            RoutineExecution.status,
-            func.count(RoutineExecution.id).label('count')
+            func.sum(case((RoutineExecution.status == 2, 1), else_=0)).label('completed'),
+            func.sum(case((RoutineExecution.status == 3, 1), else_=0)).label('failed')
         )
         .filter(
             RoutineExecution.user_id == user_id,
             RoutineExecution.start_time >= start_dt,
             RoutineExecution.start_time < next_month_dt,
+            RoutineExecution.status.in_([2, 3])  # 완료 또는 실패만 필터링 (숫자)
         )
-        .group_by(RoutineExecution.status)
-        .all()
+        .first()
     )
     
-    # 상태별 카운트 딕셔너리로 변환
-    status_counts = {status: count for status, count in status_counts_query}
+    completed_count = int(status_counts[0] or 0) if status_counts else 0
+    failed_count = int(status_counts[1] or 0) if status_counts else 0
     
-    # STATUS 정의: 0=PENDING, 1=RUNNING, 2=DONE, 3=FAILED
-    # status가 문자열 "2"이거나 숫자 2인 경우 모두 체크
-    completed_count = sum(
-        count for status, count in status_counts.items()
-        if status == 2 or str(status) == "2"
-    )
-    failed_count = sum(
-        count for status, count in status_counts.items()
-        if status == 3 or str(status) == "3"
-    )
+    current_app.logger.info(f"[DASHBOARD] 상태별 카운트 쿼리: {time_module.time() - query_start:.2f}초, completed={completed_count}, failed={failed_count}")
     
     # 미룬 루틴 수: PENDING 상태이면서 오늘 날짜가 지난 루틴
     # 또는 특정 규칙에 따라 계산 (현재는 0으로 설정, 필요시 로직 추가)
     postponed_count = 0
     
-    # 디버깅
-    current_app.logger.info(f"[DASHBOARD] user_id={user_id}, year={year}, month={month}")
-    current_app.logger.info(f"[DASHBOARD] 상태별 개수: {status_counts}")
-    current_app.logger.info(f"[DASHBOARD] 완료(DONE=2): {completed_count}, 실패(FAILED=3): {failed_count}")
+    # 성능 최적화: 불필요한 디버깅 로그 제거
 
     denom = completed_count + failed_count + postponed_count
     success_rate = (completed_count / denom) if denom > 0 else None
@@ -1325,27 +1962,8 @@ def get_dashboard():
     }
 
     # 습관 트래킹 설정( habit_goal_days )이 된 루틴 중 하나 선택
-    # SQLAlchemy 세션 새로고침 (DB 변경사항 반영)
-    db.session.expire_all()
-    
-    # 디버깅: DB에서 직접 쿼리로 확인
-    from sqlalchemy import text
-    direct_query = text("SELECT id, name, HABIT_GOAL_DAYS, HABIT_START_DATE, is_active FROM routines WHERE user_id = :user_id")
-    direct_results = db.session.execute(direct_query, {"user_id": user_id}).fetchall()
-    current_app.logger.info(f"[DASHBOARD] DB 직접 조회 결과:")
-    for row in direct_results:
-        current_app.logger.info(f"[DASHBOARD]   ID={row[0]}, name={row[1]}, HABIT_GOAL_DAYS={row[2]}, HABIT_START_DATE={row[3]}, is_active={row[4]}")
-    
-    # 디버깅: 모든 루틴 확인 (ORM)
-    all_routines_debug = Routine.query.filter_by(user_id=user_id).all()
-    current_app.logger.info(f"[DASHBOARD] user_id={user_id}의 전체 루틴 개수 (ORM): {len(all_routines_debug)}")
-    for r in all_routines_debug:
-        # 세션 새로고침
-        db.session.refresh(r)
-        current_app.logger.info(f"[DASHBOARD] 루틴 ID={r.id}, name={r.name}, is_active={r.is_active} (type: {type(r.is_active)}), habit_goal_days={r.habit_goal_days}, habit_start_date={r.habit_start_date}")
-    
-    # is_active 필터링: Boolean True 또는 숫자 1 모두 체크
-    # SQLAlchemy에서 Boolean 컬럼이 숫자로 저장될 수 있음
+    # 성능 최적화: 불필요한 디버깅 코드 제거 및 단일 쿼리로 최적화
+    query_start = time_module.time()
     from sqlalchemy import or_
     habit_routine = (
         Routine.query
@@ -1357,46 +1975,34 @@ def get_dashboard():
         .order_by(Routine.habit_start_date.asc().nulls_last())
         .first()
     )
-    
-    # 결과가 없으면 세션을 새로고침하고 다시 시도
-    if not habit_routine:
-        db.session.expire_all()
-        habit_routine = (
-            Routine.query
-            .filter(
-                Routine.user_id == user_id,
-                or_(Routine.is_active == True, Routine.is_active == 1),
-                Routine.habit_goal_days.isnot(None),
-            )
-            .order_by(Routine.habit_start_date.asc().nulls_last())
-            .first()
-        )
-    
-    current_app.logger.info(f"[DASHBOARD] 습관 루틴 찾기 결과: {habit_routine.id if habit_routine else 'None (습관 루틴 없음)'}")
-    if habit_routine:
-        current_app.logger.info(f"[DASHBOARD] 습관 루틴 상세: id={habit_routine.id}, name={habit_routine.name}, goal_days={habit_routine.habit_goal_days}, start_date={habit_routine.habit_start_date}, is_active={habit_routine.is_active}")
+    current_app.logger.info(f"[DASHBOARD] 습관 루틴 조회: {time_module.time() - query_start:.2f}초")
 
     if habit_routine and habit_routine.habit_goal_days:
         goal_days = int(habit_routine.habit_goal_days)
         # 시작일 없으면 월 시작일로 대체
         start_date = habit_routine.habit_start_date or start_dt.date()
         
-        current_app.logger.info(f"[DASHBOARD] 습관 루틴 처리 시작: id={habit_routine.id}, goal_days={goal_days}, start_date={start_date}")
-
-        # 해당 루틴의 완료 로그에서 "완료한 날짜 수" 계산
+        # 성능 최적화: 완료한 날짜 수 계산
+        # Oracle에서 날짜 추출이 복잡하므로, 최소한의 데이터만 가져와서 Python에서 처리
+        # start_time만 선택하여 네트워크 전송량 최소화
+        # 성능 최적화: LIMIT 추가 및 인덱스 활용
+        query_start = time_module.time()
         habit_logs = (
-            RoutineExecution.query
+            db.session.query(RoutineExecution.start_time)
             .filter(
                 RoutineExecution.user_id == user_id,
                 RoutineExecution.routine_id == habit_routine.id,
-                RoutineExecution.status == 2,  # DONE
+                RoutineExecution.status == 2,  # DONE (숫자)
                 RoutineExecution.start_time >= datetime.combine(start_date, time.min),
                 RoutineExecution.start_time < next_month_dt,
             )
+            .limit(100)  # 성능 최적화: 한 달에 100일 이상 완료는 불가능하므로 제한
             .all()
         )
-
-        done_dates = {log.start_time.date() for log in habit_logs if log.start_time}
+        current_app.logger.info(f"[DASHBOARD] 습관 로그 조회: {time_module.time() - query_start:.2f}초, 로그 수={len(habit_logs)}")
+        
+        # 날짜만 추출하여 중복 제거
+        done_dates = {log[0].date() for log in habit_logs if log[0]}
         done_days = len(done_dates)
         remaining_days = max(goal_days - done_days, 0)
         progress_rate = (done_days / goal_days) if goal_days > 0 else None
@@ -1428,7 +2034,8 @@ def get_dashboard():
         "habit": habit_info,
     }
     
-    current_app.logger.info(f"[DASHBOARD] 최종 응답 데이터: habit.enabled={habit_info['enabled']}, habit.display_name={habit_info['display_name']}")
+    total_time = time_module.time() - start_time
+    current_app.logger.info(f"[DASHBOARD] 전체 처리 시간: {total_time:.2f}초")
     
     return jsonify(response_data)
 

@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import '../components/app_colors.dart';
 import '../components/app_text_styles.dart';
 import '../components/bottom_navigation.dart';
+import '../Services/config.dart';
+import '../Services/routine_service.dart';
+import 'push_screen.dart';
 
 class WashPushScreen extends StatefulWidget {
   const WashPushScreen({super.key});
@@ -13,30 +20,13 @@ class WashPushScreen extends StatefulWidget {
 class _WashPushScreenState extends State<WashPushScreen> {
   bool _isPopupClosed = false;
   bool _isSkipped = false; // 오늘 건너뛰기 여부
-  String _bannerMessage = '이번 주 세탁기를 2회만 사용하셨네요.\n목표까지 2회 더 사용해야 해요.'; // 배너 메시지
-  List<Map<String, dynamic>> _allRoutines = [
-    {
-      'key': ValueKey('washer'),
-      'title': '세탁기 돌리기',
-      'time': '2/4',
-      'imagePath': 'assets/priority_screen/washing.png',
-      'orderNumber': 1,
-    },
-    {
-      'key': ValueKey('robot'),
-      'title': '로봇청소기 물청소하기',
-      'time': '13:00(화, 목)',
-      'imagePath': 'assets/priority_screen/robot.png',
-      'orderNumber': 2,
-    },
-    {
-      'key': ValueKey('dryer'),
-      'title': '건조기 돌리기',
-      'time': '2/4',
-      'imagePath': 'assets/priority_screen/washing.png',
-      'orderNumber': 3,
-    },
-  ];
+  String? _notificationFirstLine; // DB에서 가져온 첫 번째 줄
+  String? _notificationSecondLine; // DB에서 가져온 두 번째 줄
+  String? _routineName; // DB에서 가져온 루틴 이름
+  bool _isLoadingNotification = true; // 알림 로딩 상태
+  List<Map<String, dynamic>> _allRoutines = []; // DB에서 가져온 루틴 리스트
+  bool _isLoadingRoutines = false; // 루틴 로딩 상태
+  String? _weatherMessage; // 날씨 정보 메시지
 
   static const _cardShadow = BoxShadow(
     color: Color(0x0F222C5C),
@@ -85,16 +75,261 @@ class _WashPushScreenState extends State<WashPushScreen> {
     height: 1.43,
   );
 
+  // API 베이스 URL
+  static String get baseUrl {
+    return ApiConfig.getBaseUrl(
+      isWeb: kIsWeb,
+      isAndroid: !kIsWeb && Platform.isAndroid,
+      isIOS: !kIsWeb && Platform.isIOS,
+    );
+  }
+
+  static const int userId = 1;
+
   @override
   void initState() {
     super.initState();
-    // 화면이 열리면 팝업 표시
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showWasherPopup(context);
+    // DB에서 미사용 알림 데이터 가져오기
+    _loadUnusedNotification();
+    // DB에서 루틴 데이터 가져오기
+    _loadAllRoutines();
+    // 날씨 정보 가져오기
+    _loadWeatherInfo();
+  }
+
+  Future<void> _loadAllRoutines() async {
+    setState(() {
+      _isLoadingRoutines = true;
     });
+
+    try {
+      final allRoutines = await RoutineService.getAllRoutines();
+
+      if (mounted) {
+        setState(() {
+          // DB에서 가져온 루틴을 화면 표시 형식으로 변환
+          _allRoutines = allRoutines.asMap().entries.map((entry) {
+            final routine = entry.value;
+            return {
+              'key': ValueKey('routine_${routine.id}'),
+              'title': routine.name,
+              'time': routine.getTimeDisplay(),
+              'imagePath': _getImagePath(routine.routineType),
+              'orderNumber': entry.key + 1,
+              'routineId': routine.id,
+            };
+          }).toList();
+          _isLoadingRoutines = false;
+        });
+      }
+    } catch (e) {
+      print('[WashPushScreen] 루틴 로딩 실패: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingRoutines = false;
+        });
+      }
+    }
+  }
+
+  // 루틴 타입에 따른 이미지 경로 반환
+  String _getImagePath(String routineType) {
+    final type = routineType.toUpperCase();
+    if (type.contains('LAUNDRY') || type.contains('WASH')) {
+      return 'assets/priority_screen/washing.png';
+    } else if (type.contains('ROBOT') || type.contains('CLEANER')) {
+      return 'assets/priority_screen/robot.png';
+    } else if (type.contains('CLEANING')) {
+      return 'assets/priority_screen/robot.png';
+    } else {
+      return 'assets/priority_screen/washing.png'; // 기본값
+    }
+  }
+
+  Future<void> _loadUnusedNotification() async {
+    try {
+      List<String> urlsToTry = [baseUrl];
+      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+        urlsToTry = ApiConfig.getAndroidBaseUrls();
+      }
+
+      // 병렬로 여러 URL 시도
+      final futures = urlsToTry.map((url) async {
+        try {
+          final uri = Uri.parse(
+            '$url/recommend/unused-notification',
+          ).replace(queryParameters: {'user_id': userId.toString()});
+          final response = await http
+              .get(
+                uri,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+              )
+              .timeout(
+                const Duration(seconds: 120), // 실제 기기 네트워크 고려하여 120초로 증가
+                onTimeout: () {
+                  throw Exception('요청 시간 초과');
+                },
+              );
+
+          if (response.statusCode == 200) {
+            final data =
+                jsonDecode(utf8.decode(response.bodyBytes))
+                    as Map<String, dynamic>;
+            return data;
+          }
+          return null;
+        } catch (e) {
+          print('[WashPushScreen] 미사용 알림 로딩 실패 ($url): $e');
+          return null;
+        }
+      });
+
+      // 첫 번째 성공한 응답 사용
+      final results = await Future.wait(futures);
+      Map<String, dynamic>? data;
+      try {
+        data = results.firstWhere((result) => result != null);
+      } catch (e) {
+        // 모든 URL이 실패한 경우
+        data = null;
+      }
+
+      if (data != null && mounted) {
+        final hasNotification = data['has_notification'] as bool? ?? false;
+
+        if (hasNotification) {
+          final notification = data['notification'] as Map<String, dynamic>?;
+          if (notification != null) {
+            setState(() {
+              _notificationFirstLine = notification['first_line'] as String?;
+              _notificationSecondLine = notification['second_line'] as String?;
+              _routineName = notification['routine_name'] as String?;
+              _isLoadingNotification = false;
+            });
+            // 알림 데이터를 가져온 후 팝업 표시
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showWasherPopup(context);
+            });
+            return;
+          }
+        }
+      }
+
+      // 알림이 없거나 데이터를 가져오지 못한 경우 기본값 사용
+      if (mounted) {
+        setState(() {
+          _isLoadingNotification = false;
+          // 기본값은 null로 두고, 팝업은 표시하지 않음
+        });
+      }
+    } catch (e) {
+      print('[WashPushScreen] 미사용 알림 로딩 실패: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingNotification = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadWeatherInfo() async {
+    try {
+      // 날씨 정보 API 호출
+      List<String> urlsToTry = [baseUrl];
+      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+        urlsToTry = ApiConfig.getAndroidBaseUrls();
+      }
+
+      String? weatherMessage;
+      print('[WashPushScreen] 날씨 정보 로딩 시작: ${urlsToTry.length}개 URL');
+      for (int i = 0; i < urlsToTry.length; i++) {
+        final url = urlsToTry[i];
+        print('[WashPushScreen] 날씨 정보 시도 ${i + 1}/${urlsToTry.length}: $url');
+        try {
+          final uri = Uri.parse('$url/recommend/weather?user_id=$userId');
+          print('[WashPushScreen] 날씨 정보 API 호출: $uri');
+          final response = await http
+              .get(
+                uri,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+              )
+              .timeout(
+                const Duration(seconds: 10),
+                onTimeout: () {
+                  throw Exception('요청 시간 초과');
+                },
+              );
+
+          print('[WashPushScreen] 날씨 정보 API 응답: statusCode=${response.statusCode}');
+          if (response.statusCode == 200) {
+            try {
+              final data =
+                  jsonDecode(utf8.decode(response.bodyBytes))
+                      as Map<String, dynamic>;
+              final recommendationMessage =
+                  data['recommendation_message'] as String?;
+              if (recommendationMessage != null &&
+                  recommendationMessage.isNotEmpty) {
+                weatherMessage = recommendationMessage;
+              } else {
+                // 날씨 정보는 있지만 추천 메시지가 없는 경우
+                final weatherLabel = data['weather_label'] as String? ?? '맑음';
+                weatherMessage = '오늘 날씨는 $weatherLabel이에요.';
+              }
+              print('[WashPushScreen] 날씨 정보 로딩 성공: $url, weather_label=${data['weather_label']}, recommendation_message=$recommendationMessage');
+              break; // 성공하면 종료
+            } catch (parseError) {
+              print('[WashPushScreen] 날씨 정보 JSON 파싱 실패: $parseError');
+              print('[WashPushScreen] 응답 본문: ${response.body}');
+              continue;
+            }
+          } else {
+            // HTTP 에러
+            print(
+              '[WashPushScreen] 날씨 정보 HTTP 에러 ($url): statusCode=${response.statusCode}, body=${response.body}',
+            );
+            continue;
+          }
+        } catch (e, stackTrace) {
+          // 모든 URL 시도 실패 시 로그 출력
+          print('[WashPushScreen] 날씨 정보 로딩 실패 ($url): $e');
+          print('[WashPushScreen] 스택 트레이스: $stackTrace');
+          if (i == urlsToTry.length - 1) {
+            // 마지막 URL도 실패
+            print('[WashPushScreen] 날씨 정보 로딩 실패 - 모든 URL 시도 완료');
+          }
+          continue;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _weatherMessage = weatherMessage;
+        });
+      }
+    } catch (e) {
+      // 날씨 정보 로딩 실패 시 로그 출력
+      print('[WashPushScreen] 날씨 정보 로딩 중 예외 발생: $e');
+      if (mounted) {
+        setState(() {
+          _weatherMessage = null;
+        });
+      }
+    }
   }
 
   void _showWasherPopup(BuildContext context) {
+    // 알림 데이터가 없으면 팝업 표시 안 함
+    if (_notificationFirstLine == null || _notificationSecondLine == null) {
+      return;
+    }
+
     String? selectedButton;
 
     showDialog(
@@ -116,9 +351,9 @@ class _WashPushScreenState extends State<WashPushScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      '세탁기 알림',
-                      style: TextStyle(
+                    Text(
+                      '${_routineName ?? '세탁기'} 알림',
+                      style: const TextStyle(
                         fontSize: 20,
                         fontFamily: 'LG Smart_H',
                         fontWeight: FontWeight.w600,
@@ -126,15 +361,57 @@ class _WashPushScreenState extends State<WashPushScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
-                      '이번 주 세탁기를 2회만 사용하셨네요.\n목표까지 2회 더 사용해야 해요.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontFamily: 'LG Smart_H',
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF111111),
-                      ),
+                    Column(
+                      children: [
+                        Text(
+                          _notificationFirstLine ?? '',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'LG Smart_H',
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF111111),
+                            height: 1.3,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _notificationSecondLine ?? '',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'LG Smart_H',
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF111111),
+                            height: 1.3,
+                          ),
+                        ),
+                        // 날씨 정보 표시
+                        if (_weatherMessage != null && _weatherMessage!.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8E9F0),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _weatherMessage!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontFamily: 'LG Smart_H',
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF4B57BB),
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 24),
                     Row(
@@ -157,7 +434,6 @@ class _WashPushScreenState extends State<WashPushScreen> {
                                     Navigator.of(context).pop();
                                     setState(() {
                                       _isPopupClosed = true;
-                                      _bannerMessage = '목표까지 1회 남았습니다!';
                                     });
                                   }
                                 },
@@ -204,13 +480,14 @@ class _WashPushScreenState extends State<WashPushScreen> {
                                 const Duration(milliseconds: 300),
                                 () {
                                   if (context.mounted) {
-                                    Navigator.of(context).pop();
-                                    setState(() {
-                                      _isPopupClosed = true;
-                                      _isSkipped = true; // 오늘 건너뛰기 선택
-                                      _bannerMessage =
-                                          '건너뛰기를 선택하셨으니\n해당 루틴은 재알림드리도록 하겠습니다.';
-                                    });
+                                    Navigator.of(context).pop(); // 팝업 닫기
+                                    // push_screen으로 이동
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const PushScreen(),
+                                      ),
+                                    );
                                   }
                                 },
                               );
@@ -340,13 +617,31 @@ class _WashPushScreenState extends State<WashPushScreen> {
                                           fontSize: 20,
                                         ),
                                       ),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        _bannerMessage,
-                                        style: _bannerTextStyle.copyWith(
-                                          fontSize: 13,
-                                        ),
-                                      ),
+                                       const SizedBox(height: 12),
+                                       if (_notificationFirstLine != null && _notificationSecondLine != null) ...[
+                                         Text(
+                                           _notificationFirstLine!,
+                                           style: _bannerTextStyle.copyWith(
+                                             fontSize: 11,
+                                             height: 1.3,
+                                           ),
+                                         ),
+                                         const SizedBox(height: 4),
+                                         Text(
+                                           _notificationSecondLine!,
+                                           style: _bannerTextStyle.copyWith(
+                                             fontSize: 11,
+                                             height: 1.3,
+                                           ),
+                                         ),
+                                       ] else
+                                         Text(
+                                           '선택한 루틴을 확인해주세요',
+                                           style: _bannerTextStyle.copyWith(
+                                             fontSize: 11,
+                                             height: 1.3,
+                                           ),
+                                         ),
                                     ],
                                   ),
                                 ),
@@ -387,19 +682,34 @@ class _WashPushScreenState extends State<WashPushScreen> {
                       constraints: BoxConstraints(
                         maxHeight: MediaQuery.of(context).size.height * 0.5,
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 20,
-                        ),
-                        child: Builder(
-                          builder: (context) {
-                            // 오늘 건너뛰기를 눌렀으면 세탁기 돌리기 제거
-                            final filteredRoutines = _isSkipped
-                                ? _allRoutines
-                                      .where((r) => r['title'] != '세탁기 돌리기')
-                                      .toList()
-                                : List<Map<String, dynamic>>.from(_allRoutines);
+                      child: _isLoadingRoutines
+                          ? const Center(child: CircularProgressIndicator())
+                          : Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 20,
+                              ),
+                              child: Builder(
+                                builder: (context) {
+                                  // 오늘 건너뛰기를 눌렀으면 해당 루틴 제거
+                                  List<Map<String, dynamic>> filteredRoutines;
+                                  if (_isSkipped && _routineName != null) {
+                                    // 건너뛴 루틴 이름과 일치하는 루틴 제거
+                                    filteredRoutines = _allRoutines
+                                        .where((r) => r['title'] != _routineName)
+                                        .toList();
+                                  } else {
+                                    filteredRoutines = List<Map<String, dynamic>>.from(_allRoutines);
+                                  }
+
+                                  if (filteredRoutines.isEmpty) {
+                                    return Center(
+                                      child: Text(
+                                        '표시할 루틴이 없습니다',
+                                        style: AppTextStyles.todoCategory(context),
+                                      ),
+                                    );
+                                  }
 
                             // 순서 번호 재정렬
                             final routinesWithOrder = filteredRoutines

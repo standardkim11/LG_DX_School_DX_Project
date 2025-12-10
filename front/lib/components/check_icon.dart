@@ -22,12 +22,21 @@ class CheckIcon extends StatelessWidget {
             width: 1,
             color: type == 'done'
                 ? const Color(0xFFE6E6E6) // 체크됨: 회색
+                : type == 'failed'
+                ? Colors
+                      .red // 실패: 빨간색
                 : const Color(0xFF4B57BB), // 체크 안됨: 앱의 accent 색상
           ),
         ),
         child: Center(
           child: type == 'done'
               ? const Text('✔️', style: TextStyle(fontSize: 14))
+              : type == 'failed'
+              ? const Icon(
+                  Icons.close,
+                  size: 18,
+                  color: Colors.red,
+                ) // 실패: 빨간색 X
               : null, // 체크 안됨: 빈 박스
         ),
       ),

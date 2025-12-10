@@ -25,13 +25,18 @@ class ContextEventService {
     required double currentLat,
     required double currentLng,
   }) async {
-    // Android인 경우 여러 URL 시도
+    // Android인 경우 여러 URL 시도 (병렬 처리로 개선)
     List<String> urlsToTry = [baseUrl];
     if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
       urlsToTry = ApiConfig.getAndroidBaseUrls();
     }
 
-    for (final url in urlsToTry) {
+    // 성능 최적화: 순차적으로 시도 (실제 기기에서는 10.0.2.2 타임아웃 시간 낭비 방지)
+    // 첫 번째 URL부터 시도하고, 성공하면 즉시 반환
+    print('[ContextEventService] 연결 시도 시작: ${urlsToTry.length}개 URL');
+    for (int i = 0; i < urlsToTry.length; i++) {
+      final url = urlsToTry[i];
+      print('[ContextEventService] 시도 ${i + 1}/${urlsToTry.length}: $url');
       try {
         final uri = Uri.parse('$url/recommend/context-event');
 
@@ -50,7 +55,7 @@ class ContextEventService {
               }),
             )
             .timeout(
-              const Duration(seconds: 30), // 타임아웃 단축 (30초로 변경)
+              const Duration(seconds: 10), // 실제 기기에서는 빠른 실패로 다음 URL 시도
               onTimeout: () {
                 throw Exception('요청 시간 초과');
               },
@@ -63,19 +68,23 @@ class ContextEventService {
           print('[ContextEventService] 성공: $url');
           return data;
         } else {
-          print(
-            '[ContextEventService] API Error ($url): ${response.statusCode} - ${response.body}',
-          );
-          continue; // 다음 URL 시도
+          // HTTP 에러
+          print('[ContextEventService] HTTP 에러 ($url): ${response.statusCode}');
+          continue;
         }
       } catch (e) {
+        // 모든 URL 시도 실패 시 로그 출력
         print('[ContextEventService] 연결 실패 ($url): $e');
-        continue; // 다음 URL 시도
+        if (i == urlsToTry.length - 1) {
+          // 마지막 URL도 실패
+          print('[ContextEventService] 모든 URL 연결 시도 실패');
+        }
+        continue;
       }
     }
 
     // 모든 URL 시도 실패
-    print('[ContextEventService] 모든 URL 시도 실패');
+    print('[ContextEventService] 최종 실패: 모든 URL 연결 시도 완료');
     return null;
   }
 }

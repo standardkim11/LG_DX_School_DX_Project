@@ -112,11 +112,15 @@ def _init_gemini_model():
         return None
 
 
-def build_context_for_user(user_id: int) -> str:
+def build_context_for_user(user_id: int, selected_routine_ids: list[int] = None) -> str:
     """
     우리 서비스 DB를 조회해서,
     - 오늘 해야 할 루틴 리스트 (완료되지 않고 실패하지 않은 루틴만)
     를 텍스트로 정리해서 반환.
+    
+    Args:
+        user_id: 사용자 ID
+        selected_routine_ids: 선택된 루틴 ID 리스트 (None이면 모든 루틴 사용)
     """
     today = date.today()
 
@@ -126,6 +130,11 @@ def build_context_for_user(user_id: int) -> str:
     today_routine_ids = []  # 디버깅용
 
     for r in routines:
+        # 선택된 루틴 ID가 있으면 그 루틴들만 포함
+        if selected_routine_ids is not None and len(selected_routine_ids) > 0:
+            if r.id not in selected_routine_ids:
+                continue
+        
         if not is_scheduled_today(r, today):
             continue
         if is_done_today(r, user_id, today):
@@ -184,9 +193,16 @@ def chat():
     data = request.get_json() or {}
     user_id = data.get("user_id", 1)
     user_message = data.get("message")
+    selected_routine_ids = data.get("selected_routine_ids")  # 선택된 루틴 ID 리스트
 
     if not user_message:
         return jsonify({"error": "message is required"}), 400
+    
+    # 선택된 루틴 ID 로깅
+    if selected_routine_ids:
+        current_app.logger.info(f"[CHAT] 선택된 루틴 ID들: {selected_routine_ids}")
+    else:
+        current_app.logger.info(f"[CHAT] 선택된 루틴 ID 없음 - 모든 루틴 사용")
 
     # 1) 우선순위 추천 관련 키워드 감지
     priority_keywords = ["우선순위", "중요한 순위", "어떤 순서", "순서대로", "뭐부터", "먼저 해야 할", "우선적으로"]
@@ -217,6 +233,11 @@ def chat():
                     all_routines = Routine.query.filter_by(user_id=user_id, is_active=True).all()
                     routines = []
                     for r in all_routines:
+                        # 선택된 루틴 ID가 있으면 그 루틴들만 포함
+                        if selected_routine_ids and len(selected_routine_ids) > 0:
+                            if r.id not in selected_routine_ids:
+                                continue
+                        
                         if not is_scheduled_today(r, today):
                             continue
                         if is_done_today(r, user_id, today):
@@ -391,7 +412,7 @@ def chat():
     else:
         # 일반 요청: 전체 컨텍스트
         try:
-            context = build_context_for_user(user_id)
+            context = build_context_for_user(user_id, selected_routine_ids)
         except Exception as e:
             current_app.logger.exception("build_context_for_user error")
             context = "오늘의 루틴/기록 정보를 불러오지 못했습니다."
@@ -423,7 +444,7 @@ def chat():
 각 루틴에 대해 다음을 포함하세요:
 - 루틴 내용 (무엇을 하는지)
 - 예상 소요 시간 (예: "약 40분 정도 걸려요")
-- 추천 이유 (점수와 함께 구체적인 이유 설명)
+- 추천 이유 (점수, 날씨, 최근 실행 기록 등 주어진 정보들을 함께 설명)
 
 추천 이유를 설명할 때는 점수와 구체적인 이유를 한 문장으로 자연스럽게 함께 설명하세요:
 
@@ -439,7 +460,7 @@ def chat():
 
 '오늘의 정보'에 있는 날씨 정보, 최근 실행 기록 등의 실제 데이터를 활용하여 점수와 함께 자연스럽게 설명하세요.
 정보가 충분하지 않으면 "우선순위 점수가 높아서 먼저 추천드려요."처럼 간단히 언급하세요.
-필요하다면 추천 이유에 약간의 주관이 들어가도 좋아요.
+추천 이유에 약간의 주관이 들어가도 좋아요.
 
 """
     else:
@@ -448,8 +469,9 @@ def chat():
 '오늘의 정보'를 최대한 활용하여 사용자의 질문에 자연스럽고 도움이 되는 답변을 제공하세요.
 
 [주의사항]
-- 모든 숫자, 횟수, 날짜, 시간은 '오늘의 정보'에 있는 값만 사용하세요.
+- 모든 숫자, 횟수, 날짜, 시간은 '오늘의 정보'에 있는 값을 사용하세요.
 - 정보에 없는 내용은 지어내지 말고, 모른다고 솔직히 말씀하세요.
+- 오늘의 정보에 포함된 날씨 정보, 최근 실행 기록 등의 실제 데이터를 활용하여 추천 이유를 설명하세요.
 
 [오늘의 정보]
 {context}
@@ -458,7 +480,7 @@ def chat():
 {user_message}
 
 가능하다면 먼저 오늘 해야 할 루틴들을 간단히 정리해주시고, 각 루틴의 예상 소요 시간도 함께 알려주세요.
-답변 마지막에는 '오늘의 정보'에 포함된 정보를 한 문장으로 요약해주세요.
+답변 마지막에는 '오늘의 정보'에 포함된 정보를 한 문장으로 요약해주세요. 또한, 그밖에 질문이 들어온다면 그에 대한 답변도 함께 제공하세요.
 
 """
 
