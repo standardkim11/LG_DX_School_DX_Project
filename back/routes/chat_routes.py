@@ -204,11 +204,142 @@ def chat():
     else:
         current_app.logger.info(f"[CHAT] 선택된 루틴 ID 없음 - 모든 루틴 사용")
 
-    # 1) 우선순위 추천 관련 키워드 감지
+    # 1) 요청 타입 감지
     priority_keywords = ["우선순위", "중요한 순위", "어떤 순서", "순서대로", "뭐부터", "먼저 해야 할", "우선적으로"]
     is_priority_request = any(keyword in user_message for keyword in priority_keywords)
+    
+    # 루틴 추천 요청 감지 (VIEW ALL 리스트의 모든 루틴 대상)
+    routine_recommend_keywords = ["루틴 추천", "루틴 추천해", "루틴 추천해줘", "루틴 추천해주", "추천 루틴", "추천해줘", "추천해주세요"]
+    is_routine_recommend_request = any(keyword in user_message for keyword in routine_recommend_keywords)
 
     priority_data = None
+    routine_recommend_data = None
+    
+    # 루틴 추천 요청 처리 (VIEW ALL 리스트의 모든 루틴 대상)
+    if is_routine_recommend_request:
+        try:
+            from Project.extensions import db
+            from models import User, WeatherInfo
+            import pandas as pd
+            
+            # XGBoost 모델 (우선순위 계산용)
+            xgb_model = current_app.model
+            feature_cols = current_app.feature_cols
+            
+            if xgb_model is not None and feature_cols is not None:
+                today = date.today()
+                now = datetime.now()
+                exec_hour = now.hour
+                exec_dow = now.weekday()
+                
+                # 사용자와 루틴 조회 (VIEW ALL 리스트 = 모든 활성 루틴)
+                user = User.query.get(user_id)
+                if user:
+                    # 모든 활성 루틴 가져오기 (오늘 스케줄 여부와 관계없이)
+                    all_routines = Routine.query.filter_by(user_id=user_id, is_active=True).all()
+                    
+                    current_app.logger.info(f"[CHAT] 루틴 추천 요청: VIEW ALL 리스트의 모든 루틴 {len(all_routines)}개 대상")
+                    
+                    if all_routines:
+                        # 날씨 정보
+                        weather = WeatherInfo.query.filter_by(date=today).first()
+                        temp = float(weather.temperature) if weather and weather.temperature else 20.0
+                        humi = float(weather.humidity) if weather and weather.humidity else 60.0
+                        weather_code = encode_weather(weather.weather) if weather and weather.weather is not None else 0
+                        pm25 = float(weather.pm25) if weather and weather.pm25 else 40.0
+                        pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
+                        
+                        # 모델 입력 데이터 생성 (모든 활성 루틴)
+                        rows = []
+                        for r in all_routines:
+                            rt = encode_routine_type(r.routine_type)
+                            st = encode_schedule_type(r.schedule_type)
+                            preferred_hour = parse_preferred_time(r.preferred_time)
+                            
+                            last_log = RoutineExecution.query.filter_by(
+                                user_id=user_id, routine_id=r.id
+                            ).order_by(RoutineExecution.start_time.desc()).first()
+                            
+                            if last_log:
+                                run_time = int(last_log.run_time or r.run_minutes or 30)
+                                recommended_flag = int(bool(last_log.recommended_flag))
+                            else:
+                                run_time = int(r.run_minutes or 30)
+                                recommended_flag = 0
+                            
+                            rows.append({
+                                "ROUTINE_ID": r.id,
+                                "ROUTINE_NAME": r.name,
+                                "ROUTINE_TYPE": rt,
+                                "SCHEDULE_TYPE": st,
+                                "PREFERRED_TIME": preferred_hour,
+                                "RUN_TIME": run_time,
+                                "EXEC_HOUR": exec_hour,
+                                "EXEC_DOW": exec_dow,
+                                "RUN_MINUTES": int(r.run_minutes or 30),
+                                "RECOMMENDED_FLAG": recommended_flag,
+                                "TEMPERATURE": temp,
+                                "HUMIDITY": humi,
+                                "WEATHER": weather_code,
+                                "PM25": pm25,
+                                "PM10": pm10,
+                            })
+                        
+                        df = pd.DataFrame(rows)
+                        
+                        # feature 순서 맞추기
+                        missing = [c for c in feature_cols if c not in df.columns]
+                        if not missing:
+                            X = df[feature_cols]
+                            preds = xgb_model.predict(X)
+                            df["pred_priority_score"] = preds
+                            
+                            df_sorted = df.sort_values("pred_priority_score", ascending=False)
+                            
+                            # 가장 높은 우선순위 루틴 하나만 선택
+                            if len(df_sorted) > 0:
+                                top_row = df_sorted.iloc[0]
+                                rt_val = int(top_row["ROUTINE_TYPE"])
+                                st_val = int(top_row["SCHEDULE_TYPE"])
+                                routine_recommend_data = {
+                                    "routine_id": int(top_row["ROUTINE_ID"]),
+                                    "routine_name": normalize_routine_name(str(top_row["ROUTINE_NAME"])),
+                                    "pred_priority_score": float(top_row["pred_priority_score"]),
+                                    "run_minutes": int(top_row["RUN_MINUTES"]),
+                                    "routine_type": rt_val,
+                                    "schedule_type": st_val,
+                                    "routine_type_label": REVERSE_ROUTINE_TYPE.get(rt_val),
+                                    "schedule_type_label": REVERSE_SCHEDULE_TYPE.get(st_val),
+                                    "weather_label": REVERSE_WEATHER.get(weather_code),
+                                }
+                                
+                                # 최근 실행 기록 추가
+                                routine_id = routine_recommend_data["routine_id"]
+                                try:
+                                    last_log = RoutineExecution.query.filter_by(
+                                        user_id=user_id, routine_id=routine_id
+                                    ).order_by(RoutineExecution.start_time.desc()).first()
+                                    
+                                    if last_log and last_log.start_time:
+                                        last_date = last_log.start_time.date()
+                                        days_ago = (today - last_date).days
+                                        days_ago_abs = abs(days_ago)
+                                        if days_ago == 0:
+                                            routine_recommend_data["last_exec_info"] = "오늘 실행함"
+                                        elif days_ago == 1:
+                                            routine_recommend_data["last_exec_info"] = "어제 실행함"
+                                        elif days_ago_abs < 7:
+                                            routine_recommend_data["last_exec_info"] = f"{days_ago_abs}일 전 실행함"
+                                        else:
+                                            routine_recommend_data["last_exec_info"] = f"{days_ago_abs}일 전 실행함 (오래됨)"
+                                except Exception:
+                                    routine_recommend_data["last_exec_info"] = None
+                                
+                                current_app.logger.info(f"[CHAT] 루틴 추천: {routine_recommend_data['routine_name']} (점수: {routine_recommend_data['pred_priority_score']:.2f})")
+        except Exception as e:
+            current_app.logger.exception("Routine recommend calculation error")
+            routine_recommend_data = None
+    
     if is_priority_request:
         # 우선순위 추천 데이터 가져오기
         try:
@@ -329,10 +460,60 @@ def chat():
             priority_data = None
 
     # 2) 우리 서비스 컨텍스트 만들기
+    # 루틴 추천 요청인 경우: 가장 높은 우선순위 루틴 하나만 포함
     # 우선순위 요청인 경우: 우선순위 정보만 포함 (중복 방지)
     # 일반 요청인 경우: 전체 컨텍스트 포함
     
-    if is_priority_request and priority_data and isinstance(priority_data, list) and len(priority_data) > 0:
+    if is_routine_recommend_request and routine_recommend_data:
+        # 루틴 추천 요청: 가장 높은 우선순위 루틴 하나만 사용
+        today = date.today()
+        
+        # 날씨 정보 추가
+        weather_info_text = ""
+        try:
+            from models import WeatherInfo
+            weather = WeatherInfo.query.filter_by(date=today).first()
+            if weather:
+                temp = float(weather.temperature) if weather.temperature else None
+                humi = float(weather.humidity) if weather.humidity else None
+                weather_desc = weather.weather if weather.weather else None
+                
+                weather_parts = []
+                if weather_desc:
+                    weather_parts.append(f"날씨: {weather_desc}")
+                if temp is not None:
+                    weather_parts.append(f"기온: {temp}°C")
+                if humi is not None:
+                    weather_parts.append(f"습도: {humi}%")
+                
+                if weather_parts:
+                    weather_info_text = ", ".join(weather_parts)
+        except Exception as e:
+            current_app.logger.exception("날씨 정보 조회 오류")
+        
+        context_lines = [
+            f"오늘 날짜: {today.isoformat()}",
+        ]
+        
+        if weather_info_text:
+            context_lines.append(f"오늘의 날씨 정보: {weather_info_text}")
+        
+        context_lines.extend([
+            "",
+            "[추천 루틴 (가장 높은 우선순위)]",
+        ])
+        
+        score = routine_recommend_data.get('pred_priority_score', 0)
+        name = routine_recommend_data.get('routine_name', '알 수 없음')
+        minutes = routine_recommend_data.get('run_minutes', 30)
+        last_exec_info = routine_recommend_data.get('last_exec_info', '')
+        
+        context_lines.append(f"{name} (점수: {score:.2f}, 예상 {minutes}분{(' - ' + last_exec_info) if last_exec_info else ''})")
+        
+        context = "\n".join(context_lines)
+        
+        current_app.logger.info(f"[CHAT] 루틴 추천 모드: {name} (점수: {score:.2f})")
+    elif is_priority_request and priority_data and isinstance(priority_data, list) and len(priority_data) > 0:
         # 우선순위 요청: 우선순위 섹션만 사용
         today = date.today()
         
@@ -422,7 +603,45 @@ def chat():
     current_app.logger.info(f"[CHAT] 최종 컨텍스트 (처음 500자): {context[:500]}")
 
      # 4) Gemini에 넘길 프롬프트 구성
-    if is_priority_request:
+    if is_routine_recommend_request and routine_recommend_data:
+        # 루틴 추천 요청: 가장 높은 우선순위 루틴 하나만 추천
+        prompt = f"""
+당신은 사용자의 생활 루틴과 가전 사용을 도와주는 친근한 한국어 어시스턴트입니다.
+
+[중요 규칙]
+- '[추천 루틴 (가장 높은 우선순위)]' 섹션에 나열된 루틴 하나만 추천하세요.
+- 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하지 마세요.
+- 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
+- 날씨, 온도, 습도 등 요소를 이용하여 추천 이유를 설명하세요.
+
+[오늘의 정보]
+{context}
+
+[사용자 질문]
+{user_message}
+
+위 정보를 바탕으로, '[추천 루틴 (가장 높은 우선순위)]' 섹션의 루틴 하나를 추천해주세요.
+다음 내용을 포함하세요:
+- 루틴 내용 (무엇을 하는지)
+- 예상 소요 시간 (예: "약 40분 정도 걸려요")
+- 추천 이유 (점수, 날씨, 최근 실행 기록 등 주어진 정보들을 함께 설명)
+
+추천 이유를 설명할 때는 점수와 구체적인 이유를 한 문장으로 자연스럽게 함께 설명하세요:
+
+예시 (점수 + 이유를 자연스럽게 결합):
+- "점수가 4.44점으로 가장 높아요. 날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 높게 나왔어요."
+- "날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 4.44점으로 가장 높아요."
+- "오늘 습도가 높아서 점수가 2.13점으로 가장 높아요. 건조기를 먼저 돌리는 게 좋겠어요."
+
+날씨 정보(맑음/비/습도/기온)와 최근 실행 기록(오래됨/어제/오늘)을 활용하여 점수와 함께 자연스럽게 설명하세요.
+가능하면 "날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 높아요"처럼 한 문장으로 표현하는 것을 권장합니다.
+
+'오늘의 정보'에 있는 날씨 정보, 최근 실행 기록 등의 실제 데이터를 활용하여 점수와 함께 자연스럽게 설명하세요.
+정보가 충분하지 않으면 "우선순위 점수가 가장 높아서 추천드려요."처럼 간단히 언급하세요.
+추천 이유에 약간의 주관이 들어가도 좋아요.
+
+"""
+    elif is_priority_request:
         prompt = f"""
 당신은 사용자의 생활 루틴과 가전 사용을 도와주는 친근한 한국어 어시스턴트입니다.
 
@@ -464,14 +683,15 @@ def chat():
 
 """
     else:
+        # 일반 질문: Gemini가 적당히 대응
         prompt = f"""
 당신은 사용자의 생활 루틴과 가전 사용을 도와주는 친근한 한국어 어시스턴트입니다.
-'오늘의 정보'를 최대한 활용하여 사용자의 질문에 자연스럽고 도움이 되는 답변을 제공하세요.
 
 [주의사항]
+- '오늘의 정보'에 있는 정보를 참고할 수 있지만, 사용자의 질문에 자연스럽게 답변하는 것이 우선입니다.
 - 모든 숫자, 횟수, 날짜, 시간은 '오늘의 정보'에 있는 값을 사용하세요.
 - 정보에 없는 내용은 지어내지 말고, 모른다고 솔직히 말씀하세요.
-- 오늘의 정보에 포함된 날씨 정보, 최근 실행 기록 등의 실제 데이터를 활용하여 추천 이유를 설명하세요.
+- 사용자의 질문이 루틴과 관련이 없어도 친절하고 도움이 되는 답변을 제공하세요.
 
 [오늘의 정보]
 {context}
@@ -479,8 +699,8 @@ def chat():
 [사용자 질문]
 {user_message}
 
-가능하다면 먼저 오늘 해야 할 루틴들을 간단히 정리해주시고, 각 루틴의 예상 소요 시간도 함께 알려주세요.
-답변 마지막에는 '오늘의 정보'에 포함된 정보를 한 문장으로 요약해주세요. 또한, 그밖에 질문이 들어온다면 그에 대한 답변도 함께 제공하세요.
+사용자의 질문에 친절하고 자연스럽게 답변해주세요. 루틴 관련 질문이면 '오늘의 정보'를 활용하고, 
+일반적인 대화나 다른 질문이면 적절히 대응해주세요.
 
 """
 
