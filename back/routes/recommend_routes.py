@@ -769,6 +769,12 @@ def create_routine():
     else:
         schedule_frequency = 1
 
+    # run_minutes 처리: 없으면 루틴 타입별 기본값 사용
+    if run_minutes is None or run_minutes == 0:
+        from .maping import get_default_run_minutes
+        run_minutes = get_default_run_minutes(routine_type)
+        current_app.logger.info(f"[CreateRoutine] run_minutes가 없어서 루틴 타입별 기본값 사용: routine_type='{routine_type}' -> run_minutes={run_minutes}")
+
     routine = Routine(
         user_id=user_id,
         name=name,
@@ -1442,12 +1448,19 @@ def get_unused_notification():
         expected_count = 0
         
         # DB에서 직접 schedule_frequency 값을 확인 (SQLAlchemy 캐시 문제 방지)
+        # Oracle의 경우 NVL을 사용하여 NULL 처리 및 컬럼명 대문자 사용
         try:
             raw_result = db.session.execute(
-                text("SELECT SCHEDULE_FREQUENCY FROM ROUTINES WHERE ID = :routine_id"),
+                text("SELECT NVL(SCHEDULE_FREQUENCY, 1) FROM ROUTINES WHERE ID = :routine_id"),
                 {"routine_id": routine.id}
             ).fetchone()
             db_schedule_frequency = raw_result[0] if raw_result else None
+            # Oracle Decimal 타입을 int로 변환
+            if db_schedule_frequency is not None:
+                try:
+                    db_schedule_frequency = int(float(str(db_schedule_frequency)))
+                except (ValueError, TypeError):
+                    db_schedule_frequency = None
             current_app.logger.info(f"🔍 [UnusedNotification] DB에서 직접 읽은 schedule_frequency: {db_schedule_frequency} (타입: {type(db_schedule_frequency)})")
         except Exception as e:
             current_app.logger.error(f"❌ [UnusedNotification] DB 직접 조회 실패: {e}")
@@ -1458,7 +1471,7 @@ def get_unused_notification():
         if db_schedule_frequency is not None and db_schedule_frequency > 0:
             schedule_frequency = int(db_schedule_frequency)
         elif routine.schedule_frequency is not None and routine.schedule_frequency > 0:
-            schedule_frequency = routine.schedule_frequency
+            schedule_frequency = int(routine.schedule_frequency)
         else:
             schedule_frequency = 1
         

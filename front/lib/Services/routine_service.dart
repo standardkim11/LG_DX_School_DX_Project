@@ -173,6 +173,7 @@ class RoutineService {
     String? preferredTime,
     int? runMinutes,
     String routineType = 'ETC',
+    int? scheduleFrequency,
   }) async {
     // Android인 경우 여러 URL 시도 (에뮬레이터와 실제 기기 모두 지원)
     List<String> urlsToTry = [baseUrl];
@@ -188,6 +189,7 @@ class RoutineService {
       'schedule_type': scheduleType,
       'preferred_time': preferredTime,
       'run_minutes': runMinutes,
+      'schedule_frequency': scheduleFrequency,
     });
 
     for (final url in urlsToTry) {

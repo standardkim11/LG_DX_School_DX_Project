@@ -917,9 +917,25 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
       scheduleType = 'MONTHLY';
     }
 
-    // 목표 값 가져오기
-
+    // 목표 값 가져오기 (주/월 N회 설정값)
     final goalValue = _selectedGoal;
+
+    // 실행 시간 설정 (run_minutes)
+    // 기존 루틴 수정 시: 기존 runMinutes 사용, 새 루틴 생성 시: 루틴 타입별 기본값 사용
+    int? runMinutes;
+    if (widget.routine != null) {
+      // 수정 모드: 기존 실행 시간 사용
+      runMinutes = widget.routine!.runMinutes;
+    } else {
+      // 새 루틴 생성 모드: 루틴 타입별 기본값 사용
+      // 세탁기(LAUNDRY): 40분, 청소(CLEANING): 30분, 기타: 30분
+      final routineName = _routineNameController.text.trim();
+      if (routineName.contains('세탁') || routineName.contains('세탁기')) {
+        runMinutes = 40; // 세탁기 기본 실행 시간
+      } else {
+        runMinutes = 30; // 기타 루틴 기본 실행 시간
+      }
+    }
 
     // 시간 문자열 생성 (알림이 켜져있고 시간이 선택된 경우)
     String? preferredTime;
@@ -945,8 +961,9 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
         name: _routineNameController.text.trim(),
         scheduleType: scheduleType,
         preferredTime: preferredTime,
-        runMinutes: goalValue,
+        runMinutes: runMinutes, // 실행 시간 (분)
         routineType: 'CLEANING', // 로봇청소기이므로 CLEANING
+        scheduleFrequency: goalValue, // 주/월 N회 설정값
       );
 
       // 로딩 닫기
