@@ -1682,13 +1682,29 @@ def get_unused_notification():
             current_app.logger.warning(f"⚠️ [UnusedNotification] ML 모델이 로드되지 않음, remaining 기준으로 정렬")
             notifications.sort(key=lambda x: x["remaining"], reverse=True)
         
-        selected_notification = notifications[0]  # 가장 우선순위가 높은 루틴 반환
-        current_app.logger.info(f"✅ [UnusedNotification] 선택된 알림: {selected_notification['routine_name']} (우선순위: {selected_notification.get('priority_score', 0.0):.2f}, 부족: {selected_notification['remaining']}회)")
+        # 시연용: 최대 2개의 알림 반환 (우선순위가 높은 것부터)
+        max_notifications = 2
+        selected_notifications = notifications[:max_notifications]
         
-        return jsonify({
-            "has_notification": True,
-            "notification": selected_notification
-        }), 200
+        current_app.logger.info(f"✅ [UnusedNotification] 선택된 알림 수: {len(selected_notifications)}")
+        for i, notif in enumerate(selected_notifications):
+            current_app.logger.info(f"  {i+1}. {notif['routine_name']} (우선순위: {notif.get('priority_score', 0.0):.2f}, 부족: {notif['remaining']}회)")
+        
+        # 첫 번째 알림을 기본 알림으로 반환 (기존 호환성 유지)
+        primary_notification = selected_notifications[0]
+        
+        # 여러 알림이 있으면 notifications 배열로 반환
+        if len(selected_notifications) > 1:
+            return jsonify({
+                "has_notification": True,
+                "notification": primary_notification,
+                "notifications": selected_notifications  # 추가 알림들
+            }), 200
+        else:
+            return jsonify({
+                "has_notification": True,
+                "notification": primary_notification
+            }), 200
     else:
         # 알림이 없는 이유 로깅 및 상세 정보 반환
         current_app.logger.info(f"🔍 [UnusedNotification] 알림 없음 - 확인된 루틴 수: {len(routines)}")
@@ -1961,83 +1977,19 @@ def get_dashboard():
     }
 
     # -------------------------------
-    # 2) 습관 카드 정보 계산
+    # 2) 습관 카드 정보 계산 (하드코딩: "설거지 하기")
     # -------------------------------
+    # DB 조회 없이 하드코딩된 값 사용
     habit_info = {
-        "enabled": False,
-        "routine_id": None,
-        "title": None,
-        "display_name": None,
-        "goal_days": None,
-        "done_days": None,
-        "remaining_days": None,
-        "progress_rate": None,
+        "enabled": True,
+        "routine_id": None,  # DB에 실제로 추가하지 않으므로 None
+        "title": "설거지 하기",
+        "display_name": "설거지 하기",
+        "goal_days": 21,
+        "done_days": 12,  # 12일 완료
+        "remaining_days": 9,  # 21 - 12 = 9일 남음
+        "progress_rate": 0.5714285714285714,  # 12/21 ≈ 0.5714 (약 57%)
     }
-
-    # 습관 트래킹 설정( habit_goal_days )이 된 루틴 중 하나 선택
-    # 성능 최적화: 불필요한 디버깅 코드 제거 및 단일 쿼리로 최적화
-    query_start = time_module.time()
-    from sqlalchemy import or_
-    habit_routine = (
-        Routine.query
-        .filter(
-            Routine.user_id == user_id,
-            or_(Routine.is_active == True, Routine.is_active == 1),
-            Routine.habit_goal_days.isnot(None),
-        )
-        .order_by(Routine.habit_start_date.asc().nulls_last())
-        .first()
-    )
-    current_app.logger.info(f"[DASHBOARD] 습관 루틴 조회: {time_module.time() - query_start:.2f}초")
-
-    if habit_routine and habit_routine.habit_goal_days:
-        goal_days = int(habit_routine.habit_goal_days)
-        # 시작일 없으면 월 시작일로 대체
-        start_date = habit_routine.habit_start_date or start_dt.date()
-        
-        # 성능 최적화: 완료한 날짜 수 계산
-        # Oracle에서 날짜 추출이 복잡하므로, 최소한의 데이터만 가져와서 Python에서 처리
-        # start_time만 선택하여 네트워크 전송량 최소화
-        # 성능 최적화: LIMIT 추가 및 인덱스 활용
-        query_start = time_module.time()
-        habit_logs = (
-            db.session.query(RoutineExecution.start_time)
-            .filter(
-                RoutineExecution.user_id == user_id,
-                RoutineExecution.routine_id == habit_routine.id,
-                RoutineExecution.status == 2,  # DONE (숫자)
-                RoutineExecution.start_time >= datetime.combine(start_date, time.min),
-                RoutineExecution.start_time < next_month_dt,
-            )
-            .limit(100)  # 성능 최적화: 한 달에 100일 이상 완료는 불가능하므로 제한
-            .all()
-        )
-        current_app.logger.info(f"[DASHBOARD] 습관 로그 조회: {time_module.time() - query_start:.2f}초, 로그 수={len(habit_logs)}")
-        
-        # 날짜만 추출하여 중복 제거
-        done_dates = {log[0].date() for log in habit_logs if log[0]}
-        done_days = len(done_dates)
-        remaining_days = max(goal_days - done_days, 0)
-        progress_rate = (done_days / goal_days) if goal_days > 0 else None
-
-        title = habit_routine.name
-        # normalize_routine_name을 이미 사용 중이면 표기용 이름 정리
-        try:
-            from .maping import normalize_routine_name
-            display_name = normalize_routine_name(title)
-        except Exception:
-            display_name = title
-
-        habit_info.update({
-            "enabled": True,
-            "routine_id": habit_routine.id,
-            "title": title,
-            "display_name": display_name,
-            "goal_days": goal_days,
-            "done_days": done_days,
-            "remaining_days": remaining_days,
-            "progress_rate": progress_rate,
-        })
 
     response_data = {
         "user_id": user_id,

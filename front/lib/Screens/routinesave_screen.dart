@@ -569,6 +569,34 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
       minuteOptions.add(i);
     }
 
+    // _selectedHour가 hourOptions에 없으면 null로 설정
+    final validSelectedHour = hourOptions.contains(_selectedHour)
+        ? _selectedHour
+        : null;
+
+    // _selectedMinute가 minuteOptions에 없으면 가장 가까운 5분 단위로 반올림
+    int? validSelectedMinute;
+    if (_selectedMinute != null) {
+      if (minuteOptions.contains(_selectedMinute)) {
+        validSelectedMinute = _selectedMinute;
+      } else {
+        // 가장 가까운 5분 단위로 반올림
+        validSelectedMinute = ((_selectedMinute! / 5).round() * 5) % 60;
+        // 반올림된 값이 minuteOptions에 있는지 확인
+        if (!minuteOptions.contains(validSelectedMinute)) {
+          validSelectedMinute = 0; // 기본값
+        }
+        // 상태 업데이트 (다음 프레임에서)
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _selectedMinute = validSelectedMinute;
+            });
+          }
+        });
+      }
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -584,7 +612,7 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
         const SizedBox(width: 4),
         // 시간 드롭다운
         DropdownButton<int>(
-          value: _selectedHour,
+          value: validSelectedHour,
           underline: Container(),
           icon: const Icon(
             Icons.arrow_drop_down,
@@ -611,7 +639,7 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
         const SizedBox(width: 8),
         // 분 드롭다운
         DropdownButton<int>(
-          value: _selectedMinute,
+          value: validSelectedMinute,
           underline: Container(),
           icon: const Icon(
             Icons.arrow_drop_down,

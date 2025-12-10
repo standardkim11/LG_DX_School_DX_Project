@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
+import '../Services/routine_service.dart';
 
 class AddTodoModal extends StatefulWidget {
   const AddTodoModal({super.key});
@@ -99,14 +100,152 @@ class _AddTodoModalState extends State<AddTodoModal> {
     super.dispose();
   }
 
-  void _saveAndClose() {
+  Future<void> _saveAndClose() async {
     if (_titleController.text.isNotEmpty) {
-      Navigator.pop(context, {
-        'title': _titleController.text,
-        'time': _selectedTime,
-        'category': _selectedCategory,
-      });
+      // 시간이 설정된 경우, 오늘 루틴의 수행 예정 시간과 비교
+      if (_selectedTime != null && _selectedTime!.isNotEmpty) {
+        final hasConflict = await _checkTimeConflict(_selectedTime!);
+        if (hasConflict && mounted) {
+          _showTimeConflictDialog();
+          return; // 팝업을 표시하고 저장하지 않음
+        }
+      }
+
+      if (mounted) {
+        Navigator.pop(context, {
+          'title': _titleController.text,
+          'time': _selectedTime,
+          'category': _selectedCategory,
+        });
+      }
     }
+  }
+
+  /// 오늘 루틴의 수행 예정 시간과 충돌하는지 확인
+  Future<bool> _checkTimeConflict(String todoTime) async {
+    try {
+      // 오늘 날짜 가져오기
+      final now = DateTime.now();
+      final todayStr =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+      print(
+        '[AddTodoModal] 시간 충돌 확인 시작: todoTime=$todoTime, todayStr=$todayStr',
+      );
+
+      // 오늘 루틴 목록 가져오기
+      final routines = await RoutineService.getRoutinesByDate(date: todayStr);
+
+      print('[AddTodoModal] 오늘 루틴 수: ${routines.length}');
+      for (final routine in routines) {
+        print(
+          '[AddTodoModal] 루틴: ${routine.name}, preferredTime=${routine.preferredTime}',
+        );
+      }
+
+      // todo 시간을 분 단위로 변환
+      final todoMinutes = _timeToMinutes(todoTime);
+      if (todoMinutes == null) {
+        print('[AddTodoModal] todo 시간 파싱 실패: $todoTime');
+        return false;
+      }
+      print('[AddTodoModal] todo 시간(분): $todoMinutes');
+
+      // 각 루틴의 preferredTime과 비교
+      for (final routine in routines) {
+        if (routine.preferredTime != null &&
+            routine.preferredTime!.isNotEmpty) {
+          final routineMinutes = _timeToMinutes(routine.preferredTime!);
+          if (routineMinutes != null) {
+            // 시간 차이가 1시간(60분) 이내인지 확인
+            final timeDiff = (todoMinutes - routineMinutes).abs();
+            print(
+              '[AddTodoModal] 루틴 ${routine.name}: routineMinutes=$routineMinutes, timeDiff=$timeDiff',
+            );
+            if (timeDiff <= 60) {
+              print(
+                '[AddTodoModal] 충돌 발견! 루틴=${routine.name}, todoTime=$todoTime, routineTime=${routine.preferredTime}',
+              );
+              return true; // 충돌 발견
+            }
+          } else {
+            print(
+              '[AddTodoModal] 루틴 ${routine.name}의 preferredTime 파싱 실패: ${routine.preferredTime}',
+            );
+          }
+        } else {
+          print('[AddTodoModal] 루틴 ${routine.name}의 preferredTime이 없음');
+        }
+      }
+
+      print('[AddTodoModal] 충돌 없음');
+      return false; // 충돌 없음
+    } catch (e, stackTrace) {
+      print('[AddTodoModal] 시간 충돌 확인 중 오류: $e');
+      print('[AddTodoModal] 스택 트레이스: $stackTrace');
+      return false; // 오류 발생 시 충돌 없음으로 처리
+    }
+  }
+
+  /// 시간 문자열을 분 단위로 변환 (예: "19:00" -> 1140)
+  int? _timeToMinutes(String timeStr) {
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        final hour = int.parse(parts[0]);
+        final minute = int.parse(parts[1]);
+        return hour * 60 + minute;
+      }
+    } catch (e) {
+      print('[AddTodoModal] 시간 파싱 오류: $timeStr, $e');
+    }
+    return null;
+  }
+
+  /// 시간 충돌 팝업 표시
+  void _showTimeConflictDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            '시간 충돌',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'LG Smart_H',
+            ),
+          ),
+          content: const Text(
+            '일정과 루틴의 수행시간이 비슷해요.',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              fontFamily: 'LG Smart_H',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text(
+                '확인',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'LG Smart_H',
+                  color: Color(0xFF8863EF),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _addNewCategory() {
@@ -633,7 +772,9 @@ class _AddTodoModalState extends State<AddTodoModal> {
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
-                                onTap: _saveAndClose,
+                                onTap: () async {
+                                  await _saveAndClose();
+                                },
                                 borderRadius: BorderRadius.circular(24),
                                 child: Container(
                                   alignment: Alignment.center,

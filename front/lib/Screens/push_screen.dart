@@ -26,6 +26,7 @@ class _PushScreenState extends State<PushScreen> {
   String? _unusedSecondLine;
   int? _unusedRoutineId; // 미실행 알림의 루틴 ID
   String? _unusedRoutineName; // 미실행 알림의 루틴 이름
+  List<Map<String, dynamic>> _unusedNotifications = []; // 여러 개의 미사용 알림
   bool _isLoading = true;
   Timer? _timeTimer;
   String _currentTime = '';
@@ -226,17 +227,39 @@ class _PushScreenState extends State<PushScreen> {
         print('[PushScreen] 미사용 알림 응답: has_notification=$hasNotification');
 
         if (hasNotification) {
-          final notification = data['notification'] as Map<String, dynamic>?;
-          print('[PushScreen] 미사용 알림 데이터: $notification');
-          if (notification != null) {
+          // 여러 알림이 있는 경우 notifications 배열 사용, 없으면 notification 단일 객체 사용
+          List<Map<String, dynamic>> notificationsList = [];
+
+          if (data['notifications'] != null) {
+            // 여러 알림이 있는 경우
+            final notifications = data['notifications'] as List<dynamic>?;
+            if (notifications != null) {
+              notificationsList = notifications
+                  .map((n) => n as Map<String, dynamic>)
+                  .toList();
+            }
+          } else {
+            // 단일 알림인 경우
+            final notification = data['notification'] as Map<String, dynamic>?;
+            if (notification != null) {
+              notificationsList = [notification];
+            }
+          }
+
+          print('[PushScreen] 미사용 알림 개수: ${notificationsList.length}');
+
+          if (notificationsList.isNotEmpty) {
+            // 첫 번째 알림을 기본 알림으로 설정 (기존 호환성 유지)
+            final firstNotification = notificationsList[0];
             setState(() {
-              _unusedFirstLine = notification['first_line'] as String?;
-              _unusedSecondLine = notification['second_line'] as String?;
-              _unusedRoutineId = notification['routine_id'] as int?;
-              _unusedRoutineName = notification['routine_name'] as String?;
+              _unusedFirstLine = firstNotification['first_line'] as String?;
+              _unusedSecondLine = firstNotification['second_line'] as String?;
+              _unusedRoutineId = firstNotification['routine_id'] as int?;
+              _unusedRoutineName = firstNotification['routine_name'] as String?;
+              _unusedNotifications = notificationsList; // 모든 알림 저장
             });
             print(
-              '[PushScreen] 미사용 알림 설정 완료: first_line=$_unusedFirstLine, second_line=$_unusedSecondLine',
+              '[PushScreen] 미사용 알림 설정 완료: first_line=$_unusedFirstLine, second_line=$_unusedSecondLine, 총 ${notificationsList.length}개',
             );
           } else {
             print('[PushScreen] ⚠️ 미사용 알림: notification이 null입니다');
@@ -245,6 +268,7 @@ class _PushScreenState extends State<PushScreen> {
               _unusedSecondLine = null;
               _unusedRoutineId = null;
               _unusedRoutineName = null;
+              _unusedNotifications = [];
             });
           }
         } else {
@@ -271,6 +295,7 @@ class _PushScreenState extends State<PushScreen> {
             _unusedSecondLine = null;
             _unusedRoutineId = null;
             _unusedRoutineName = null;
+            _unusedNotifications = [];
           });
         }
       } else {
@@ -339,8 +364,77 @@ class _PushScreenState extends State<PushScreen> {
     }
   }
 
-  void _showUnusedNotificationDialog() {
-    if (_unusedRoutineId == null) return;
+  Future<void> _sendRobotVacuumStartCommandToBrowser() async {
+    // 백엔드 API를 통해 브라우저에 시작 명령 전송
+    List<String> urlsToTry = [baseUrl];
+    if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+      urlsToTry = ApiConfig.getAndroidBaseUrls();
+    }
+
+    print('[PushScreen] 로봇청소기 시작 명령 전송 시도 시작');
+    print('[PushScreen] 시도할 URL 목록: $urlsToTry');
+
+    bool success = false;
+    for (final url in urlsToTry) {
+      try {
+        final uri = Uri.parse('$url/device/start-robot-vacuum');
+        print('[PushScreen] API 호출 시도: $uri');
+
+        final response = await http
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+            )
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                throw Exception('요청 시간 초과');
+              },
+            );
+
+        print('[PushScreen] 응답 상태 코드: ${response.statusCode}');
+        print('[PushScreen] 응답 본문: ${response.body}');
+
+        if (response.statusCode == 200) {
+          final responseBody = jsonDecode(utf8.decode(response.bodyBytes));
+          print('[PushScreen] ✅ 로봇청소기 시작 명령 전송 성공: $url');
+          print('[PushScreen] 응답 본문: $responseBody');
+          success = true;
+          break;
+        } else {
+          print(
+            '[PushScreen] ⚠️ 로봇청소기 시작 명령 전송 실패: HTTP ${response.statusCode}',
+          );
+          print('[PushScreen] 응답 본문: ${response.body}');
+        }
+      } catch (e, stackTrace) {
+        print('[PushScreen] ❌ 로봇청소기 시작 명령 전송 실패 ($url): $e');
+        print('[PushScreen] 스택 트레이스: $stackTrace');
+        continue;
+      }
+    }
+
+    if (!success) {
+      print('[PushScreen] ❌ 모든 URL 시도 실패 - 로봇청소기 시작 명령을 전송할 수 없습니다.');
+    }
+  }
+
+  void _showUnusedNotificationDialog({
+    int? routineId,
+    String? routineName,
+    String? firstLine,
+    String? secondLine,
+  }) {
+    // 파라미터가 제공되면 사용, 없으면 기존 변수 사용 (기존 호환성 유지)
+    final targetRoutineId = routineId ?? _unusedRoutineId;
+    final targetRoutineName = routineName ?? _unusedRoutineName;
+    final targetFirstLine = firstLine ?? _unusedFirstLine;
+    final targetSecondLine = secondLine ?? _unusedSecondLine;
+
+    if (targetRoutineId == null) return;
 
     String? selectedButton;
 
@@ -364,7 +458,7 @@ class _PushScreenState extends State<PushScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '${_unusedRoutineName ?? '루틴'} 알림',
+                      '${targetRoutineName ?? '루틴'} 알림',
                       style: const TextStyle(
                         fontSize: 20,
                         fontFamily: 'LG Smart_H',
@@ -376,7 +470,7 @@ class _PushScreenState extends State<PushScreen> {
                     Column(
                       children: [
                         Text(
-                          _unusedFirstLine ?? '',
+                          targetFirstLine ?? '',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 12,
@@ -388,7 +482,7 @@ class _PushScreenState extends State<PushScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          _unusedSecondLine ?? '',
+                          targetSecondLine ?? '',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 12,
@@ -420,88 +514,59 @@ class _PushScreenState extends State<PushScreen> {
 
                                   // 세탁기 알림인지 확인
                                   final isWashingMachine =
-                                      _unusedRoutineName != null &&
-                                      (_unusedRoutineName!.contains('세탁기') ||
-                                          _unusedRoutineName!.contains('세탁'));
+                                      targetRoutineName != null &&
+                                      (targetRoutineName.contains('세탁기') ||
+                                          targetRoutineName.contains('세탁'));
+
+                                  // 로봇청소기 알림인지 확인
+                                  final isRobotVacuum =
+                                      targetRoutineName != null &&
+                                      (targetRoutineName.contains('로봇청소기') ||
+                                          targetRoutineName.contains('로봇') ||
+                                          targetRoutineName.contains('청소기'));
+
+                                  // 루틴 실행 API 호출 (자동 체크를 위해)
+                                  RoutineService.executeRoutine(
+                                    routineId: targetRoutineId,
+                                    userId: 1,
+                                  ).then((success) {
+                                    if (success) {
+                                      print(
+                                        '[PushScreen] 루틴 실행 성공: $targetRoutineId',
+                                      );
+                                    } else {
+                                      print(
+                                        '[PushScreen] 루틴 실행 실패: $targetRoutineId',
+                                      );
+                                    }
+                                  });
+
+                                  // 오늘 날짜로 선택된 루틴 추가
+                                  final today = DateTime.now();
+                                  final dateKey =
+                                      '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+                                  final currentSelected =
+                                      routine_module.getSelectedRoutinesForDate(
+                                        dateKey,
+                                      ) ??
+                                      <int>{};
+                                  currentSelected.add(targetRoutineId);
+                                  routine_module.setSelectedRoutinesForDate(
+                                    dateKey,
+                                    currentSelected,
+                                  );
+                                  print(
+                                    '[PushScreen] 루틴 ID $targetRoutineId를 오늘 날짜($dateKey)의 선택된 루틴으로 추가',
+                                  );
 
                                   if (isWashingMachine) {
                                     // 세탁기 알림인 경우: 원격 브라우저에 시작 명령 전송
                                     _sendStartCommandToBrowser();
-
-                                    // 루틴 실행 API 호출 (자동 체크를 위해)
-                                    if (_unusedRoutineId != null) {
-                                      RoutineService.executeRoutine(
-                                        routineId: _unusedRoutineId!,
-                                        userId: 1,
-                                      ).then((success) {
-                                        if (success) {
-                                          print(
-                                            '[PushScreen] 루틴 실행 성공: $_unusedRoutineId',
-                                          );
-                                        } else {
-                                          print(
-                                            '[PushScreen] 루틴 실행 실패: $_unusedRoutineId',
-                                          );
-                                        }
-                                      });
-
-                                      // 오늘 날짜로 선택된 루틴 추가
-                                      final today = DateTime.now();
-                                      final dateKey =
-                                          '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-                                      final currentSelected =
-                                          routine_module
-                                              .getSelectedRoutinesForDate(
-                                                dateKey,
-                                              ) ??
-                                          <int>{};
-                                      currentSelected.add(_unusedRoutineId!);
-                                      routine_module.setSelectedRoutinesForDate(
-                                        dateKey,
-                                        currentSelected,
-                                      );
-                                      print(
-                                        '[PushScreen] 루틴 ID $_unusedRoutineId를 오늘 날짜($dateKey)의 선택된 루틴으로 추가',
-                                      );
-                                    }
+                                  } else if (isRobotVacuum) {
+                                    // 로봇청소기 알림인 경우: 원격 브라우저에 시작 명령 전송
+                                    _sendRobotVacuumStartCommandToBrowser();
                                   } else {
-                                    // 다른 루틴인 경우: 기존 로직 (루틴 실행 API 호출 후 루틴 화면으로 이동)
-                                    if (_unusedRoutineId != null) {
-                                      // 먼저 루틴 실행 API 호출 (자동 체크를 위해)
-                                      RoutineService.executeRoutine(
-                                        routineId: _unusedRoutineId!,
-                                        userId: 1,
-                                      ).then((success) {
-                                        if (success) {
-                                          print(
-                                            '[PushScreen] 루틴 실행 성공: $_unusedRoutineId',
-                                          );
-                                        } else {
-                                          print(
-                                            '[PushScreen] 루틴 실행 실패: $_unusedRoutineId',
-                                          );
-                                        }
-                                      });
-
-                                      // 오늘 날짜로 선택된 루틴 추가
-                                      final today = DateTime.now();
-                                      final dateKey =
-                                          '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-                                      final currentSelected =
-                                          routine_module
-                                              .getSelectedRoutinesForDate(
-                                                dateKey,
-                                              ) ??
-                                          <int>{};
-                                      currentSelected.add(_unusedRoutineId!);
-                                      routine_module.setSelectedRoutinesForDate(
-                                        dateKey,
-                                        currentSelected,
-                                      );
-                                      print(
-                                        '[PushScreen] 루틴 ID $_unusedRoutineId를 오늘 날짜($dateKey)의 선택된 루틴으로 추가',
-                                      );
-                                    }
+                                    // 다른 루틴인 경우: 루틴 화면으로 이동
                                     Navigator.pushAndRemoveUntil(
                                       context,
                                       PageRouteBuilder(
@@ -718,25 +783,39 @@ class _PushScreenState extends State<PushScreen> {
                     ),
                   ],
 
-                  // 미사용 알림 카드 (DB에서 가져온 미실행 루틴 알림)
-                  if (!_isLoading &&
-                      _unusedFirstLine != null &&
-                      _unusedSecondLine != null) ...[
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: GestureDetector(
-                        onTap: () {
-                          // 미사용 알림 클릭 시 다이얼로그 표시
-                          _showUnusedNotificationDialog();
-                        },
-                        child: _buildNotificationCard(
-                          firstLine: _unusedFirstLine!,
-                          secondLine: _unusedSecondLine!,
-                          timeLabel: '지금',
+                  // 미사용 알림 카드들 (DB에서 가져온 미실행 루틴 알림들)
+                  if (!_isLoading && _unusedNotifications.isNotEmpty) ...[
+                    ..._unusedNotifications.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final notification = entry.value;
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          top: index == 0 ? 16 : 12,
+                          left: 20,
+                          right: 20,
                         ),
-                      ),
-                    ),
+                        child: GestureDetector(
+                          onTap: () {
+                            // 미사용 알림 클릭 시 다이얼로그 표시
+                            _showUnusedNotificationDialog(
+                              routineId: notification['routine_id'] as int?,
+                              routineName:
+                                  notification['routine_name'] as String?,
+                              firstLine: notification['first_line'] as String?,
+                              secondLine:
+                                  notification['second_line'] as String?,
+                            );
+                          },
+                          child: _buildNotificationCard(
+                            firstLine:
+                                notification['first_line'] as String? ?? '',
+                            secondLine:
+                                notification['second_line'] as String? ?? '',
+                            timeLabel: '지금',
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ],
 
                   // 하단 여백을 위한 Spacer

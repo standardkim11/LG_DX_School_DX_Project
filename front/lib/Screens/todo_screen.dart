@@ -21,6 +21,8 @@ class TodoScreen extends StatefulWidget {
 class _TodoScreenStateManager {
   static int _selectedDateIndex = 15;
   static Map<String, String> _checkStates = {}; // 체크 상태 저장
+  static Map<String, List<Map<String, dynamic>>> _todosByDate =
+      {}; // 날짜별 todo 목록
 
   static int get selectedDateIndex => _selectedDateIndex;
   static set selectedDateIndex(int value) => _selectedDateIndex = value;
@@ -33,6 +35,23 @@ class _TodoScreenStateManager {
       _checkStates[key] = value;
     }
   }
+
+  // 날짜별 todo 목록 관리
+  static Map<String, List<Map<String, dynamic>>> get todosByDate =>
+      Map<String, List<Map<String, dynamic>>>.from(_todosByDate);
+  static void setTodosByDate(Map<String, List<Map<String, dynamic>>> todos) {
+    _todosByDate = Map<String, List<Map<String, dynamic>>>.from(todos);
+  }
+
+  // 특정 날짜의 todo 목록 가져오기
+  static List<Map<String, dynamic>> getTodosForDate(String dateKey) {
+    return List<Map<String, dynamic>>.from(_todosByDate[dateKey] ?? []);
+  }
+}
+
+// 외부에서 접근 가능한 함수
+List<Map<String, dynamic>> getTodosForDate(String dateKey) {
+  return _TodoScreenStateManager.getTodosForDate(dateKey);
 }
 
 class _TodoScreenState extends State<TodoScreen> {
@@ -122,6 +141,8 @@ class _TodoScreenState extends State<TodoScreen> {
       if (key != dateKeyToday) {
         allTodos.addAll(_todosByDate[key] ?? []);
         _todosByDate.remove(key); // 기존 날짜 키 삭제
+        // 전역 상태도 업데이트
+        _TodoScreenStateManager.setTodosByDate(_todosByDate);
       } else {
         // 오늘 날짜에 이미 데이터가 있으면 그것도 포함
         allTodos.addAll(_todosByDate[key] ?? []);
@@ -217,6 +238,8 @@ class _TodoScreenState extends State<TodoScreen> {
           } else {
             _todosByDate[dateKey] = [newTodo];
           }
+          // 전역 상태도 업데이트
+          _TodoScreenStateManager.setTodosByDate(_todosByDate);
         });
       }
     });
@@ -287,7 +310,7 @@ class _TodoScreenState extends State<TodoScreen> {
                           });
                           return;
                         }
-                        
+
                         // to-do 탭(index 0)으로 전환할 때 오늘 날짜로 이동
                         if (index == 0) {
                           setState(() {
@@ -573,19 +596,27 @@ class _TodoScreenState extends State<TodoScreen> {
                             final selectedDate = _getSelectedDate();
                             final dateKey = _formatDateKey(selectedDate);
                             final todos = _todosByDate[dateKey] ?? [];
-                            
+
                             // 제거할 항목 찾기 (title과 category로 매칭)
                             todos.removeWhere(
                               (t) =>
                                   t['title'] == todo['title'] &&
                                   t['category'] == todo['category'],
                             );
-                            
+
                             _todosByDate[dateKey] = todos;
-                            
+
+                            // 전역 상태도 업데이트
+                            _TodoScreenStateManager.setTodosByDate(
+                              _todosByDate,
+                            );
+
                             // 체크 상태도 제거
                             final key = _getTodoKey(todo);
-                            _TodoScreenStateManager.setCheckState(key, null); // null을 전달하면 키가 제거됨
+                            _TodoScreenStateManager.setCheckState(
+                              key,
+                              null,
+                            ); // null을 전달하면 키가 제거됨
                           });
                         },
                       ),

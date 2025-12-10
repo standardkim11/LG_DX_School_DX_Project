@@ -11,6 +11,12 @@ washing_machine_start_command = {
     "timestamp": None,
 }
 
+# 로봇청소기 시작 명령 상태 저장 (간단한 메모리 기반)
+robot_vacuum_start_command = {
+    "pending": False,
+    "timestamp": None,
+}
+
 # 스레드 안전을 위한 락
 lock = threading.Lock()
 
@@ -72,6 +78,66 @@ def check_washing_machine_command():
             timestamp = washing_machine_start_command["timestamp"]
             washing_machine_start_command["pending"] = False
             print(f"[DeviceRoutes] ✅ 세탁기 시작 명령 확인됨 (브라우저): {timestamp}")
+            print(f"[DeviceRoutes] pending 상태를 False로 변경")
+            # app.py의 after_request에서 이미 CORS 헤더를 추가하므로 여기서는 추가하지 않음
+            return jsonify({
+                "should_start": True,
+                "timestamp": timestamp,
+            })
+        else:
+            # app.py의 after_request에서 이미 CORS 헤더를 추가하므로 여기서는 추가하지 않음
+            return jsonify({
+                "should_start": False,
+            })
+
+
+@device_bp.route("/device/start-robot-vacuum", methods=["POST", "OPTIONS"])
+def start_robot_vacuum():
+    """로봇청소기 시작 명령을 설정"""
+    # OPTIONS 요청 처리 (CORS preflight)
+    if request.method == "OPTIONS":
+        response = jsonify({})
+        # app.py의 after_request에서 이미 CORS 헤더를 추가하므로 여기서는 추가하지 않음
+        return response
+    
+    global robot_vacuum_start_command
+    
+    with lock:
+        robot_vacuum_start_command["pending"] = True
+        robot_vacuum_start_command["timestamp"] = datetime.now().isoformat()
+        pending_status = robot_vacuum_start_command["pending"]
+    
+    print(f"[DeviceRoutes] ✅ 로봇청소기 시작 명령 수신: {robot_vacuum_start_command['timestamp']}")
+    print(f"[DeviceRoutes] pending 상태: {pending_status}")
+    
+    # app.py의 after_request에서 이미 CORS 헤더를 추가하므로 여기서는 추가하지 않음
+    return jsonify({
+        "success": True,
+        "message": "로봇청소기 시작 명령이 전송되었습니다.",
+    })
+
+
+@device_bp.route("/device/check-robot-vacuum-command", methods=["GET", "OPTIONS"])
+def check_robot_vacuum_command():
+    """로봇청소기 시작 명령이 있는지 확인 (브라우저가 폴링)"""
+    # OPTIONS 요청 처리 (CORS preflight)
+    if request.method == "OPTIONS":
+        response = jsonify({})
+        # app.py의 after_request에서 이미 CORS 헤더를 추가하므로 여기서는 추가하지 않음
+        return response
+    
+    global robot_vacuum_start_command
+    
+    with lock:
+        pending_status = robot_vacuum_start_command["pending"]
+        print(f"[DeviceRoutes] [폴링 요청] 로봇청소기 pending 상태 확인: {pending_status}")
+        
+        if pending_status:
+            # 명령을 확인했으므로 pending 상태 해제
+            should_start = True
+            timestamp = robot_vacuum_start_command["timestamp"]
+            robot_vacuum_start_command["pending"] = False
+            print(f"[DeviceRoutes] ✅ 로봇청소기 시작 명령 확인됨 (브라우저): {timestamp}")
             print(f"[DeviceRoutes] pending 상태를 False로 변경")
             # app.py의 after_request에서 이미 CORS 헤더를 추가하므로 여기서는 추가하지 않음
             return jsonify({

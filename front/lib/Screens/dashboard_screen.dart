@@ -222,7 +222,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
 
       if (!mounted) return;
-      
+
       if (data != null) {
         if (mounted) {
           setState(() {
@@ -434,7 +434,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           child: HabitCard(
                             subtitle:
                                 '습관 형성까지 ${_dashboardData!.mainHabit!.remainingDays ?? _calculateRemainingDays(_dashboardData!.mainHabit!.progressRate)}일 남았어요',
-                            title: '${_dashboardData!.mainHabit!.name}💧',
+                            title: _dashboardData!.mainHabit!.name,
                             progress: _dashboardData!.mainHabit!.progressRate,
                             enableSwipe: false, // Dashboard에서는 스와이프 비활성화
                           ),

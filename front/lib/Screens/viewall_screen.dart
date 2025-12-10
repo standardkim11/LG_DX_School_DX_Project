@@ -82,14 +82,133 @@ class _ViewAllScreenState extends State<ViewAllScreen>
     }
   }
 
-  void _toggleRoutineSelection(int routineId) {
+  void _toggleRoutineSelection(int routineId) async {
+    // 체크 상태 변경
+    final wasChecked = _selectedRoutineIds.contains(routineId);
     setState(() {
-      if (_selectedRoutineIds.contains(routineId)) {
+      if (wasChecked) {
         _selectedRoutineIds.remove(routineId);
       } else {
         _selectedRoutineIds.add(routineId);
       }
     });
+
+    // 체크할 때만 todo 일정과의 시간 충돌 확인
+    if (!wasChecked) {
+      final routine = _allRoutines.firstWhere(
+        (r) => r.id == routineId,
+        orElse: () => _allRoutines.first,
+      );
+
+      // preferredTime이 있는 경우에만 확인
+      if (routine.preferredTime != null && routine.preferredTime!.isNotEmpty) {
+        final hasConflict = _checkTimeConflictWithTodos(routine.preferredTime!);
+        if (hasConflict && mounted) {
+          _showTimeConflictDialog();
+        }
+      }
+    }
+  }
+
+  /// 오늘 todo 일정과의 시간 충돌 확인
+  bool _checkTimeConflictWithTodos(String routineTime) {
+    try {
+      // 오늘 날짜 가져오기
+      final now = DateTime.now();
+      final todayStr =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+      // 오늘 todo 목록 가져오기
+      final todos = getTodosForDate(todayStr);
+
+      // 루틴 시간을 분 단위로 변환
+      final routineMinutes = _timeToMinutes(routineTime);
+      if (routineMinutes == null) return false;
+
+      // 각 todo의 시간과 비교 (todo 제목에서 시간 추출)
+      for (final todo in todos) {
+        final title = todo['title'] as String? ?? '';
+        // 제목에서 시간 추출 (예: "18:30 장보기" -> "18:30")
+        final timeMatch = RegExp(r'^(\d{2}:\d{2})').firstMatch(title);
+        if (timeMatch != null) {
+          final todoTime = timeMatch.group(1)!;
+          final todoMinutes = _timeToMinutes(todoTime);
+          if (todoMinutes != null) {
+            // 시간 차이가 1시간(60분) 이내인지 확인
+            final timeDiff = (routineMinutes - todoMinutes).abs();
+            if (timeDiff <= 60) {
+              return true; // 충돌 발견
+            }
+          }
+        }
+      }
+
+      return false; // 충돌 없음
+    } catch (e) {
+      print('[ViewAllScreen] 시간 충돌 확인 중 오류: $e');
+      return false; // 오류 발생 시 충돌 없음으로 처리
+    }
+  }
+
+  /// 시간 문자열을 분 단위로 변환 (예: "19:00" -> 1140)
+  int? _timeToMinutes(String timeStr) {
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        final hour = int.parse(parts[0]);
+        final minute = int.parse(parts[1]);
+        return hour * 60 + minute;
+      }
+    } catch (e) {
+      print('[ViewAllScreen] 시간 파싱 오류: $timeStr, $e');
+    }
+    return null;
+  }
+
+  /// 시간 충돌 팝업 표시
+  void _showTimeConflictDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            '시간 충돌',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'LG Smart_H',
+            ),
+          ),
+          content: const Text(
+            '일정과 루틴의 수행시간이 비슷해요.',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              fontFamily: 'LG Smart_H',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text(
+                '확인',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'LG Smart_H',
+                  color: Color(0xFF8863EF),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<bool> _showConfirmDialog({VoidCallback? onConfirm}) async {
