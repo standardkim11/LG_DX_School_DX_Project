@@ -32,7 +32,9 @@ class RoutineService {
     print('[RoutineService] getAllRoutines 연결 시도 시작: ${urlsToTry.length}개 URL');
     for (int i = 0; i < urlsToTry.length; i++) {
       final url = urlsToTry[i];
-      print('[RoutineService] getAllRoutines 시도 ${i + 1}/${urlsToTry.length}: $url');
+      print(
+        '[RoutineService] getAllRoutines 시도 ${i + 1}/${urlsToTry.length}: $url',
+      );
       try {
         final uri = Uri.parse(
           '$url/routines',
@@ -65,7 +67,9 @@ class RoutineService {
           return result;
         } else {
           // HTTP 에러
-          print('[RoutineService] getAllRoutines HTTP 에러 ($url): ${response.statusCode}');
+          print(
+            '[RoutineService] getAllRoutines HTTP 에러 ($url): ${response.statusCode}',
+          );
           continue;
         }
       } catch (e) {
@@ -100,10 +104,14 @@ class RoutineService {
 
     // 성능 최적화: 순차적으로 시도 (실제 기기에서는 10.0.2.2 타임아웃 시간 낭비 방지)
     // 첫 번째 URL부터 시도하고, 성공하면 즉시 반환
-    print('[RoutineService] getRoutinesByDate 연결 시도 시작: ${urlsToTry.length}개 URL');
+    print(
+      '[RoutineService] getRoutinesByDate 연결 시도 시작: ${urlsToTry.length}개 URL',
+    );
     for (int i = 0; i < urlsToTry.length; i++) {
       final url = urlsToTry[i];
-      print('[RoutineService] getRoutinesByDate 시도 ${i + 1}/${urlsToTry.length}: $url');
+      print(
+        '[RoutineService] getRoutinesByDate 시도 ${i + 1}/${urlsToTry.length}: $url',
+      );
       try {
         final uri = Uri.parse('$url/recommend/today-routines').replace(
           queryParameters: {
@@ -136,7 +144,9 @@ class RoutineService {
           return result;
         } else {
           // HTTP 에러
-          print('[RoutineService] getRoutinesByDate HTTP 에러 ($url): ${response.statusCode}');
+          print(
+            '[RoutineService] getRoutinesByDate HTTP 에러 ($url): ${response.statusCode}',
+          );
           continue;
         }
       } catch (e) {
@@ -233,10 +243,12 @@ class RoutineService {
 
   /// 루틴을 실행합니다 (체크 표시 시 호출)
   /// Returns: 실행 성공 여부
+  /// status: 2=done (완료), 3=failed (실패)
   static Future<bool> executeRoutine({
     required int routineId,
     required int userId,
     int? runTime,
+    int status = 2, // 기본값: 2=done (완료), 3=failed (실패)
   }) async {
     // Android인 경우 여러 URL 시도 (에뮬레이터와 실제 기기 모두 지원)
     List<String> urlsToTry = [baseUrl];
@@ -246,7 +258,7 @@ class RoutineService {
 
     final body = jsonEncode({
       'user_id': userId,
-      'status': 2, // 2=done (완료)
+      'status': status, // 2=done (완료), 3=failed (실패)
       'run_time': runTime,
     });
 
@@ -298,9 +310,7 @@ class RoutineService {
 
   /// 루틴을 삭제합니다
   /// Returns: 삭제 성공 여부
-  static Future<bool> deleteRoutine({
-    required int routineId,
-  }) async {
+  static Future<bool> deleteRoutine({required int routineId}) async {
     // Android인 경우 여러 URL 시도 (에뮬레이터와 실제 기기 모두 지원)
     List<String> urlsToTry = [baseUrl];
     if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
@@ -498,13 +508,13 @@ class ViewAllRoutineItem {
       }
       return '매일';
     } else if (scheduleType == 'WEEKLY') {
-      // 주간 루틴: 완료 횟수/목표 횟수 형식 (예: "2/4")
+      // 주간 루틴: "주 X회" 형식
       final frequency = scheduleFrequency > 0 ? scheduleFrequency : 1;
-      return '$completedCount/$frequency';
+      return '주 $frequency회';
     } else if (scheduleType == 'MONTHLY') {
-      // 월간 루틴: 완료 횟수/목표 횟수 형식 (예: "2/4")
+      // 월간 루틴: "월 X회" 형식
       final frequency = scheduleFrequency > 0 ? scheduleFrequency : 1;
-      return '$completedCount/$frequency';
+      return '월 $frequency회';
     } else if (scheduleType == 'CUSTOM') {
       // 커스텀 스케줄의 경우 추가 정보가 필요할 수 있음
       return '2주 1회';

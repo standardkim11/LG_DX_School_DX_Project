@@ -266,105 +266,165 @@ class _ViewAllScreenState extends State<ViewAllScreen>
     }
   }
 
-  Future<void> _showWeatherWarningDialog(List<ViewAllRoutineItem> selectedRoutines) async {
-    // 날씨 정보를 먼저 로드 (타임아웃을 짧게 설정하여 빠르게 실패 처리)
-    String weatherMessage = '맑음이 예정된 오늘,\n세탁기를 돌리실 건가요?'; // 기본값
-    
+  Future<void> _showWeatherWarningDialog(
+    List<ViewAllRoutineItem> selectedRoutines,
+  ) async {
+    // 선택된 루틴의 우선순위 점수를 계산하여 가장 높은 루틴 추천
+    String weatherMessage = '오늘 날씨는 맑음이에요.';
+
     try {
-      // 오늘 날짜 가져오기
-      final today = DateTime.now();
-      final todayStr = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-      
-      // 날씨 API 호출 (타임아웃을 짧게 설정하여 빠르게 실패 처리)
-      List<String> urlsToTry = [
-        ApiConfig.getBaseUrl(
-          isWeb: kIsWeb,
-          isAndroid: !kIsWeb && Platform.isAndroid,
-          isIOS: !kIsWeb && Platform.isIOS,
-        )
-      ];
-      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
-        urlsToTry = ApiConfig.getAndroidBaseUrls();
-      }
-      
-      // 순차적으로 URL 시도 (실제 기기에서는 10.0.2.2 타임아웃 시간 낭비 방지)
-      // 첫 번째 URL만 빠르게 시도 (실패하면 기본값 사용)
-      if (urlsToTry.isNotEmpty) {
-        try {
-          final url = urlsToTry.first;
-          final uri = Uri.parse('$url/recommend/weather').replace(
-            queryParameters: {
-              'user_id': '1', // user_id 추가
-              'date': todayStr,
-            },
-          );
-          print('[ViewAllScreen] 날씨 정보 API 호출: $uri');
-          final response = await http
-              .get(
-                uri,
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json',
-                },
-              )
-              .timeout(
-                const Duration(seconds: 10), // 타임아웃 시간 증가
-                onTimeout: () {
-                  throw Exception('요청 시간 초과');
-                },
-              );
-          
-          print('[ViewAllScreen] 날씨 정보 API 응답: statusCode=${response.statusCode}');
-          if (response.statusCode == 200) {
-            try {
-              final responseBody = utf8.decode(response.bodyBytes);
-              print('[ViewAllScreen] 날씨 정보 API 응답 본문: $responseBody');
-              final data = jsonDecode(responseBody) as Map<String, dynamic>?;
-              if (data != null) {
-                print('[ViewAllScreen] 날씨 정보 파싱된 데이터: $data');
-                final weatherLabel = data['weather_label'] as String? ?? '맑음';
-                final recommendationMessage = data['recommendation_message'] as String?;
-                final weatherCode = data['weather_code'] as int?;
-                final weatherRaw = data['weather'] as String?; // DB에 저장된 원본 날씨 값
-                print('[ViewAllScreen] 날씨 정보 상세: weather=$weatherRaw, weather_label=$weatherLabel, weather_code=$weatherCode, recommendation_message=$recommendationMessage');
-                if (recommendationMessage != null && recommendationMessage.isNotEmpty) {
-                  // 추천 메시지가 있으면 사용
-                  weatherMessage = recommendationMessage;
-                } else {
-                  // 추천 메시지가 없으면 날씨 라벨 사용
-                  weatherMessage = '$weatherLabel이 예정된 오늘,\n세탁기를 돌리실 건가요?';
-                }
-                print('[ViewAllScreen] 날씨 정보 로딩 성공: $url, weather_label=$weatherLabel, recommendation_message=$recommendationMessage');
-              } else {
-                print('[ViewAllScreen] 날씨 정보 데이터가 null입니다.');
+      if (selectedRoutines.isEmpty) {
+        weatherMessage = '오늘 날씨는 맑음이에요.';
+      } else {
+        // 선택된 루틴의 우선순위 점수 계산
+        final routineIds = selectedRoutines.map((r) => r.id).toList();
+
+        List<String> urlsToTry = [
+          ApiConfig.getBaseUrl(
+            isWeb: kIsWeb,
+            isAndroid: !kIsWeb && Platform.isAndroid,
+            isIOS: !kIsWeb && Platform.isIOS,
+          ),
+        ];
+        if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+          urlsToTry = ApiConfig.getAndroidBaseUrls();
+        }
+
+        Map<int, double>? scores;
+        for (final url in urlsToTry) {
+          try {
+            final uri = Uri.parse('$url/recommend/priority/selected');
+            final response = await http
+                .post(
+                  uri,
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                  },
+                  body: jsonEncode({'user_id': 1, 'routine_ids': routineIds}),
+                )
+                .timeout(
+                  const Duration(seconds: 10),
+                  onTimeout: () {
+                    throw Exception('요청 시간 초과');
+                  },
+                );
+
+            if (response.statusCode == 200) {
+              final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
+              scores = {};
+              for (final item in data) {
+                final routineId = item['routine_id'] as int;
+                final score = (item['pred_priority_score'] as num).toDouble();
+                scores[routineId] = score;
               }
-            } catch (parseError) {
-              // 파싱 실패해도 기본값 사용
-              print('[ViewAllScreen] 날씨 정보 JSON 파싱 실패: $parseError');
-              print('[ViewAllScreen] 응답 본문: ${response.body}');
+              break;
             }
-          } else {
-            print('[ViewAllScreen] 날씨 정보 HTTP 에러: statusCode=${response.statusCode}, body=${response.body}');
+          } catch (e) {
+            print('[ViewAllScreen] 우선순위 점수 API 호출 실패 ($url): $e');
+            continue;
           }
-        } catch (e, stackTrace) {
-          // 날씨 정보 로딩 실패 시 기본값 사용 (다른 API에 영향 주지 않음)
-          print('[ViewAllScreen] 날씨 정보 로딩 실패 (기본값 사용): $e');
-          print('[ViewAllScreen] 스택 트레이스: $stackTrace');
+        }
+
+        // 우선순위 점수가 가장 높은 루틴 찾기
+        if (scores != null && scores.isNotEmpty) {
+          ViewAllRoutineItem? bestRoutine;
+          double bestScore = -1.0;
+
+          for (final routine in selectedRoutines) {
+            final score = scores[routine.id] ?? 0.0;
+            if (score > bestScore) {
+              bestScore = score;
+              bestRoutine = routine;
+            }
+          }
+
+          if (bestRoutine != null) {
+            // 날씨 정보 가져오기
+            int? weatherCode;
+            List<String> weatherUrlsToTry = [
+              ApiConfig.getBaseUrl(
+                isWeb: kIsWeb,
+                isAndroid: !kIsWeb && Platform.isAndroid,
+                isIOS: !kIsWeb && Platform.isIOS,
+              ),
+            ];
+            if (!kIsWeb &&
+                Platform.isAndroid &&
+                ApiConfig.useEmulator == null) {
+              weatherUrlsToTry = ApiConfig.getAndroidBaseUrls();
+            }
+
+            for (final url in weatherUrlsToTry) {
+              try {
+                final uri = Uri.parse('$url/recommend/weather?user_id=1');
+                final response = await http
+                    .get(
+                      uri,
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                      },
+                    )
+                    .timeout(
+                      const Duration(seconds: 10),
+                      onTimeout: () {
+                        throw Exception('요청 시간 초과');
+                      },
+                    );
+
+                if (response.statusCode == 200) {
+                  final data =
+                      jsonDecode(utf8.decode(response.bodyBytes))
+                          as Map<String, dynamic>;
+                  weatherCode = data['weather_code'] as int?;
+                  break;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+
+            // 한국어 조사 처리
+            String particle = '';
+            final routineName = bestRoutine.name;
+            final lastChar = routineName.runes.last;
+            if (lastChar >= 0xAC00 && lastChar <= 0xD7A3) {
+              final hasFinalConsonant = (lastChar - 0xAC00) % 28 != 0;
+              particle = hasFinalConsonant ? '을' : '를';
+            } else {
+              particle = '을';
+            }
+
+            // 날씨에 따른 추천 메시지 생성
+            if (weatherCode == 2) {
+              // 비
+              weatherMessage =
+                  '비가와서 $routineName$particle 추천드려요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+            } else if (weatherCode == 3) {
+              // 눈
+              weatherMessage =
+                  '눈이와서 $routineName$particle 추천드려요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+            } else if (weatherCode == 1) {
+              // 흐림
+              weatherMessage =
+                  '흐려서 $routineName$particle 추천드려요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+            } else {
+              // 맑음
+              weatherMessage =
+                  '맑아서 $routineName$particle 하기에 좋은 날이에요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+            }
+          }
         }
       }
-      
-      // 모든 URL 시도 실패 시 로그 출력
-      if (weatherMessage == '맑음이 예정된 오늘,\n세탁기를 돌리실 건가요?') {
-        print('[ViewAllScreen] 날씨 정보 로딩 실패 - 모든 URL 시도 완료, 기본값 사용');
-      }
     } catch (e) {
-      // 날씨 정보 로딩 중 예외 발생 시 로그 출력
-      print('[ViewAllScreen] 날씨 정보 로딩 중 예외 발생: $e');
+      print('[ViewAllScreen] 추천 메시지 생성 중 예외 발생: $e');
+      weatherMessage = '오늘 날씨는 맑음이에요.';
     }
-    
+
     // 날씨 정보를 로드한 후 다이얼로그 표시 (API 실패해도 기본값으로 표시)
     if (!mounted) return;
-    
+
     showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
@@ -398,17 +458,65 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                       children: [
                         Expanded(
                           child: GestureDetector(
-                            onTap: () {
+                            onTap: () async {
                               setState(() {
                                 selectedButton = true;
                               });
                               Future.delayed(
                                 const Duration(milliseconds: 150),
-                                () {
+                                () async {
                                   if (context.mounted) {
                                     Navigator.pop(context);
-                                    // YES: 세탁기 포함하여 전달
-                                    _navigateToPriorityScreen(selectedRoutines);
+                                    // YES: 세탁기가 없으면 추가
+                                    final hasWashingRoutine = selectedRoutines
+                                        .any(
+                                          (routine) =>
+                                              routine.name
+                                                  .toLowerCase()
+                                                  .contains('세탁') ||
+                                              routine.name
+                                                  .toLowerCase()
+                                                  .contains('빨래') ||
+                                              routine.routineType
+                                                  .toLowerCase()
+                                                  .contains('wash'),
+                                        );
+
+                                    List<ViewAllRoutineItem> finalRoutines =
+                                        List.from(selectedRoutines);
+
+                                    if (!hasWashingRoutine) {
+                                      // 세탁기 루틴 찾기
+                                      try {
+                                        final washingRoutine = _allRoutines
+                                            .firstWhere(
+                                              (routine) =>
+                                                  routine.name
+                                                      .toLowerCase()
+                                                      .contains('세탁') ||
+                                                  routine.name
+                                                      .toLowerCase()
+                                                      .contains('빨래') ||
+                                                  routine.routineType
+                                                      .toLowerCase()
+                                                      .contains('wash'),
+                                            );
+
+                                        // 세탁기 루틴이 존재하면 추가
+                                        finalRoutines.add(washingRoutine);
+                                        // 선택된 루틴 ID에도 추가
+                                        _selectedRoutineIds.add(
+                                          washingRoutine.id,
+                                        );
+                                      } catch (e) {
+                                        // 세탁기 루틴이 없으면 추가하지 않음
+                                        print(
+                                          '[ViewAllScreen] 세탁기 루틴을 찾을 수 없습니다: $e',
+                                        );
+                                      }
+                                    }
+
+                                    _navigateToPriorityScreen(finalRoutines);
                                   }
                                 },
                               );
@@ -448,25 +556,8 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                                 () {
                                   if (context.mounted) {
                                     Navigator.pop(context);
-                                    // NO: 세탁기 관련 루틴 제외
-                                    final routinesWithoutWashing =
-                                        selectedRoutines
-                                            .where(
-                                              (routine) =>
-                                                  !routine.name
-                                                      .toLowerCase()
-                                                      .contains('세탁') &&
-                                                  !routine.name
-                                                      .toLowerCase()
-                                                      .contains('빨래') &&
-                                                  !routine.routineType
-                                                      .toLowerCase()
-                                                      .contains('wash'),
-                                            )
-                                            .toList();
-                                    _navigateToPriorityScreen(
-                                      routinesWithoutWashing,
-                                    );
+                                    // NO: 체크된 루틴만 그대로 전달 (세탁기 추가하지 않음)
+                                    _navigateToPriorityScreen(selectedRoutines);
                                   }
                                 },
                               );
@@ -523,10 +614,7 @@ class _ViewAllScreenState extends State<ViewAllScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '루틴 삭제',
-                  style: AppTextStyles.todoTitle(context),
-                ),
+                Text('루틴 삭제', style: AppTextStyles.todoTitle(context)),
                 const SizedBox(height: 16),
                 Text(
                   '${routine.name} 루틴을 삭제하시겠습니까?',
@@ -603,10 +691,8 @@ class _ViewAllScreenState extends State<ViewAllScreen>
   /// 루틴 삭제 실행
   Future<void> _deleteRoutine(ViewAllRoutineItem routine) async {
     print('[ViewAllScreen] 루틴 삭제 시작: ${routine.id}');
-    
-    final success = await RoutineService.deleteRoutine(
-      routineId: routine.id,
-    );
+
+    final success = await RoutineService.deleteRoutine(routineId: routine.id);
 
     if (success) {
       print('[ViewAllScreen] 루틴 삭제 성공: ${routine.id}');
@@ -614,7 +700,7 @@ class _ViewAllScreenState extends State<ViewAllScreen>
       _selectedRoutineIds.remove(routine.id);
       // 루틴 목록 새로고침
       await _loadAllRoutines();
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1014,11 +1100,7 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                     color: Colors.red,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.close,
-                    size: 16,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(Icons.close, size: 16, color: Colors.white),
                 ),
               ),
             ),

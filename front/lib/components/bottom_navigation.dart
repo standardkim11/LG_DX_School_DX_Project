@@ -84,8 +84,13 @@ class CustomBottomNavigation extends StatelessWidget {
                           ),
                           (route) => false, // 모든 이전 화면 제거
                         );
+                      } else {
+                        // routine_screen에 이미 있으면 오늘 날짜로 이동
+                        setRoutineScreenToToday();
+                        // RoutineScreen의 상태를 업데이트하기 위해 Navigator를 통해 알림
+                        // 하지만 이미 같은 화면이므로 Navigator를 사용할 수 없음
+                        // 대신 setRoutineScreenToToday()를 호출하고, RoutineScreen이 didChangeDependencies에서 확인하도록 함
                       }
-                      // routine_screen에 이미 있으면 아무 동작도 하지 않음
                     },
                     child: SizedBox(
                       width: iconSize,

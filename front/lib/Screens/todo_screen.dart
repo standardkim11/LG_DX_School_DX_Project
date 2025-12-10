@@ -26,8 +26,13 @@ class _TodoScreenStateManager {
   static set selectedDateIndex(int value) => _selectedDateIndex = value;
 
   static String? getCheckState(String key) => _checkStates[key];
-  static void setCheckState(String key, String value) =>
+  static void setCheckState(String key, String? value) {
+    if (value == null) {
+      _checkStates.remove(key);
+    } else {
       _checkStates[key] = value;
+    }
+  }
 }
 
 class _TodoScreenState extends State<TodoScreen> {
@@ -562,6 +567,27 @@ class _TodoScreenState extends State<TodoScreen> {
                         cardKey:
                             'todo_${todo['title']}_${todo['category']}_$originalIndex',
                         onCheckChanged: () => _toggleCheck(originalIndex),
+                        onDelete: () {
+                          // Delete 버튼 클릭 시 해당 날짜의 todo 목록에서 제거
+                          setState(() {
+                            final selectedDate = _getSelectedDate();
+                            final dateKey = _formatDateKey(selectedDate);
+                            final todos = _todosByDate[dateKey] ?? [];
+                            
+                            // 제거할 항목 찾기 (title과 category로 매칭)
+                            todos.removeWhere(
+                              (t) =>
+                                  t['title'] == todo['title'] &&
+                                  t['category'] == todo['category'],
+                            );
+                            
+                            _todosByDate[dateKey] = todos;
+                            
+                            // 체크 상태도 제거
+                            final key = _getTodoKey(todo);
+                            _TodoScreenStateManager.setCheckState(key, null); // null을 전달하면 키가 제거됨
+                          });
+                        },
                       ),
                     ),
                   );

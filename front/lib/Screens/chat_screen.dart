@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import '../Services/config.dart';
+import 'routine_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -114,12 +115,25 @@ class _ChatScreenState extends State<ChatScreen> {
       // 여러 URL 시도
       http.Response? response;
       String? successfulUrl;
-      
+
       print('[ChatScreen] 채팅 API 연결 시도 시작: ${urlsToTry.length}개 URL');
       for (int i = 0; i < urlsToTry.length; i++) {
         final url = urlsToTry[i];
         print('[ChatScreen] 채팅 API 시도 ${i + 1}/${urlsToTry.length}: $url');
         try {
+          // 오늘 날짜에 선택된 루틴 ID 가져오기
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+          final todayKey =
+              '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+          final selectedRoutineIds = getSelectedRoutinesForDate(todayKey);
+          final routineIdsList = selectedRoutineIds != null
+              ? selectedRoutineIds.toList()
+              : null;
+
+          print('[ChatScreen] 오늘 날짜: $todayKey');
+          print('[ChatScreen] 선택된 루틴 ID들: $routineIdsList');
+
           response = await http
               .post(
                 Uri.parse('$url/chat/chat'),
@@ -127,7 +141,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   'Content-Type': 'application/json',
                   'Accept': 'application/json',
                 },
-                body: jsonEncode({'user_id': userId, 'message': messageText}),
+                body: jsonEncode({
+                  'user_id': userId,
+                  'message': messageText,
+                  'selected_routine_ids': routineIdsList, // 선택된 루틴 ID들 전달
+                }),
               )
               .timeout(
                 const Duration(seconds: 60), // 채팅은 응답 시간이 길 수 있으므로 60초로 설정
@@ -440,6 +458,52 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLoadingIndicator() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(width: 16),
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Color(0xFF111111),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  '답변을 생성하고 있어요...',
+                  style: TextStyle(
+                    color: Color(0xFF111111),
+                    fontSize: 15.0,
+                    fontFamily: 'LG Smart_H',
+                    fontWeight: FontWeight.w400,
+                    height: 1.47,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+      ],
     );
   }
 

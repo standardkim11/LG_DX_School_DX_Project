@@ -112,11 +112,15 @@ def _init_gemini_model():
         return None
 
 
-def build_context_for_user(user_id: int) -> str:
+def build_context_for_user(user_id: int, selected_routine_ids: list[int] = None) -> str:
     """
     우리 서비스 DB를 조회해서,
     - 오늘 해야 할 루틴 리스트 (완료되지 않고 실패하지 않은 루틴만)
     를 텍스트로 정리해서 반환.
+    
+    Args:
+        user_id: 사용자 ID
+        selected_routine_ids: 선택된 루틴 ID 리스트 (None이면 모든 루틴 사용)
     """
     today = date.today()
 
@@ -126,6 +130,11 @@ def build_context_for_user(user_id: int) -> str:
     today_routine_ids = []  # 디버깅용
 
     for r in routines:
+        # 선택된 루틴 ID가 있으면 그 루틴들만 포함
+        if selected_routine_ids is not None and len(selected_routine_ids) > 0:
+            if r.id not in selected_routine_ids:
+                continue
+        
         if not is_scheduled_today(r, today):
             continue
         if is_done_today(r, user_id, today):
@@ -184,9 +193,16 @@ def chat():
     data = request.get_json() or {}
     user_id = data.get("user_id", 1)
     user_message = data.get("message")
+    selected_routine_ids = data.get("selected_routine_ids")  # 선택된 루틴 ID 리스트
 
     if not user_message:
         return jsonify({"error": "message is required"}), 400
+    
+    # 선택된 루틴 ID 로깅
+    if selected_routine_ids:
+        current_app.logger.info(f"[CHAT] 선택된 루틴 ID들: {selected_routine_ids}")
+    else:
+        current_app.logger.info(f"[CHAT] 선택된 루틴 ID 없음 - 모든 루틴 사용")
 
     # 1) 우선순위 추천 관련 키워드 감지
     priority_keywords = ["우선순위", "중요한 순위", "어떤 순서", "순서대로", "뭐부터", "먼저 해야 할", "우선적으로"]
@@ -217,6 +233,11 @@ def chat():
                     all_routines = Routine.query.filter_by(user_id=user_id, is_active=True).all()
                     routines = []
                     for r in all_routines:
+                        # 선택된 루틴 ID가 있으면 그 루틴들만 포함
+                        if selected_routine_ids and len(selected_routine_ids) > 0:
+                            if r.id not in selected_routine_ids:
+                                continue
+                        
                         if not is_scheduled_today(r, today):
                             continue
                         if is_done_today(r, user_id, today):
@@ -391,7 +412,7 @@ def chat():
     else:
         # 일반 요청: 전체 컨텍스트
         try:
-            context = build_context_for_user(user_id)
+            context = build_context_for_user(user_id, selected_routine_ids)
         except Exception as e:
             current_app.logger.exception("build_context_for_user error")
             context = "오늘의 루틴/기록 정보를 불러오지 못했습니다."

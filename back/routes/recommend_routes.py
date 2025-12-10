@@ -1111,16 +1111,23 @@ def get_weather():
         weather_label = "맑음"
         temp = 20.0
         humi = 60.0
-        pm25 = None
-        pm10 = None
+        pm25 = 40.0  # 기본값 사용 (XGBoost 모델에 숫자형 필요)
+        pm10 = 60.0  # 기본값 사용 (XGBoost 모델에 숫자형 필요)
     else:
         current_app.logger.info(f"✅ [Weather API] 날씨 정보 조회 성공: date={weather.date.isoformat() if weather.date else 'None'}, weather={weather.weather}, weather_type={type(weather.weather)}")
         weather_code = encode_weather(weather.weather) if weather.weather else 0
         weather_label = REVERSE_WEATHER.get(weather_code, "맑음")
         temp = float(weather.temperature) if weather.temperature else 20.0
         humi = float(weather.humidity) if weather.humidity else 60.0
-        pm25 = float(weather.pm25) if weather.pm25 else None
-        pm10 = float(weather.pm10) if weather.pm10 else None
+        # PM25와 PM10을 숫자형으로 변환 (None이면 기본값 사용)
+        try:
+            pm25 = float(weather.pm25) if weather.pm25 is not None else 40.0
+        except (ValueError, TypeError):
+            pm25 = 40.0
+        try:
+            pm10 = float(weather.pm10) if weather.pm10 is not None else 60.0
+        except (ValueError, TypeError):
+            pm10 = 60.0
         current_app.logger.info(f"✅ [Weather API] 날씨 코드 변환: weather='{weather.weather}' (repr: {repr(weather.weather)}) -> weather_code={weather_code}, weather_label='{weather_label}'")
         
         # 날씨 코드가 0(맑음)인데 원본이 "비"인 경우 경고
@@ -1251,16 +1258,16 @@ def get_weather():
                     
                     # 추천 이유 설명 추가
                     if weather_code == 2:  # 비
-                        recommendation_messages.append(f"비가 예정된 오늘, {best_routine_name}{particle} 추천드려요.")
+                        recommendation_messages.append(f"비가와서 {best_routine_name}{particle} 추천드려요.")
                         recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
                     elif weather_code == 3:  # 눈
-                        recommendation_messages.append(f"눈이 예정된 오늘, {best_routine_name}{particle} 추천드려요.")
+                        recommendation_messages.append(f"눈이와서 {best_routine_name}{particle} 추천드려요.")
                         recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
                     elif weather_code == 1:  # 흐림
-                        recommendation_messages.append(f"흐린 날씨예요. {best_routine_name}{particle} 추천드려요.")
+                        recommendation_messages.append(f"흐려서 {best_routine_name}{particle} 추천드려요.")
                         recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
                     else:  # 맑음
-                        recommendation_messages.append(f"맑은 날씨예요. {best_routine_name}{particle} 하기에 좋은 날이에요.")
+                        recommendation_messages.append(f"맑아서 {best_routine_name}{particle} 하기에 좋은 날이에요.")
                         recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
                 else:
                     # ML 모델 feature가 없으면 첫 번째 루틴 사용
@@ -1269,16 +1276,16 @@ def get_weather():
                     
                     # 추천 이유 설명 추가
                     if weather_code == 2:  # 비
-                        recommendation_messages.append(f"비가 예정된 오늘, {best_routine.name}{particle} 추천드려요.")
+                        recommendation_messages.append(f"비가와서 {best_routine.name}{particle} 추천드려요.")
                         recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
                     elif weather_code == 3:  # 눈
-                        recommendation_messages.append(f"{best_routine.name}{particle} 하기에 좋은 날씨예요.")
+                        recommendation_messages.append(f"눈이와서 {best_routine.name}{particle} 추천드려요.")
                         recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
                     elif weather_code == 1:  # 흐림
-                        recommendation_messages.append(f"{best_routine.name}{particle} 하기에 좋은 날씨예요.")
+                        recommendation_messages.append(f"흐려서 {best_routine.name}{particle} 추천드려요.")
                         recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
                     else:  # 맑음
-                        recommendation_messages.append(f"맑은 날씨예요. {best_routine.name}{particle} 하기에 좋은 날이에요.")
+                        recommendation_messages.append(f"맑아서 {best_routine.name}{particle} 하기에 좋은 날이에요.")
                         recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
             else:
                 # ML 모델이 없으면 첫 번째 루틴 사용
@@ -1306,16 +1313,16 @@ def get_weather():
             
             # 추천 이유 설명 추가
             if weather_code == 2:  # 비
-                recommendation_messages.append(f"비가 예정된 오늘, {best_routine.name}{particle} 추천드려요.")
+                recommendation_messages.append(f"비가와서 {best_routine.name}{particle} 추천드려요.")
                 recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
             elif weather_code == 3:  # 눈
-                recommendation_messages.append(f"{best_routine.name}{particle} 하기에 좋은 날씨예요.")
+                recommendation_messages.append(f"눈이와서 {best_routine.name}{particle} 추천드려요.")
                 recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
             elif weather_code == 1:  # 흐림
-                recommendation_messages.append(f"{best_routine.name}{particle} 하기에 좋은 날씨예요.")
+                recommendation_messages.append(f"흐려서 {best_routine.name}{particle} 추천드려요.")
                 recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
             else:  # 맑음
-                recommendation_messages.append(f"맑은 날씨예요. {best_routine.name}{particle} 하기에 좋은 날이에요.")
+                recommendation_messages.append(f"맑아서 {best_routine.name}{particle} 하기에 좋은 날이에요.")
                 recommendation_messages.append("날씨, 온도, 습도, 시간 등 요소를 고려했어요.")
     
     # 미세먼지 수치 확인 (pm25: 35 이상, pm10: 75 이상이면 나쁨)
@@ -1531,18 +1538,196 @@ def get_unused_notification():
                 "second_line": second_line,
             })
     
-    # 가장 부족한 루틴 하나만 반환 (또는 여러 개 반환 가능)
+    # 우선순위 점수 계산하여 가장 적절한 루틴 선택
     if notifications:
-        # remaining이 가장 큰 것부터 정렬
-        notifications.sort(key=lambda x: x["remaining"], reverse=True)
+        # ML 모델이 로드되어 있는지 확인
+        model = current_app.model  # type: ignore
+        feature_cols = current_app.feature_cols  # type: ignore
+        
+        if model is not None and feature_cols is not None:
+            # 우선순위 점수 계산을 위한 데이터 준비
+            now = datetime.now()
+            exec_hour = now.hour
+            exec_dow = now.weekday()
+            
+            # 날씨 정보 가져오기
+            today = now.date()
+            weather = WeatherInfo.query.filter_by(date=today).first()
+            temp = float(weather.temperature) if weather and weather.temperature else 20.0
+            humi = float(weather.humidity) if weather and weather.humidity else 60.0
+            weather_code = encode_weather(weather.weather) if weather and weather.weather is not None else 0
+            pm25 = float(weather.pm25) if weather and weather.pm25 else 40.0
+            pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
+            
+            # 알림 후보 루틴들의 ID 리스트
+            notification_routine_ids = [n["routine_id"] for n in notifications]
+            
+            # 최근 실행 기록 조회
+            last_logs_query = (
+                db.session.query(
+                    RoutineExecution.routine_id,
+                    RoutineExecution.run_time,
+                    RoutineExecution.recommended_flag,
+                    func.row_number()
+                    .over(
+                        partition_by=RoutineExecution.routine_id,
+                        order_by=RoutineExecution.start_time.desc()
+                    )
+                    .label('rn')
+                )
+                .filter(
+                    RoutineExecution.user_id == user_id,
+                    RoutineExecution.routine_id.in_(notification_routine_ids)
+                )
+                .subquery()
+            )
+            
+            last_logs_map = {}
+            if notification_routine_ids:
+                last_logs = (
+                    db.session.query(last_logs_query)
+                    .filter(last_logs_query.c.rn == 1)
+                    .all()
+                )
+                for log in last_logs:
+                    last_logs_map[log.routine_id] = {
+                        'run_time': log.run_time,
+                        'recommended_flag': log.recommended_flag
+                    }
+            
+            # 우선순위 점수 계산을 위한 데이터 준비
+            rows = []
+            routine_id_to_notification = {n["routine_id"]: n for n in notifications}
+            
+            for routine_id, notification in routine_id_to_notification.items():
+                routine = next((r for r in routines if r.id == routine_id), None)
+                if not routine:
+                    continue
+                
+                rt = encode_routine_type(routine.routine_type)
+                st = encode_schedule_type(routine.schedule_type)
+                preferred_hour = parse_preferred_time(routine.preferred_time)
+                
+                last_log = last_logs_map.get(routine.id)
+                if last_log:
+                    run_time = int(last_log['run_time'] or routine.run_minutes or 30)
+                    recommended_flag = int(bool(last_log['recommended_flag']))
+                else:
+                    run_time = int(routine.run_minutes or 30)
+                    recommended_flag = 0
+                
+                rows.append({
+                    "ROUTINE_ID": routine.id,
+                    "ROUTINE_NAME": routine.name,
+                    "ROUTINE_TYPE": rt,
+                    "SCHEDULE_TYPE": st,
+                    "PREFERRED_TIME": preferred_hour,
+                    "RUN_TIME": run_time,
+                    "EXEC_HOUR": exec_hour,
+                    "EXEC_DOW": exec_dow,
+                    "RUN_MINUTES": int(routine.run_minutes or 30),
+                    "RECOMMENDED_FLAG": recommended_flag,
+                    "TEMPERATURE": temp,
+                    "HUMIDITY": humi,
+                    "WEATHER": weather_code,
+                    "PM25": pm25,
+                    "PM10": pm10,
+                })
+            
+            # 우선순위 점수 계산
+            if rows:
+                df = pd.DataFrame(rows)
+                missing = [c for c in feature_cols if c not in df.columns]
+                if not missing:
+                    X = df[feature_cols]
+                    preds = model.predict(X)
+                    df["pred_priority_score"] = preds
+                    
+                    # 루틴 ID와 우선순위 점수 매핑
+                    routine_id_to_priority = dict(zip(df["ROUTINE_ID"], df["pred_priority_score"]))
+                    
+                    # 각 알림에 우선순위 점수 추가
+                    for notification in notifications:
+                        routine_id = notification["routine_id"]
+                        notification["priority_score"] = float(routine_id_to_priority.get(routine_id, 0.0))
+                    
+                    # 우선순위 점수가 높은 것부터 정렬, 같은 점수면 remaining이 큰 것부터
+                    notifications.sort(key=lambda x: (x.get("priority_score", 0.0), x["remaining"]), reverse=True)
+                    
+                    current_app.logger.info(f"🔍 [UnusedNotification] 우선순위 점수 계산 완료:")
+                    for i, notif in enumerate(notifications):
+                        current_app.logger.info(f"  {i+1}. {notif['routine_name']}: 우선순위={notif.get('priority_score', 0.0):.2f}, 실행={notif['executions_this_month']}/{notif['expected_count']}, 부족={notif['remaining']}회")
+                else:
+                    # feature가 없으면 remaining 기준으로 정렬
+                    current_app.logger.warning(f"⚠️ [UnusedNotification] ML 모델 feature 누락: {missing}, remaining 기준으로 정렬")
+                    notifications.sort(key=lambda x: x["remaining"], reverse=True)
+            else:
+                # rows가 없으면 remaining 기준으로 정렬
+                notifications.sort(key=lambda x: x["remaining"], reverse=True)
+        else:
+            # ML 모델이 없으면 remaining 기준으로 정렬
+            current_app.logger.warning(f"⚠️ [UnusedNotification] ML 모델이 로드되지 않음, remaining 기준으로 정렬")
+            notifications.sort(key=lambda x: x["remaining"], reverse=True)
+        
+        selected_notification = notifications[0]  # 가장 우선순위가 높은 루틴 반환
+        current_app.logger.info(f"✅ [UnusedNotification] 선택된 알림: {selected_notification['routine_name']} (우선순위: {selected_notification.get('priority_score', 0.0):.2f}, 부족: {selected_notification['remaining']}회)")
+        
         return jsonify({
             "has_notification": True,
-            "notification": notifications[0]  # 가장 부족한 루틴 하나만 반환
+            "notification": selected_notification
         }), 200
     else:
+        # 알림이 없는 이유 로깅 및 상세 정보 반환
+        current_app.logger.info(f"🔍 [UnusedNotification] 알림 없음 - 확인된 루틴 수: {len(routines)}")
+        reason = ""
+        routine_details = []
+        
+        if not routines:
+            reason = "WEEKLY/MONTHLY 타입의 활성 루틴이 없습니다"
+            current_app.logger.info(f"  - 이유: {reason}")
+        else:
+            reason = "모든 루틴이 예상 횟수를 채웠거나 초과했습니다"
+            current_app.logger.info(f"  - 이유: {reason}")
+            for routine in routines:
+                # 각 루틴의 실행 횟수와 예상 횟수 계산
+                if routine.schedule_type == 'WEEKLY':
+                    today = now.date()
+                    days_since_monday = today.weekday() - 1
+                    week_start = today - timedelta(days=days_since_monday)
+                    week_end = week_start + timedelta(days=6)
+                    week_start_dt = datetime.combine(week_start, time.min)
+                    week_end_dt = datetime.combine(week_end, time.max)
+                    executions_count = RoutineExecution.query.filter(
+                        RoutineExecution.user_id == user_id,
+                        RoutineExecution.routine_id == routine.id,
+                        RoutineExecution.status == 2,
+                        RoutineExecution.start_time >= week_start_dt,
+                        RoutineExecution.start_time <= week_end_dt
+                    ).count()
+                    expected_count = routine.schedule_frequency if routine.schedule_frequency else 1
+                    time_period = "이번 주"
+                else:  # MONTHLY
+                    executions_count = executions_this_month
+                    expected_count = routine.schedule_frequency if routine.schedule_frequency else 1
+                    time_period = "이번 달"
+                
+                routine_details.append({
+                    "routine_id": routine.id,
+                    "routine_name": routine.name,
+                    "schedule_type": routine.schedule_type,
+                    "schedule_frequency": routine.schedule_frequency,
+                    "executions_count": executions_count,
+                    "expected_count": expected_count,
+                    "time_period": time_period
+                })
+                current_app.logger.info(f"    - {routine.name} (ID={routine.id}): {time_period} {executions_count}/{expected_count}회")
+        
         return jsonify({
             "has_notification": False,
-            "notification": None
+            "notification": None,
+            "reason": reason,
+            "routines_checked": len(routines),
+            "routine_details": routine_details
         }), 200
 
 

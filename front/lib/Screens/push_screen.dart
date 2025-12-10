@@ -9,7 +9,6 @@ import '../components/app_colors.dart';
 import '../Services/routine_service.dart';
 import 'routine_screen.dart';
 import 'priority.dart';
-import 'washpush_screen.dart';
 import 'dart:async';
 import 'routine_screen.dart' as routine_module;
 
@@ -221,8 +220,11 @@ class _PushScreenState extends State<PushScreen> {
       if (data != null && mounted) {
         final hasNotification = data['has_notification'] as bool? ?? false;
 
+        print('[PushScreen] 미사용 알림 응답: has_notification=$hasNotification');
+        
         if (hasNotification) {
           final notification = data['notification'] as Map<String, dynamic>?;
+          print('[PushScreen] 미사용 알림 데이터: $notification');
           if (notification != null) {
             setState(() {
               _unusedFirstLine = notification['first_line'] as String?;
@@ -230,8 +232,42 @@ class _PushScreenState extends State<PushScreen> {
               _unusedRoutineId = notification['routine_id'] as int?;
               _unusedRoutineName = notification['routine_name'] as String?;
             });
+            print('[PushScreen] 미사용 알림 설정 완료: first_line=$_unusedFirstLine, second_line=$_unusedSecondLine');
+          } else {
+            print('[PushScreen] ⚠️ 미사용 알림: notification이 null입니다');
+            setState(() {
+              _unusedFirstLine = null;
+              _unusedSecondLine = null;
+              _unusedRoutineId = null;
+              _unusedRoutineName = null;
+            });
           }
+        } else {
+          // 알림이 없는 이유 확인
+          final reason = data['reason'] as String?;
+          final routinesChecked = data['routines_checked'] as int?;
+          final routineDetails = data['routine_details'] as List<dynamic>?;
+          
+          print('[PushScreen] ⚠️ 미사용 알림이 없습니다 (has_notification=false)');
+          print('[PushScreen]   - 이유: $reason');
+          print('[PushScreen]   - 확인된 루틴 수: $routinesChecked');
+          if (routineDetails != null && routineDetails.isNotEmpty) {
+            print('[PushScreen]   - 루틴 상세 정보:');
+            for (var detail in routineDetails) {
+              final detailMap = detail as Map<String, dynamic>;
+              print('[PushScreen]     * ${detailMap['routine_name']}: ${detailMap['time_period']} ${detailMap['executions_count']}/${detailMap['expected_count']}회 (${detailMap['schedule_type']}, 주기=${detailMap['schedule_frequency']})');
+            }
+          }
+          
+          setState(() {
+            _unusedFirstLine = null;
+            _unusedSecondLine = null;
+            _unusedRoutineId = null;
+            _unusedRoutineName = null;
+          });
         }
+      } else {
+        print('[PushScreen] ⚠️ 미사용 알림: data가 null이거나 mounted가 false입니다');
       }
     } catch (e) {
       // 예외 발생 시 로그 출력

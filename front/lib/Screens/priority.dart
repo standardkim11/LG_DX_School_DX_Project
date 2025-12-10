@@ -52,12 +52,15 @@ class _PriorityScreenState extends State<PriorityScreen> {
       // 이미 루틴이 전달된 경우
       _loadPriorityScores();
     }
-    _loadWeatherInfo();
+    // 날씨 정보는 우선순위 점수 로드 후에 호출됨
   }
 
   Future<void> _loadAllRoutines() async {
     try {
       final allRoutines = await RoutineService.getAllRoutines();
+      print(
+        '[PriorityScreen] _loadAllRoutines: 로드된 루틴 수=${allRoutines.length}',
+      );
       if (mounted) {
         // 로드한 루틴으로 selectedRoutines 업데이트 후 점수 로드
         setState(() {
@@ -169,9 +172,15 @@ class _PriorityScreenState extends State<PriorityScreen> {
       final finalRoutines = [...otherRoutines, ...monthlyRoutines];
 
       // 전달받은 루틴들을 화면에서 사용할 형식으로 변환
+      print(
+        '[PriorityScreen] _loadPriorityScoresWithRoutines: 전달받은 루틴 수=${routines.length}, 최종 루틴 수=${finalRoutines.length}',
+      );
       _routines = finalRoutines.asMap().entries.map((entry) {
         final routine = entry.value;
         final score = scores?[routine.id];
+        print(
+          '[PriorityScreen] 루틴 추가: ${routine.name} (ID=${routine.id}, 점수=${score})',
+        );
         return {
           'key': ValueKey('routine_${routine.id}'),
           'title': routine.name,
@@ -185,11 +194,14 @@ class _PriorityScreenState extends State<PriorityScreen> {
           'scheduleType': routine.scheduleType,
         };
       }).toList();
+      print('[PriorityScreen] _routines 최종 개수: ${_routines.length}');
 
       if (mounted) {
         setState(() {
           // 점수 로딩 완료
         });
+        // 우선순위 점수 로드 완료 후 날씨 정보 로드
+        _loadWeatherInfo();
       }
     } catch (e) {
       print('[PriorityScreen] 우선순위 점수 로딩 실패: $e');
@@ -235,90 +247,131 @@ class _PriorityScreenState extends State<PriorityScreen> {
         setState(() {
           // 점수 로딩 완료
         });
+        // 우선순위 점수 로드 완료 후 날씨 정보 로드
+        _loadWeatherInfo();
       }
     }
   }
 
   Future<void> _loadWeatherInfo() async {
     try {
-      // 날씨 정보 API 호출
-      List<String> urlsToTry = [baseUrl];
-      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
-        urlsToTry = ApiConfig.getAndroidBaseUrls();
+      // 선택된 루틴이 없으면 기본 메시지 사용
+      if (widget.selectedRoutines.isEmpty && _routines.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _weatherMessage = '오늘 날씨는 맑음이에요.';
+          });
+        }
+        return;
       }
 
-      String? weatherMessage;
-      print('[PriorityScreen] 날씨 정보 로딩 시작: ${urlsToTry.length}개 URL');
-      for (int i = 0; i < urlsToTry.length; i++) {
-        final url = urlsToTry[i];
-        print('[PriorityScreen] 날씨 정보 시도 ${i + 1}/${urlsToTry.length}: $url');
-        try {
-          final uri = Uri.parse('$url/recommend/weather?user_id=$userId');
-          print('[PriorityScreen] 날씨 정보 API 호출: $uri');
-          final response = await http
-              .get(
-                uri,
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json',
-                },
-              )
-              .timeout(
-                const Duration(seconds: 10), // 실제 기기에서는 빠른 실패로 다음 URL 시도
-                onTimeout: () {
-                  throw Exception('요청 시간 초과');
-                },
-              );
+      // 선택된 루틴의 우선순위 점수를 기반으로 추천 메시지 생성
+      // _routines가 로드된 후에 호출되므로, 우선순위 점수가 있는 루틴 중 가장 높은 점수의 루틴 선택
+      if (_routines.isNotEmpty) {
+        // 우선순위 점수가 있는 루틴만 필터링
+        final routinesWithScore = _routines
+            .where(
+              (r) =>
+                  r['priorityScore'] != null &&
+                  (r['priorityScore'] as double) > 0,
+            )
+            .toList();
 
-          print('[PriorityScreen] 날씨 정보 API 응답: statusCode=${response.statusCode}');
-          if (response.statusCode == 200) {
+        if (routinesWithScore.isNotEmpty) {
+          // 우선순위 점수가 가장 높은 루틴 선택
+          routinesWithScore.sort((a, b) {
+            final scoreA = a['priorityScore'] as double? ?? 0.0;
+            final scoreB = b['priorityScore'] as double? ?? 0.0;
+            return scoreB.compareTo(scoreA);
+          });
+
+          final bestRoutine = routinesWithScore.first;
+          final routineName = bestRoutine['title'] as String;
+
+          // 날씨 정보 가져오기 (날씨 라벨만 필요)
+          List<String> urlsToTry = [baseUrl];
+          if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+            urlsToTry = ApiConfig.getAndroidBaseUrls();
+          }
+
+          int? weatherCode;
+
+          for (final url in urlsToTry) {
             try {
-              final data =
-                  jsonDecode(utf8.decode(response.bodyBytes))
-                      as Map<String, dynamic>;
-              final recommendationMessage =
-                  data['recommendation_message'] as String?;
-              if (recommendationMessage != null &&
-                  recommendationMessage.isNotEmpty) {
-                weatherMessage = recommendationMessage;
-              } else {
-                // 날씨 정보는 있지만 추천 메시지가 없는 경우
-                final weatherLabel = data['weather_label'] as String? ?? '맑음';
-                weatherMessage = '오늘 날씨는 $weatherLabel이에요.';
+              final uri = Uri.parse('$url/recommend/weather?user_id=$userId');
+              final response = await http
+                  .get(
+                    uri,
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json',
+                    },
+                  )
+                  .timeout(
+                    const Duration(seconds: 10),
+                    onTimeout: () {
+                      throw Exception('요청 시간 초과');
+                    },
+                  );
+
+              if (response.statusCode == 200) {
+                final data =
+                    jsonDecode(utf8.decode(response.bodyBytes))
+                        as Map<String, dynamic>;
+                weatherCode = data['weather_code'] as int?;
+                break;
               }
-              print('[PriorityScreen] 날씨 정보 로딩 성공: $url, weather_label=${data['weather_label']}, recommendation_message=$recommendationMessage');
-              break; // 성공하면 종료
-            } catch (parseError) {
-              print('[PriorityScreen] 날씨 정보 JSON 파싱 실패: $parseError');
-              print('[PriorityScreen] 응답 본문: ${response.body}');
+            } catch (e) {
               continue;
             }
+          }
+
+          // 한국어 조사 처리
+          String particle = '';
+          final lastChar = routineName.runes.last;
+          if (lastChar >= 0xAC00 && lastChar <= 0xD7A3) {
+            final hasFinalConsonant = (lastChar - 0xAC00) % 28 != 0;
+            particle = hasFinalConsonant ? '을' : '를';
           } else {
-            // HTTP 에러
-            print(
-              '[PriorityScreen] 날씨 정보 HTTP 에러 ($url): statusCode=${response.statusCode}, body=${response.body}',
-            );
-            continue;
+            particle = '을';
           }
-        } catch (e, stackTrace) {
-          // 모든 URL 시도 실패 시 로그 출력
-          print('[PriorityScreen] 날씨 정보 로딩 실패 ($url): $e');
-          print('[PriorityScreen] 스택 트레이스: $stackTrace');
-          if (i == urlsToTry.length - 1) {
-            // 마지막 URL도 실패
-            print('[PriorityScreen] 날씨 정보 로딩 실패 - 모든 URL 시도 완료');
+
+          // 날씨에 따른 추천 메시지 생성
+          String weatherMessage;
+          if (weatherCode == 2) {
+            // 비
+            weatherMessage =
+                '비가와서 $routineName$particle 추천드려요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+          } else if (weatherCode == 3) {
+            // 눈
+            weatherMessage =
+                '눈이와서 $routineName$particle 추천드려요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+          } else if (weatherCode == 1) {
+            // 흐림
+            weatherMessage =
+                '흐려서 $routineName$particle 추천드려요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
+          } else {
+            // 맑음
+            weatherMessage =
+                '맑아서 $routineName$particle 하기에 좋은 날이에요.\n날씨, 온도, 습도, 시간 등 요소를 고려했어요.';
           }
-          continue;
+
+          if (mounted) {
+            setState(() {
+              _weatherMessage = weatherMessage;
+            });
+          }
+          return;
         }
       }
 
+      // 우선순위 점수가 없거나 루틴이 없으면 기본 메시지
       if (mounted) {
         setState(() {
-          _weatherMessage = weatherMessage ?? '오늘 날씨는 맑음이에요.';
+          _weatherMessage = '오늘 날씨는 맑음이에요.';
         });
       }
     } catch (e) {
-      // 날씨 정보 로딩 실패 시 로그 출력
       print('[PriorityScreen] 날씨 정보 로딩 중 예외 발생: $e');
       if (mounted) {
         setState(() {
@@ -427,9 +480,15 @@ class _PriorityScreenState extends State<PriorityScreen> {
       final finalRoutines = [...otherRoutines, ...monthlyRoutines];
 
       // 전달받은 루틴들을 화면에서 사용할 형식으로 변환
+      print(
+        '[PriorityScreen] _loadPriorityScores: 전달받은 루틴 수=${widget.selectedRoutines.length}, 최종 루틴 수=${finalRoutines.length}',
+      );
       _routines = finalRoutines.asMap().entries.map((entry) {
         final routine = entry.value;
         final score = scores?[routine.id];
+        print(
+          '[PriorityScreen] 루틴 추가: ${routine.name} (ID=${routine.id}, 점수=${score})',
+        );
         return {
           'key': ValueKey('routine_${routine.id}'),
           'title': routine.name,
@@ -443,11 +502,14 @@ class _PriorityScreenState extends State<PriorityScreen> {
           'scheduleType': routine.scheduleType, // 스케줄 타입 저장
         };
       }).toList();
+      print('[PriorityScreen] _routines 최종 개수: ${_routines.length}');
 
       if (mounted) {
         setState(() {
           // 점수 로딩 완료
         });
+        // 우선순위 점수 로드 완료 후 날씨 정보 로드
+        _loadWeatherInfo();
       }
     } catch (e) {
       print('[PriorityScreen] 우선순위 점수 로딩 실패: $e');
@@ -499,6 +561,8 @@ class _PriorityScreenState extends State<PriorityScreen> {
         setState(() {
           // 점수 로딩 완료
         });
+        // 우선순위 점수 로드 완료 후 날씨 정보 로드
+        _loadWeatherInfo();
       }
     }
   }
@@ -901,6 +965,9 @@ class _PriorityScreenState extends State<PriorityScreen> {
                           print('Error parsing dateKey: $e');
                         }
                       }
+
+                      // 오늘 날짜로 설정
+                      setRoutineScreenToToday();
 
                       // RoutineScreen으로 이동
                       Navigator.pushAndRemoveUntil(
