@@ -1168,6 +1168,73 @@
                 handlePlayButton();
             }
         });
+
+        // 원격 시작 명령 폴링 (Flutter 앱에서 시작 명령을 보내면 자동으로 시작)
+        // 백엔드 서버 URL 설정
+        // 로컬 개발: 'http://localhost:8088/api'
+        // 다른 기기에서 접근: 'http://[PC의 IP 주소]:8088/api' (예: 'http://192.168.0.16:8088/api')
+        // PC의 IP 주소 확인 방법:
+        //   - Windows: ipconfig 명령어 실행 후 "IPv4 주소" 확인
+        //   - Mac/Linux: ifconfig 또는 ip addr 명령어 실행
+        const API_BASE_URL = 'http://192.168.0.16:8088/api';
+
+        // 폴링 간격 (밀리초)
+        const POLLING_INTERVAL = 1000; // 1초마다 확인
+
+        function checkRemoteStartCommand() {
+            fetch(`${API_BASE_URL}/device/check-washing-machine-command`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('[폴링] 응답 데이터:', data);
+                    console.log('[폴링] should_start:', data.should_start);
+                    console.log('[폴링] isRunning:', isRunning);
+
+                    if (data.should_start && !isRunning) {
+                        console.log('✅ 원격 시작 명령 수신:', data);
+                        console.log('✅ handlePlayButton() 호출 시작');
+                        handlePlayButton();
+                        console.log('✅ handlePlayButton() 호출 완료');
+                    } else if (data.should_start && isRunning) {
+                        console.log('⚠️ 시작 명령 수신했지만 이미 실행 중입니다.');
+                    } else {
+                        // should_start가 false인 경우는 로그를 출력하지 않음 (너무 많아짐)
+                        // console.log('[폴링] 시작 명령 없음');
+                    }
+                })
+                .catch(error => {
+                    // 첫 번째 에러만 로그 출력 (연결 실패 시)
+                    if (!checkRemoteStartCommand.errorLogged) {
+                        console.error('❌ 원격 시작 명령 확인 실패:', error);
+                        console.error('API_BASE_URL:', API_BASE_URL);
+                        checkRemoteStartCommand.errorLogged = true;
+                    }
+                });
+        }
+
+        // 에러 로그 플래그 초기화
+        checkRemoteStartCommand.errorLogged = false;
+
+        // 페이지 로드 시 연결 테스트 및 폴링 시작
+        (async function () {
+            // 연결 테스트
+            try {
+                const testResponse = await fetch(`${API_BASE_URL}/device/test`);
+                const testData = await testResponse.json();
+                console.log('✅ 서버 연결 성공:', testData);
+            } catch (error) {
+                console.error('❌ 서버 연결 실패:', error);
+                console.error('API_BASE_URL:', API_BASE_URL);
+                console.error('서버가 실행 중인지 확인하세요: http://192.168.0.16:8088');
+            }
+
+            // 폴링 시작
+            setInterval(checkRemoteStartCommand, POLLING_INTERVAL);
+        })();
     </script>
 </body>
 

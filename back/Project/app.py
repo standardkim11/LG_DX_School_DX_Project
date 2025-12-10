@@ -71,6 +71,7 @@ from routes.routine_routes import routine_bp
 from routes.notification_routes import notification_bp
 from routes.recommend_routes import recommend_bp  # type: ignore
 from routes.chat_routes import chat_bp
+from routes.device_routes import device_bp
 from models.voice import voice_bp
 
 # 모델 import (SQLAlchemy 인식용)
@@ -170,6 +171,7 @@ def create_app():
     app.register_blueprint(recommend_bp,    url_prefix="/api/recommend")
     app.register_blueprint(voice_bp,        url_prefix="/api")
     app.register_blueprint(chat_bp, url_prefix="/api/chat")
+    app.register_blueprint(device_bp, url_prefix="/api")
     # 디버깅: 등록된 모든 라우트 출력
     if app.debug:
         print("\n" + "="*60)
