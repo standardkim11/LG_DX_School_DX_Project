@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스타일러 시연</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            background-image: url('room.png');
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: transparent;
+            z-index: 0;
+        }
+
+        .styler-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: -60px;
+            left: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1;
+        }
+
+        .styler {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 스타일러 본체 (닫힌 상태) */
+        .styler-body {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-image: url('1.png');
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            transition: opacity 0.2s ease;
+            z-index: 1;
+            opacity: 1;
+            will-change: opacity;
+            backface-visibility: hidden;
+            transform: translateZ(0);
+        }
+
+        .styler-body.hidden {
+            opacity: 0;
+        }
+
+        /* 스타일러 문 (열리는 상태들) */
+        .styler-door {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            z-index: 2;
+            will-change: opacity;
+            backface-visibility: hidden;
+            transform: translateZ(0);
+        }
+
+        .styler-door.opening {
+            opacity: 1;
+            background-image: url('2.png');
+        }
+
+        .styler-door.open {
+            opacity: 1;
+            background-image: url('3.png');
+        }
+
+        .styler-door.closing {
+            opacity: 1;
+            background-image: url('2.png');
+        }
+
+        .styler-door.closed {
+            opacity: 0;
+        }
+
+        /* 옷 넣기 모션 */
+        .clothes-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 3;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .clothes-container.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .clothes-container.exit {
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 5;
+        }
+
+        .clothes-container.exit .clothes-item {
+            opacity: 1 !important;
+        }
+
+        .clothes-item {
+            position: absolute;
+            width: 240px;
+            height: 340px;
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            opacity: 0;
+            transition: transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.8s ease;
+            filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.4));
+            will-change: transform, opacity;
+        }
+
+        .clothes-item:nth-child(1) {
+            background-image: url('패딩.png');
+            left: 42%;
+            top: 28%;
+            transform: translateX(-200%) translateY(0) scale(0.6) rotate(-15deg);
+            transition-delay: 0.2s;
+        }
+
+        .clothes-container.active .clothes-item:nth-child(1) {
+            transform: translateX(0) translateY(0) scale(1.2) rotate(0deg);
+            opacity: 1;
+        }
+
+        .clothes-container.exit .clothes-item:nth-child(1) {
+            transform: translateX(-200%) translateY(0) scale(0.6) rotate(-15deg);
+            opacity: 0;
+            transition-delay: 0.4s;
+        }
+
+        .clothes-item:nth-child(2) {
+            background-image: url('코트.png');
+            left: 42%;
+            top: 38%;
+            transform: translateX(-200%) translateY(100%) scale(0.5) rotate(5deg);
+            transition-delay: 0.4s;
+        }
+
+        .clothes-container.active .clothes-item:nth-child(2) {
+            transform: translateX(0) translateY(0) scale(1.2) rotate(0deg);
+            opacity: 1;
+        }
+
+        .clothes-container.exit .clothes-item:nth-child(2) {
+            transform: translateX(-200%) translateY(100%) scale(0.5) rotate(5deg);
+            opacity: 0;
+            transition-delay: 0.5s;
+        }
+
+        .clothes-item:nth-child(3) {
+            background-image: url('자켓.png');
+            left: 42%;
+            top: 48%;
+            transform: translateX(-200%) translateY(0) scale(0.6) rotate(15deg);
+            transition-delay: 0.6s;
+        }
+
+        .clothes-container.active .clothes-item:nth-child(3) {
+            transform: translateX(0) translateY(0) scale(1.2) rotate(0deg);
+            opacity: 1;
+        }
+
+        .clothes-container.exit .clothes-item:nth-child(3) {
+            transform: translateX(-200%) translateY(0) scale(0.6) rotate(15deg);
+            opacity: 0;
+            transition-delay: 0.6s;
+        }
+
+        /* 완료 상태 */
+        .styler-complete {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-image: url('4.png');
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 4;
+            will-change: opacity;
+        }
+
+        .styler-complete.show {
+            opacity: 1;
+        }
+
+        /* 제어 버튼 */
+        .control-panel {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 40px;
+            z-index: 100;
+        }
+
+        .control-button {
+            padding: 12px 28px;
+            background: linear-gradient(135deg, #4B57BB 0%, #3a45a0 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(75, 87, 187, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            letter-spacing: 0.3px;
+        }
+
+        .control-button:hover {
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 6px 20px rgba(75, 87, 187, 0.7),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+
+        .control-button:active {
+            transform: translateY(-1px) scale(1.02);
+        }
+
+        .control-button:disabled {
+            background: linear-gradient(135deg, #999 0%, #777 100%);
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+
+
+        /* 애니메이션 */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0px) scale(1);
+            }
+
+            50% {
+                transform: translateY(-8px) scale(1.02);
+            }
+        }
+
+        @keyframes floatCenter {
+
+            0%,
+            100% {
+                transform: translateX(-50%) translateY(0px) scale(1);
+            }
+
+            50% {
+                transform: translateX(-50%) translateY(-8px) scale(1.02);
+            }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease;
+        }
+
+        .slide-up {
+            animation: slideUp 0.6s ease;
+        }
+
+        .clothes-container.active .clothes-item:nth-child(1),
+        .clothes-container.active .clothes-item:nth-child(3) {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        .clothes-container.active .clothes-item:nth-child(1) {
+            animation-delay: 1s;
+        }
+
+        .clothes-container.active .clothes-item:nth-child(2) {
+            animation: floatCenter 3s ease-in-out infinite;
+            animation-delay: 1.3s;
+        }
+
+        .clothes-container.active .clothes-item:nth-child(3) {
+            animation-delay: 1.6s;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="styler-container">
+        <div class="styler">
+            <!-- 스타일러 본체 (닫힌 상태) -->
+            <div class="styler-body" id="stylerBody"></div>
+
+            <!-- 스타일러 문 (열리는 상태들) -->
+            <div class="styler-door" id="stylerDoor"></div>
+
+            <!-- 옷 넣기 모션 -->
+            <div class="clothes-container" id="clothesContainer">
+                <div class="clothes-item"></div>
+                <div class="clothes-item"></div>
+                <div class="clothes-item"></div>
+            </div>
+
+            <!-- 완료 상태 -->
+            <div class="styler-complete" id="stylerComplete"></div>
+        </div>
+    </div>
+
+    <!-- 제어 버튼 -->
+    <div class="control-panel">
+        <button class="control-button" id="startButton">시작</button>
+        <button class="control-button" id="resetButton">리셋</button>
+    </div>
+
+    <script>
+        // 이미지 preload - 페이지 로드 시 미리 로드
+        const images = ['1.png', '2.png', '3.png', '4.png'];
+        images.forEach(src => {
+            const img = new Image();
+            img.src = src;
+        });
+
+        const stylerBody = document.getElementById('stylerBody');
+        const stylerDoor = document.getElementById('stylerDoor');
+        const clothesContainer = document.getElementById('clothesContainer');
+        const stylerComplete = document.getElementById('stylerComplete');
+        const startButton = document.getElementById('startButton');
+        const resetButton = document.getElementById('resetButton');
+
+        let isAnimating = false;
+        let currentStep = 0;
+        let currentIndex = 0;
+
+        // 상태별 이미지 설정
+        const states = {
+            1: { image: '1.png', text: '닫힘', doorClass: 'closed' },
+            2: { image: '2.png', text: '열리는 중', doorClass: 'opening' },
+            3: { image: '3.png', text: '열림', doorClass: 'open' },
+            4: { image: '3.png', text: '옷 넣는 중', doorClass: 'open' },
+            1: { image: '2.png', text: '닫히는 중', doorClass: 'closing' },
+            4: { image: '4.png', text: '완료', doorClass: 'closed' }
+        };
+
+        // 애니메이션 시퀀스: 1 -> 2 -> 3 -> 4(옷넣기) -> 1 -> 4(완료) -> 옷나오기
+        const sequence = [1, 2, 3, 4, 1, 4];
+
+
+        function setState(step) {
+            // 모든 상태 초기화
+            stylerDoor.classList.remove('opening', 'open', 'closing', 'closed');
+            clothesContainer.classList.remove('active', 'exit');
+            stylerComplete.classList.remove('show');
+            stylerBody.classList.remove('hidden');
+
+            // 옷들의 스타일 초기화 (옷 넣기 애니메이션을 위해 - 옷 넣기 모션일 때는 제외)
+            if (!(step === 4 && currentIndex === 3)) {
+                const clothesItems = clothesContainer.querySelectorAll('.clothes-item');
+                clothesItems.forEach((item) => {
+                    item.style.transition = '';
+                    item.style.opacity = '';
+                    item.style.zIndex = '';
+                    item.style.left = '';
+                    item.style.top = '';
+                    item.style.transform = '';
+                });
+                clothesContainer.style.opacity = '';
+                clothesContainer.style.zIndex = '';
+            }
+
+            switch (step) {
+                case 1: // 닫힘
+                    stylerBody.style.backgroundImage = "url('1.png')";
+                    stylerDoor.classList.add('closed');
+                    break;
+
+                case 2: // 열리는 중
+                    requestAnimationFrame(() => {
+                        stylerBody.style.backgroundImage = "url('2.png')";
+                        stylerDoor.classList.add('opening');
+                    });
+                    break;
+
+                case 3: // 열림
+                    requestAnimationFrame(() => {
+                        stylerBody.style.backgroundImage = "url('3.png')";
+                        stylerDoor.classList.add('open');
+                    });
+                    break;
+
+                case 4: // 옷 넣기 또는 완료
+                    if (currentIndex === 3) {
+                        // 옷 넣기 모션 (3 다음, 인덱스 3)
+                        stylerBody.style.backgroundImage = "url('3.png')";
+                        stylerDoor.classList.add('open');
+                        clothesContainer.classList.remove('exit');
+
+                        // 옷들을 초기 위치로 리셋 (들어가는 애니메이션을 위해)
+                        const clothesItems = clothesContainer.querySelectorAll('.clothes-item');
+                        clothesItems.forEach((item, index) => {
+                            // 모든 inline style 제거하여 CSS가 작동하도록
+                            item.style.transition = 'none';
+                            item.style.opacity = '';
+                            item.style.zIndex = '';
+                            item.style.left = '';
+                            item.style.top = '';
+                            item.style.transform = '';
+                        });
+
+                        // 컨테이너를 보이도록 설정
+                        clothesContainer.style.opacity = '';
+                        clothesContainer.style.zIndex = '';
+
+                        // active 클래스를 추가하기 전에 약간의 딜레이를 주어 transition이 작동하도록
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                clothesItems.forEach((item) => {
+                                    item.style.transition = ''; // CSS transition 활성화
+                                });
+                                clothesContainer.classList.add('active');
+                            });
+                        });
+                    } else if (currentIndex === 5) {
+                        // 완료 상태 (시퀀스의 마지막, 인덱스 5)
+                        stylerBody.style.backgroundImage = "url('4.png')";
+                        stylerDoor.classList.add('closed');
+                        clothesContainer.classList.remove('active');
+                        stylerComplete.classList.add('show');
+
+                        // 4 화면 전환되면서 바로 옷들이 나오는 애니메이션
+                        setTimeout(() => {
+                            const clothesItems = clothesContainer.querySelectorAll('.clothes-item');
+
+                            // 옷들을 스타일러 위치에 먼저 배치 (더 위로, 보이도록)
+                            clothesItems.forEach((item, index) => {
+                                item.style.transition = 'none';
+                                item.style.left = '38%';
+                                if (index === 0) {
+                                    item.style.top = '20%';
+                                    item.style.transform = 'translateX(0) translateY(0) scale(1) rotate(0deg)';
+                                } else if (index === 1) {
+                                    item.style.top = '30%';
+                                    item.style.transform = 'translateX(0) translateY(0) scale(1) rotate(0deg)';
+                                } else {
+                                    item.style.top = '40%';
+                                    item.style.transform = 'translateX(0) translateY(0) scale(1) rotate(0deg)';
+                                }
+                                item.style.opacity = '1';
+                                item.style.zIndex = '10';
+                            });
+
+                            // 컨테이너를 보이도록 설정
+                            clothesContainer.style.opacity = '1';
+                            clothesContainer.style.zIndex = '5';
+                            clothesContainer.classList.add('exit');
+
+                            // transition을 다시 활성화하고 옷들이 아래로 내려가면서 커지는 애니메이션
+                            setTimeout(() => {
+                                clothesItems.forEach((item, index) => {
+                                    item.style.transition = 'transform 0.6s ease, opacity 0.6s ease';
+                                    setTimeout(() => {
+                                        // 아래로 내려가면서 더 커지기 (덜 내려가게)
+                                        item.style.transform = 'translateX(0) translateY(100px) scale(1.3) rotate(0deg)';
+                                        item.style.opacity = '0';
+                                    }, index * 150);
+                                });
+                            }, 300);
+                        }, 100);
+                    }
+                    break;
+            }
+        }
+
+        async function runSequence() {
+            if (isAnimating) return;
+            isAnimating = true;
+            startButton.disabled = true;
+
+            for (let i = 0; i < sequence.length; i++) {
+                currentStep = sequence[i];
+                currentIndex = i;
+                setState(currentStep);
+
+                // 각 단계별 대기 시간
+                let delay = 1000; // 기본 1초
+                if (currentStep === 1 && i === 0) delay = 600; // 닫힘: 0.6초
+                if (currentStep === 2) delay = 600; // 열리는 중: 0.6초
+                if (currentStep === 3) delay = 600; // 열림: 0.6초
+                if (currentStep === 4 && i === 3) delay = 2500; // 옷 넣기: 2.5초
+                if (currentStep === 1 && i === 4) delay = 1500; // 닫히는 중: 1.5초
+                if (currentStep === 4 && i === 5) delay = 2000; // 완료: 2초
+
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+
+            isAnimating = false;
+            startButton.disabled = false;
+        }
+
+        function reset() {
+            if (isAnimating) return;
+            currentStep = 1;
+            currentIndex = 0;
+            setState(1);
+            clothesContainer.classList.remove('active');
+            stylerComplete.classList.remove('show');
+        }
+
+        startButton.addEventListener('click', runSequence);
+        resetButton.addEventListener('click', reset);
+
+        // 초기 상태 설정
+        reset();
+    </script>
+</body>
+
+</html>
