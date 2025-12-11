@@ -233,8 +233,8 @@
         /* 세탁기 문 - 더 명확하게 */
         .door-frame {
             position: absolute;
-            width: 480px;
-            height: 480px;
+            width: 560px;
+            height: 560px;
             border-radius: 50%;
             border: 40px solid #2a2a2a;
             background: #1a1a1a;
@@ -247,8 +247,8 @@
 
         .door-glass {
             position: absolute;
-            width: 400px;
-            height: 400px;
+            width: 480px;
+            height: 480px;
             border-radius: 50%;
             border: 15px solid #0a0a0a;
             background:
@@ -295,8 +295,8 @@
         /* 세탁통 - 더 크고 명확하게 */
         .drum {
             position: absolute;
-            width: 370px;
-            height: 370px;
+            width: 450px;
+            height: 450px;
             border-radius: 50%;
             background:
                 radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.2) 0%, transparent 60%),
@@ -333,6 +333,45 @@
 
         .drum.rotating {
             animation: drumRotate 2s linear infinite !important;
+        }
+
+        /* 원통이 회전할 때 세탁물 컨테이너는 고정 (원통 내부에서 도는 효과) */
+        .drum.rotating .laundry {
+            animation: counterRotate 2s linear infinite;
+        }
+
+        .drum.stopping .laundry {
+            animation: counterSlowStop 3s ease-out forwards;
+        }
+
+        @keyframes counterRotate {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(-360deg);
+            }
+        }
+
+        @keyframes counterSlowStop {
+            0% {
+                transform: rotate(0deg);
+                animation-timing-function: linear;
+            }
+
+            30% {
+                transform: rotate(-108deg);
+            }
+
+            60% {
+                transform: rotate(-180deg);
+                animation-timing-function: ease-out;
+            }
+
+            100% {
+                transform: rotate(-216deg);
+            }
         }
 
         .drum.stopping {
@@ -496,7 +535,7 @@
             display: none;
         }
 
-        /* 세탁물 - 더 크고 명확하게 */
+        /* 세탁물 - laundry.png 이미지 사용 */
         .laundry {
             position: absolute;
             width: 100%;
@@ -504,466 +543,60 @@
             border-radius: 50%;
             overflow: hidden;
             z-index: 5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        /* 통이 회전해도 세탁물 컨테이너는 고정 */
-        .drum.rotating .laundry {
-            animation: counterRotate 2s linear infinite;
+        .laundry-image {
+            width: 390px;
+            height: 390px;
+            background-image: url('laundry.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            position: relative;
+            z-index: 5;
         }
 
-        .drum.stopping .laundry {
-            animation: counterSlowStop 3s ease-out forwards;
+        /* 통이 회전할 때 세탁물은 원통 내부에서 도는 것처럼 보이게 */
+        /* .laundry 컨테이너가 반대 방향으로 회전하므로, .laundry-image는 추가 회전 없이도 원통 내부에서 도는 것처럼 보임 */
+        .drum.rotating .laundry-image {
+            animation: laundryRotate 1.5s linear infinite;
         }
 
-        @keyframes counterRotate {
+        .drum.stopping .laundry-image {
+            animation: laundrySlowStop 3s ease-out forwards;
+        }
+
+        @keyframes laundryRotate {
             0% {
                 transform: rotate(0deg);
             }
 
             100% {
-                transform: rotate(-360deg);
+                transform: rotate(360deg);
             }
         }
 
-        @keyframes counterSlowStop {
+        @keyframes laundrySlowStop {
             0% {
                 transform: rotate(0deg);
                 animation-timing-function: linear;
             }
 
             30% {
-                transform: rotate(-108deg);
+                transform: rotate(108deg);
             }
 
             60% {
-                transform: rotate(-180deg);
+                transform: rotate(180deg);
                 animation-timing-function: ease-out;
             }
 
             100% {
-                transform: rotate(-216deg);
+                transform: rotate(216deg);
             }
-        }
-
-        .laundry-item {
-            position: absolute;
-            opacity: 0.85;
-            box-shadow:
-                0 3px 10px rgba(0, 0, 0, 0.4),
-                inset 0 1px 3px rgba(255, 255, 255, 0.2);
-            border: 1px solid rgba(0, 0, 0, 0.2);
-        }
-
-        .drum.rotating .laundry-item {
-            animation-timing-function: ease-in-out;
-            animation-iteration-count: infinite;
-        }
-
-        .drum.rotating .laundry-item-1 {
-            animation: laundryChaos1 1.2s ease-in-out infinite;
-        }
-
-        .drum.rotating .laundry-item-2 {
-            animation: laundryChaos2 1.5s ease-in-out infinite;
-        }
-
-        .drum.rotating .laundry-item-3 {
-            animation: laundryChaos3 1.8s ease-in-out infinite;
-        }
-
-        .drum.rotating .laundry-item-4 {
-            animation: laundryChaos4 1.3s ease-in-out infinite;
-        }
-
-        .drum.rotating .laundry-item-5 {
-            animation: laundryChaos5 1.6s ease-in-out infinite;
-        }
-
-        .drum.rotating .laundry-item-6 {
-            animation: laundryChaos6 1.4s ease-in-out infinite;
-        }
-
-        /* 세탁물 점진적 멈춤 */
-        .drum.stopping .laundry-item {
-            animation: laundrySlowStop 3s ease-out forwards;
-        }
-
-        .drum.stopping .laundry-item-1 {
-            animation: laundrySlowStop1 3s ease-out forwards;
-        }
-
-        .drum.stopping .laundry-item-2 {
-            animation: laundrySlowStop2 3s ease-out forwards;
-        }
-
-        .drum.stopping .laundry-item-3 {
-            animation: laundrySlowStop3 3s ease-out forwards;
-        }
-
-        .drum.stopping .laundry-item-4 {
-            animation: laundrySlowStop4 3s ease-out forwards;
-        }
-
-        .drum.stopping .laundry-item-5 {
-            animation: laundrySlowStop5 3s ease-out forwards;
-        }
-
-        .drum.stopping .laundry-item-6 {
-            animation: laundrySlowStop6 3s ease-out forwards;
-        }
-
-        @keyframes laundryChaos1 {
-            0% {
-                transform: translate(-50%, -50%) translateY(-80px) rotate(-20deg) translate(0, 0);
-            }
-
-            25% {
-                transform: translate(-50%, -50%) translateY(-80px) rotate(50deg) translate(40px, -30px);
-            }
-
-            50% {
-                transform: translate(-50%, -50%) translateY(-80px) rotate(-70deg) translate(-35px, 40px);
-            }
-
-            75% {
-                transform: translate(-50%, -50%) translateY(-80px) rotate(90deg) translate(25px, 35px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translateY(-80px) rotate(-20deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundryChaos2 {
-            0% {
-                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(25deg) translate(0, 0);
-            }
-
-            25% {
-                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(-45deg) translate(-30px, 25px);
-            }
-
-            50% {
-                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(75deg) translate(35px, -40px);
-            }
-
-            75% {
-                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(-55deg) translate(-20px, -25px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(25deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundryChaos3 {
-            0% {
-                transform: translate(-50%, -50%) translate(90px, -30px) rotate(45deg) translate(0, 0);
-            }
-
-            25% {
-                transform: translate(-50%, -50%) translate(90px, -30px) rotate(-30deg) translate(30px, 30px);
-            }
-
-            50% {
-                transform: translate(-50%, -50%) translate(90px, -30px) rotate(60deg) translate(-40px, -25px);
-            }
-
-            75% {
-                transform: translate(-50%, -50%) translate(90px, -30px) rotate(-80deg) translate(20px, 40px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translate(90px, -30px) rotate(45deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundryChaos4 {
-            0% {
-                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-35deg) translate(0, 0);
-            }
-
-            25% {
-                transform: translate(-50%, -50%) translate(60px, 70px) rotate(55deg) translate(-25px, -35px);
-            }
-
-            50% {
-                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-65deg) translate(40px, 20px);
-            }
-
-            75% {
-                transform: translate(-50%, -50%) translate(60px, 70px) rotate(45deg) translate(-30px, 30px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-35deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundryChaos5 {
-            0% {
-                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(30deg) translate(0, 0);
-            }
-
-            25% {
-                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(-50deg) translate(35px, -20px);
-            }
-
-            50% {
-                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(70deg) translate(-30px, 35px);
-            }
-
-            75% {
-                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(-40deg) translate(25px, -30px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(30deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundryChaos6 {
-            0% {
-                transform: translate(-50%, -50%) translateY(80px) rotate(-25deg) translate(0, 0);
-            }
-
-            25% {
-                transform: translate(-50%, -50%) translateY(80px) rotate(40deg) translate(-35px, 25px);
-            }
-
-            50% {
-                transform: translate(-50%, -50%) translateY(80px) rotate(-60deg) translate(30px, -40px);
-            }
-
-            75% {
-                transform: translate(-50%, -50%) translateY(80px) rotate(50deg) translate(-25px, 30px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translateY(80px) rotate(-25deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundrySlowStop1 {
-            0% {
-                transform: translate(-50%, -50%) translateY(-80px) rotate(-20deg) translate(0, 0);
-            }
-
-            30% {
-                transform: translate(-50%, -50%) translateY(-80px) rotate(15deg) translate(10px, -5px);
-            }
-
-            60% {
-                transform: translate(-50%, -50%) translateY(-80px) rotate(-5deg) translate(3px, -2px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translateY(-80px) rotate(-20deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundrySlowStop2 {
-            0% {
-                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(25deg) translate(0, 0);
-            }
-
-            30% {
-                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(-10deg) translate(-8px, 5px);
-            }
-
-            60% {
-                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(8deg) translate(-3px, 2px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translate(-90px, -30px) rotate(25deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundrySlowStop3 {
-            0% {
-                transform: translate(-50%, -50%) translate(90px, -30px) rotate(45deg) translate(0, 0);
-            }
-
-            30% {
-                transform: translate(-50%, -50%) translate(90px, -30px) rotate(-20deg) translate(10px, 8px);
-            }
-
-            60% {
-                transform: translate(-50%, -50%) translate(90px, -30px) rotate(15deg) translate(4px, 3px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translate(90px, -30px) rotate(45deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundrySlowStop4 {
-            0% {
-                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-35deg) translate(0, 0);
-            }
-
-            30% {
-                transform: translate(-50%, -50%) translate(60px, 70px) rotate(20deg) translate(-8px, -10px);
-            }
-
-            60% {
-                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-12deg) translate(-3px, -4px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translate(60px, 70px) rotate(-35deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundrySlowStop5 {
-            0% {
-                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(30deg) translate(0, 0);
-            }
-
-            30% {
-                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(-15deg) translate(8px, -8px);
-            }
-
-            60% {
-                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(10deg) translate(3px, -3px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translate(-60px, 70px) rotate(30deg) translate(0, 0);
-            }
-        }
-
-        @keyframes laundrySlowStop6 {
-            0% {
-                transform: translate(-50%, -50%) translateY(80px) rotate(-25deg) translate(0, 0);
-            }
-
-            30% {
-                transform: translate(-50%, -50%) translateY(80px) rotate(18deg) translate(-10px, 8px);
-            }
-
-            60% {
-                transform: translate(-50%, -50%) translateY(80px) rotate(-8deg) translate(-4px, 3px);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) translateY(80px) rotate(-25deg) translate(0, 0);
-            }
-        }
-
-        .laundry-item-1 {
-            width: 70px;
-            height: 95px;
-            border-radius: 8px 8px 12px 12px;
-            background:
-                repeating-linear-gradient(45deg,
-                    #4a8fff 0px,
-                    #4a8fff 8px,
-                    #3a7fef 8px,
-                    #3a7fef 16px),
-                linear-gradient(135deg, #5a9fff 0%, #3a7fdf 100%);
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) translateY(-80px) rotate(-20deg);
-        }
-
-        .laundry-item-2 {
-            width: 80px;
-            height: 105px;
-            border-radius: 10px 10px 14px 14px;
-            background:
-                repeating-linear-gradient(90deg,
-                    #ff4a4a 0px,
-                    #ff4a4a 10px,
-                    #ef3a3a 10px,
-                    #ef3a3a 20px),
-                linear-gradient(135deg, #ff5a5a 0%, #df3a3a 100%);
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) translate(-90px, -30px) rotate(25deg);
-        }
-
-        .laundry-item-3 {
-            width: 65px;
-            height: 90px;
-            border-radius: 8px 8px 12px 12px;
-            background:
-                repeating-linear-gradient(135deg,
-                    #4aff4a 0px,
-                    #4aff4a 6px,
-                    #3adf3a 6px,
-                    #3adf3a 12px),
-                linear-gradient(135deg, #5aff5a 0%, #3adf3a 100%);
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) translate(90px, -30px) rotate(45deg);
-        }
-
-        .laundry-item-4 {
-            width: 75px;
-            height: 100px;
-            border-radius: 9px 9px 13px 13px;
-            background:
-                repeating-linear-gradient(0deg,
-                    #f0f0f0 0px,
-                    #f0f0f0 8px,
-                    #e0e0e0 8px,
-                    #e0e0e0 16px),
-                linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) translate(60px, 70px) rotate(-35deg);
-        }
-
-        .laundry-item-5 {
-            width: 70px;
-            height: 95px;
-            border-radius: 8px 8px 12px 12px;
-            background:
-                repeating-linear-gradient(60deg,
-                    #ff4aff 0px,
-                    #ff4aff 7px,
-                    #df3adf 7px,
-                    #df3adf 14px),
-                linear-gradient(135deg, #ff5aff 0%, #df3adf 100%);
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) translate(-60px, 70px) rotate(30deg);
-        }
-
-        .laundry-item-6 {
-            width: 60px;
-            height: 85px;
-            border-radius: 7px 7px 11px 11px;
-            background:
-                repeating-linear-gradient(120deg,
-                    #4affff 0px,
-                    #4affff 6px,
-                    #3adfdf 6px,
-                    #3adfdf 12px),
-                linear-gradient(135deg, #5affff 0%, #3adfdf 100%);
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) translateY(80px) rotate(-25deg);
-        }
-
-        /* 세탁물 주름 효과 */
-        .laundry-item::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background:
-                repeating-linear-gradient(90deg,
-                    transparent 0px,
-                    transparent 3px,
-                    rgba(0, 0, 0, 0.05) 3px,
-                    rgba(0, 0, 0, 0.05) 4px);
-            border-radius: inherit;
-            pointer-events: none;
         }
 
         /* 물 효과 */
@@ -1080,12 +713,7 @@
                     <div class="drum-hole"></div>
                 </div>
                 <div class="laundry">
-                    <div class="laundry-item laundry-item-1"></div>
-                    <div class="laundry-item laundry-item-2"></div>
-                    <div class="laundry-item laundry-item-3"></div>
-                    <div class="laundry-item laundry-item-4"></div>
-                    <div class="laundry-item laundry-item-5"></div>
-                    <div class="laundry-item laundry-item-6"></div>
+                    <div class="laundry-image"></div>
                 </div>
                 <div class="water-effect"></div>
                 <div class="drum-center"></div>
