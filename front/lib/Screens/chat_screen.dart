@@ -186,22 +186,38 @@ class _ChatScreenState extends State<ChatScreen> {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         final reply = data['reply'] as String? ?? '응답을 받지 못했습니다.';
 
-        // 루틴 제안 파싱
+        // 루틴 제안 파싱 (SCHEDULE_SUGGESTION 또는 ROUTINE_SUGGESTION 모두 지원)
         Map<String, dynamic>? routineSuggestion;
         String displayText = reply;
 
-        final suggestionMatch = RegExp(
-          r'\[ROUTINE_SUGGESTION\](.*?)\[/ROUTINE_SUGGESTION\]',
+        // SCHEDULE_SUGGESTION 먼저 시도
+        var suggestionMatch = RegExp(
+          r'\[SCHEDULE_SUGGESTION\](.*?)\[/SCHEDULE_SUGGESTION\]',
           dotAll: true,
         ).firstMatch(reply);
+
+        // 없으면 ROUTINE_SUGGESTION 시도 (하위 호환성)
+        if (suggestionMatch == null) {
+          suggestionMatch = RegExp(
+            r'\[ROUTINE_SUGGESTION\](.*?)\[/ROUTINE_SUGGESTION\]',
+            dotAll: true,
+          ).firstMatch(reply);
+        }
 
         if (suggestionMatch != null) {
           try {
             final suggestionJson = suggestionMatch.group(1)?.trim() ?? '';
             routineSuggestion =
                 jsonDecode(suggestionJson) as Map<String, dynamic>;
-            // JSON 부분을 제거한 텍스트만 표시
+            // JSON 부분을 제거한 텍스트만 표시 (두 태그 모두 제거)
             displayText = reply
+                .replaceAll(
+                  RegExp(
+                    r'\[SCHEDULE_SUGGESTION\].*?\[/SCHEDULE_SUGGESTION\]',
+                    dotAll: true,
+                  ),
+                  '',
+                )
                 .replaceAll(
                   RegExp(
                     r'\[ROUTINE_SUGGESTION\].*?\[/ROUTINE_SUGGESTION\]',
@@ -792,11 +808,11 @@ class _ChatScreenState extends State<ChatScreen> {
     if (success) {
       final routineName = suggestion['routine_name'] as String? ?? '스타일러';
       setState(() {
-        _messages.add({
-          'text': '$routineName를 시작했습니다!',
-          'isUser': false,
-          'fontSize': 15.0,
-        });
+        // 스타일러인 경우 특별한 메시지 사용
+        final message = _isStylerRoutine(suggestion)
+            ? '스타일러를 가동했어요'
+            : '$routineName를 시작했습니다!';
+        _messages.add({'text': message, 'isUser': false, 'fontSize': 15.0});
       });
       _scrollToBottom();
 
@@ -806,11 +822,11 @@ class _ChatScreenState extends State<ChatScreen> {
       Future.delayed(const Duration(seconds: 10), () {
         if (mounted) {
           setState(() {
-            _messages.add({
-              'text': '$routineName 작업이 완료되었습니다!',
-              'isUser': false,
-              'fontSize': 15.0,
-            });
+            // 스타일러인 경우 특별한 메시지 사용
+            final message = _isStylerRoutine(suggestion)
+                ? '스타일러 가동이 완료되었어요'
+                : '$routineName 작업이 완료되었습니다!';
+            _messages.add({'text': message, 'isUser': false, 'fontSize': 15.0});
           });
           _scrollToBottom();
         }

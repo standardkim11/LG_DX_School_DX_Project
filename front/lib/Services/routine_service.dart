@@ -248,6 +248,84 @@ class RoutineService {
     return null;
   }
 
+  /// 기존 루틴을 수정합니다
+  /// Returns: 수정된 루틴 정보
+  static Future<Map<String, dynamic>?> updateRoutine({
+    required int routineId,
+    String? name,
+    String? scheduleType,
+    String? preferredTime,
+    int? runMinutes,
+    String? routineType,
+    int? scheduleFrequency,
+  }) async {
+    // Android인 경우 여러 URL 시도 (에뮬레이터와 실제 기기 모두 지원)
+    List<String> urlsToTry = [baseUrl];
+    if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+      // 자동 감지 모드: 에뮬레이터와 실제 기기 모두 시도
+      urlsToTry = ApiConfig.getAndroidBaseUrls();
+    }
+
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (scheduleType != null) body['schedule_type'] = scheduleType;
+    if (preferredTime != null) body['preferred_time'] = preferredTime;
+    if (runMinutes != null) body['run_minutes'] = runMinutes;
+    if (routineType != null) body['routine_type'] = routineType;
+    if (scheduleFrequency != null)
+      body['schedule_frequency'] = scheduleFrequency;
+
+    for (final url in urlsToTry) {
+      try {
+        final uri = Uri.parse('$url/routines/$routineId');
+
+        print('[RoutineService] Update Routine 요청 시작: $uri');
+
+        final response = await http
+            .put(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode(body),
+            )
+            .timeout(
+              const Duration(seconds: 120),
+              onTimeout: () {
+                print('[RoutineService] Update Routine 타임아웃 발생: $uri');
+                throw Exception('요청 시간 초과 - 백엔드 서버가 실행 중인지 확인해주세요');
+              },
+            );
+
+        if (response.statusCode == 200) {
+          final data =
+              jsonDecode(utf8.decode(response.bodyBytes))
+                  as Map<String, dynamic>;
+          print('[RoutineService] Update Routine 성공: $url');
+          return data;
+        } else {
+          print(
+            'Update Routine API Error: ${response.statusCode} - ${response.body}',
+          );
+          // 다음 URL 시도
+          continue;
+        }
+      } catch (e, stackTrace) {
+        print('[RoutineService] Update Routine $url 연결 실패');
+        print('[RoutineService] 에러 타입: ${e.runtimeType}');
+        print('[RoutineService] 에러 메시지: $e');
+        print('[RoutineService] 스택 트레이스: $stackTrace');
+        // 다음 URL 시도
+        continue;
+      }
+    }
+
+    // 모든 URL 시도 실패
+    print('[RoutineService] Update Routine 모든 연결 시도 실패');
+    return null;
+  }
+
   /// 루틴을 실행합니다 (체크 표시 시 호출)
   /// Returns: 실행 성공 여부
   /// status: 2=done (완료), 3=failed (실패)

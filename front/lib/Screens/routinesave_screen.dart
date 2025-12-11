@@ -983,16 +983,31 @@ class _ViewSaveScreenState extends State<ViewSaveScreen> {
     );
 
     try {
-      // 백엔드 API 호출하여 루틴 저장
-
-      final result = await RoutineService.createRoutine(
-        name: _routineNameController.text.trim(),
-        scheduleType: scheduleType,
-        preferredTime: preferredTime,
-        runMinutes: runMinutes, // 실행 시간 (분)
-        routineType: 'CLEANING', // 로봇청소기이므로 CLEANING
-        scheduleFrequency: goalValue, // 주/월 N회 설정값
-      );
+      // 백엔드 API 호출하여 루틴 저장 또는 수정
+      Map<String, dynamic>? result;
+      
+      if (widget.routine != null) {
+        // 수정 모드: UPDATE API 호출
+        result = await RoutineService.updateRoutine(
+          routineId: widget.routine!.id,
+          name: _routineNameController.text.trim(),
+          scheduleType: scheduleType,
+          preferredTime: preferredTime,
+          runMinutes: runMinutes,
+          routineType: 'CLEANING', // 로봇청소기이므로 CLEANING
+          scheduleFrequency: goalValue, // 주/월 N회 설정값
+        );
+      } else {
+        // 생성 모드: CREATE API 호출
+        result = await RoutineService.createRoutine(
+          name: _routineNameController.text.trim(),
+          scheduleType: scheduleType,
+          preferredTime: preferredTime,
+          runMinutes: runMinutes, // 실행 시간 (분)
+          routineType: 'CLEANING', // 로봇청소기이므로 CLEANING
+          scheduleFrequency: goalValue, // 주/월 N회 설정값
+        );
+      }
 
       // 로딩 닫기
 

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'robotpush_screen.dart';
 import '../Services/config.dart';
+import '../components/app_colors.dart';
+import 'routine_screen.dart';
 
 class CareScreen extends StatefulWidget {
   const CareScreen({super.key});
@@ -15,9 +15,6 @@ class CareScreen extends StatefulWidget {
 }
 
 class _CareScreenState extends State<CareScreen> {
-  String? _robotCleanerMessage;
-  int? _robotCleanerRoutineId; // 로봇청소기 루틴 ID 저장
-  bool _isLoading = true;
   Timer? _timeTimer;
   String _currentTime = '';
 
@@ -29,7 +26,6 @@ class _CareScreenState extends State<CareScreen> {
     _timeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _updateCurrentTime();
     });
-    _loadRobotCleanerNotification();
   }
 
   @override
@@ -39,23 +35,11 @@ class _CareScreenState extends State<CareScreen> {
   }
 
   void _updateCurrentTime() {
+    if (!mounted) return;
     final now = DateTime.now();
     setState(() {
       _currentTime =
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    });
-  }
-
-  Future<void> _loadRobotCleanerNotification() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    // 세탁기는 돌렸지만 로봇청소기를 돌리지 않고 1시간이 지난 경우 알림 표시
-    await _checkRobotCleanerStatus();
-
-    setState(() {
-      _isLoading = false;
     });
   }
 
@@ -68,29 +52,22 @@ class _CareScreenState extends State<CareScreen> {
     );
   }
 
-  static const int userId = 1;
-
-  Future<void> _checkRobotCleanerStatus() async {
+  /// 세탁기 시작 명령 전송
+  Future<void> _startWashingMachine() async {
     try {
-      // 백엔드 API에서 로봇청소기 알림 정보 가져오기
       List<String> urlsToTry = [baseUrl];
       if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
         urlsToTry = ApiConfig.getAndroidBaseUrls();
       }
 
-      print('[CareScreen] 로봇청소기 알림 로딩 시작: ${urlsToTry.length}개 URL');
       bool requestSucceeded = false;
-      
-      for (int i = 0; i < urlsToTry.length; i++) {
-        final url = urlsToTry[i];
-        print('[CareScreen] 로봇청소기 알림 시도 ${i + 1}/${urlsToTry.length}: $url');
+
+      for (final url in urlsToTry) {
         try {
-          final uri = Uri.parse(
-            '$url/recommend/robot-cleaner-notification',
-          ).replace(queryParameters: {'user_id': userId.toString()});
+          final uri = Uri.parse('$url/device/start-washing-machine');
 
           final response = await http
-              .get(
+              .post(
                 uri,
                 headers: {
                   'Content-Type': 'application/json',
@@ -98,77 +75,237 @@ class _CareScreenState extends State<CareScreen> {
                 },
               )
               .timeout(
-                const Duration(seconds: 10), // 실제 기기에서는 빠른 실패로 다음 URL 시도
+                const Duration(seconds: 10),
                 onTimeout: () {
                   throw Exception('요청 시간 초과');
                 },
               );
 
           if (response.statusCode == 200) {
-            final data =
-                jsonDecode(utf8.decode(response.bodyBytes))
-                    as Map<String, dynamic>;
-
-            final hasNotification = data['has_notification'] as bool? ?? false;
-
-            if (hasNotification && mounted) {
-              final notification =
-                  data['notification'] as Map<String, dynamic>?;
-
-              print('[CareScreen] 알림 있음 - notification: $notification');
-
-              if (notification != null) {
-                setState(() {
-                  final message = notification['message'] as String?;
-                  final routineId =
-                      notification['robot_cleaner_routine_id'] as int?;
-                  if (message != null) {
-                    _robotCleanerMessage = message;
-                  } else {
-                    // message가 없으면 기본 메시지 사용
-                    _robotCleanerMessage =
-                        '건조기를 안 돌린지 1시간이 넘었어요.\n지금 안돌리면 입을 옷이 없어요';
-                  }
-                  _robotCleanerRoutineId = routineId;
-                });
-              }
-            } else {
-              // 알림이 없으면 메시지 초기화
-              if (mounted) {
-                setState(() {
-                  _robotCleanerMessage = null;
-                });
-              }
-            }
+            print('[CareScreen] 세탁기 시작 명령 전송 성공: $url');
             requestSucceeded = true;
-            print('[CareScreen] 로봇청소기 알림 로딩 성공: $url (알림 있음: $hasNotification)');
-            break; // 성공하면 종료
+            break;
           } else {
-            // HTTP 에러
             print(
-              '[CareScreen] 로봇청소기 알림 HTTP 에러 ($url): ${response.statusCode}',
+              '[CareScreen] 세탁기 시작 명령 HTTP 에러 ($url): ${response.statusCode}',
             );
             continue;
           }
         } catch (e) {
-          // 연결 실패
-          print('[CareScreen] 로봇청소기 알림 로딩 실패 ($url): $e');
-          if (i == urlsToTry.length - 1) {
-            // 마지막 URL도 실패
-            print('[CareScreen] 로봇청소기 알림 로딩 실패 - 모든 URL 시도 완료');
-          }
+          print('[CareScreen] 세탁기 시작 명령 전송 실패 ($url): $e');
           continue;
         }
       }
 
-      // 실제로 모든 URL 시도가 실패한 경우에만 실패 메시지 출력
       if (!requestSucceeded) {
-        print('[CareScreen] 로봇청소기 알림 최종 실패: 모든 URL 연결 시도 완료');
+        print('[CareScreen] 세탁기 시작 명령 최종 실패: 모든 URL 연결 시도 완료');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('세탁기 시작 명령 전송에 실패했습니다.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
       }
     } catch (e) {
-      print('[CareScreen] 로봇청소기 알림 로딩 중 예외 발생: $e');
-      // 에러 발생 시 알림 표시 안 함
+      print('[CareScreen] 세탁기 시작 명령 전송 중 예외 발생: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('세탁기 시작 명령 전송 중 오류가 발생했습니다.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
+  }
+
+  /// 세탁기 실행 팝업 표시
+  void _showWashingMachineDialog() {
+    String? selectedButton;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppColors.backgroundGray,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      '세탁기 돌리기 알림',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontFamily: 'LG Smart_H',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111111),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Column(
+                      children: [
+                        const Text(
+                          '2일전에 세탁기를 돌렸어요.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'LG Smart_H',
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF111111),
+                            height: 1.3,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          '지금 세탁기를 돌릴까요?',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'LG Smart_H',
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF111111),
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTapDown: (_) {
+                              setDialogState(() {
+                                selectedButton = 'execute';
+                              });
+                            },
+                            onTap: () {
+                              setDialogState(() {
+                                selectedButton = 'execute';
+                              });
+                              Future.delayed(
+                                const Duration(milliseconds: 300),
+                                () {
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop();
+                                    _startWashingMachine();
+                                    // 성공 메시지 표시
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('세탁기 실행 명령을 전송했습니다.'),
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                    // 루틴 화면으로 이동
+                                    Navigator.pushAndRemoveUntil(
+                                      context,
+                                      PageRouteBuilder(
+                                        pageBuilder:
+                                            (
+                                              context,
+                                              animation,
+                                              secondaryAnimation,
+                                            ) => const RoutineScreen(),
+                                        transitionDuration: Duration.zero,
+                                        reverseTransitionDuration:
+                                            Duration.zero,
+                                      ),
+                                      (route) => false,
+                                    );
+                                  }
+                                },
+                              );
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              decoration: BoxDecoration(
+                                color: selectedButton == 'execute'
+                                    ? const Color(0xFF4B57BB)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  '실행하기',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 14,
+                                    fontFamily: 'LG Smart_H',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: GestureDetector(
+                            onTapDown: (_) {
+                              setDialogState(() {
+                                selectedButton = 'skip';
+                              });
+                            },
+                            onTap: () {
+                              setDialogState(() {
+                                selectedButton = 'skip';
+                              });
+                              Future.delayed(
+                                const Duration(milliseconds: 300),
+                                () {
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop();
+                                  }
+                                },
+                              );
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              decoration: BoxDecoration(
+                                color: selectedButton == 'skip'
+                                    ? const Color(0xFF4B57BB)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  '건너뛰기',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 12,
+                                    fontFamily: 'LG Smart_H',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -244,38 +381,18 @@ class _CareScreenState extends State<CareScreen> {
                   ),
 
                   // 알림 카드들 (시간/날짜 아래 적절한 간격으로 배치)
-                  if (!_isLoading) ...[
-                    // 로봇청소기 알림 카드
-                    if (_robotCleanerMessage != null) ...[
-                      const SizedBox(height: 50),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => RobotPushScreen(
-                                  routineId: _robotCleanerRoutineId,
-                                ),
-                              ),
-                            );
-                          },
-                          child: _buildNotificationCard(
-                            firstLine: _robotCleanerMessage != null
-                                ? '지현님, ${_robotCleanerMessage!.split('\n').first}'
-                                : '지현님, 로봇청소기를 실행시켜주세요',
-                            secondLine:
-                                _robotCleanerMessage != null &&
-                                    _robotCleanerMessage!.split('\n').length > 1
-                                ? _robotCleanerMessage!.split('\n')[1]
-                                : '깨끗한 집을 위해 지금 실행시켜주세요',
-                            timeLabel: '지금',
-                          ),
-                        ),
+                  const SizedBox(height: 50),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: GestureDetector(
+                      onTap: _showWashingMachineDialog,
+                      child: _buildNotificationCard(
+                        firstLine: '지현님, 2일전에 세탁기를 돌렸어요.',
+                        secondLine: '지금 세탁기를 돌릴까요?',
+                        timeLabel: '지금',
                       ),
-                    ],
-                  ],
+                    ),
+                  ),
 
                   // 하단 여백을 위한 Spacer
                   const Spacer(),

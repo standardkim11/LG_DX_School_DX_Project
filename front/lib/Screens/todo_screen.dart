@@ -241,6 +241,80 @@ class _TodoScreenState extends State<TodoScreen> {
     });
   }
 
+  /// todo 수정 모달 열기
+  void _showEditTodoModal(
+    BuildContext context,
+    Map<String, dynamic> todo,
+    int originalIndex,
+  ) {
+    // todo의 title에서 시간과 제목 분리
+    // 형식: "18:30 장보기" 또는 "장보기"
+    String? initialTime;
+    String initialTitle = todo['title'] as String;
+    
+    // 시간 패턴 찾기 (예: "18:30 " 또는 "18:30")
+    final timePattern = RegExp(r'^(\d{2}:\d{2})\s+(.+)$');
+    final match = timePattern.firstMatch(initialTitle);
+    if (match != null) {
+      initialTime = match.group(1);
+      initialTitle = match.group(2)!;
+    }
+    
+    final initialCategory = todo['category'] as String? ?? '기타';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: AddTodoModal(
+          initialTitle: initialTitle,
+          initialTime: initialTime,
+          initialCategory: initialCategory,
+          isEditMode: true,
+        ),
+      ),
+    ).then((result) {
+      if (result != null) {
+        // 일정 수정 로직
+        final selectedDate = _getSelectedDate();
+        final dateKey = _formatDateKey(selectedDate);
+        final todos = _todosByDate[dateKey] ?? [];
+
+        // 시간 정보 포함하여 제목 생성
+        String title = result['title'] as String;
+        final time = result['time'] as String?;
+        if (time != null && time.isNotEmpty) {
+          title = '$time $title';
+        }
+
+        // 기존 todo 찾아서 업데이트
+        final todoIndex = todos.indexWhere(
+          (t) =>
+              t['title'] == todo['title'] &&
+              t['category'] == todo['category'],
+        );
+
+        if (todoIndex != -1) {
+          setState(() {
+            todos[todoIndex] = {
+              'title': title,
+              'category': result['category'] as String? ?? '기타',
+              'isHighlighted': todos[todoIndex]['isHighlighted'] ?? true,
+              'checkType': todos[todoIndex]['checkType'] ?? 'none',
+            };
+            _todosByDate[dateKey] = todos;
+            // 전역 상태도 업데이트
+            _TodoScreenStateManager.setTodosByDate(_todosByDate);
+          });
+        }
+      }
+    });
+  }
+
   // 체크된 항목을 하단으로 정렬
   List<Map<String, dynamic>> get _sortedTodos {
     final unchecked = _todos
@@ -588,6 +662,10 @@ class _TodoScreenState extends State<TodoScreen> {
                         cardKey:
                             'todo_${todo['title']}_${todo['category']}_$originalIndex',
                         onCheckChanged: () => _toggleCheck(originalIndex),
+                        onView: () {
+                          // View 버튼 클릭 시 수정 모달 열기
+                          _showEditTodoModal(context, todo, originalIndex);
+                        },
                         onDelete: () {
                           // Delete 버튼 클릭 시 해당 날짜의 todo 목록에서 제거
                           setState(() {

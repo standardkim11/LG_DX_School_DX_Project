@@ -121,6 +121,78 @@ def create_routine():
     return jsonify(routine_to_dict(new_routine)), 201
 
 
+# 0-1. 루틴 수정 ------------------------------------
+@routine_bp.put("/routines/<int:routine_id>")
+def update_routine(routine_id):
+    """
+    기존 루틴 수정
+    PUT /api/routines/<routine_id>
+    Body: {
+        "name": "루틴 이름",
+        "routine_type": "CLEANING",
+        "schedule_type": "DAILY",
+        "preferred_time": "09:30",
+        "run_minutes": 30,
+        "schedule_frequency": 1
+    }
+    """
+    data = request.get_json() or {}
+    
+    # 루틴 조회
+    routine = Routine.query.get(routine_id)
+    if not routine:
+        return jsonify({"error": "routine not found"}), 404
+    
+    # 이름 수정
+    if "name" in data:
+        name = data.get("name", "").strip()
+        if name:
+            routine.name = name
+    
+    # 루틴 타입 수정
+    if "routine_type" in data:
+        routine_type = data.get("routine_type", "ETC")
+        if routine_type:
+            routine.routine_type = routine_type
+    
+    # 스케줄 타입 수정
+    if "schedule_type" in data:
+        schedule_type = data.get("schedule_type", "DAILY")
+        if schedule_type:
+            routine.schedule_type = schedule_type
+    
+    # preferred_time 수정
+    if "preferred_time" in data:
+        routine.preferred_time = data.get("preferred_time")
+    
+    # run_minutes 수정
+    if "run_minutes" in data:
+        run_minutes = data.get("run_minutes")
+        if run_minutes is not None:
+            try:
+                routine.run_minutes = int(run_minutes)
+            except (ValueError, TypeError):
+                pass
+    
+    # schedule_frequency 수정
+    if "schedule_frequency" in data:
+        schedule_frequency = data.get("schedule_frequency")
+        if schedule_frequency is not None:
+            try:
+                schedule_frequency = int(schedule_frequency)
+                if schedule_frequency >= 1:
+                    routine.schedule_frequency = schedule_frequency
+            except (ValueError, TypeError):
+                pass
+    
+    try:
+        db.session.commit()
+        return jsonify(routine_to_dict(routine)), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 # 1. 루틴 목록 조회 (집계 정보 포함) ------------------------------------
 @routine_bp.get("/routines")
 def list_routines():

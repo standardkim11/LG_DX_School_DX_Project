@@ -5,7 +5,18 @@ import 'app_colors.dart';
 import '../Services/routine_service.dart';
 
 class AddTodoModal extends StatefulWidget {
-  const AddTodoModal({super.key});
+  final String? initialTitle;
+  final String? initialTime;
+  final String? initialCategory;
+  final bool isEditMode; // 수정 모드인지 여부
+
+  const AddTodoModal({
+    super.key,
+    this.initialTitle,
+    this.initialTime,
+    this.initialCategory,
+    this.isEditMode = false,
+  });
 
   @override
   State<AddTodoModal> createState() => _AddTodoModalState();
@@ -58,6 +69,29 @@ class _AddTodoModalState extends State<AddTodoModal> {
   @override
   void initState() {
     super.initState();
+    
+    // 초기값 설정 (수정 모드일 때)
+    if (widget.isEditMode) {
+      if (widget.initialTitle != null) {
+        _titleController.text = widget.initialTitle!;
+      }
+      if (widget.initialTime != null) {
+        // 시간 파싱 (예: "18:30" -> hour: "18", minute: "30")
+        final timeParts = widget.initialTime!.split(':');
+        if (timeParts.length == 2) {
+          _selectedHour = timeParts[0];
+          _selectedMinute = timeParts[1];
+        }
+      }
+      if (widget.initialCategory != null) {
+        _selectedCategory = widget.initialCategory!;
+        // 카테고리가 목록에 없으면 추가
+        if (!_categories.contains(widget.initialCategory!)) {
+          _categories.insert(_categories.length - 1, widget.initialCategory!);
+        }
+      }
+    }
+    
     _titleFocusNode.addListener(() {
       setState(() {});
       // 키보드가 올라올 때 입력 필드가 보이도록 스크롤
@@ -335,7 +369,7 @@ class _AddTodoModalState extends State<AddTodoModal> {
                           children: [
                             // 제목
                             Text(
-                              '새로운 일정 생성',
+                              widget.isEditMode ? '일정 수정' : '새로운 일정 생성',
                               style: TextStyle(
                                 color: const Color(0xFF9B9BA1),
                                 fontSize: 10,

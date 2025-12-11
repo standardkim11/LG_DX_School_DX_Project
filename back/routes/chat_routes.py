@@ -130,20 +130,37 @@ def build_context_for_user(user_id: int, selected_routine_ids: list[int] = None)
     today_items: list[str] = []
     today_routine_ids = []  # 디버깅용
 
+    # 디버깅: 전체 루틴 정보 로깅
+    from flask import current_app
+    current_app.logger.info(f"[CHAT build_context] 전체 활성 루틴 개수: {len(routines)}")
+    for r in routines:
+        current_app.logger.info(f"[CHAT build_context] 루틴 ID={r.id}, name={r.name}, schedule_type={r.schedule_type}, created_at={r.created_at}")
+
     for r in routines:
         # 선택된 루틴 ID가 있으면 그 루틴들만 포함
         if selected_routine_ids is not None and len(selected_routine_ids) > 0:
             if r.id not in selected_routine_ids:
+                current_app.logger.info(f"[CHAT build_context] 루틴 {r.id} ({r.name}): 선택된 루틴 ID에 없어서 제외")
                 continue
         
-        if not is_scheduled_today(r, today):
+        # 채팅봇에서는 is_scheduled_today 체크 제거 (VIEW ALL과 동일하게 모든 활성 루틴 표시)
+        # 완료/실패/목표 달성 여부만 확인
+        st = (r.schedule_type or "").upper()
+        
+        is_done = is_done_today(r, user_id, today)
+        is_failed = is_failed_today(r, user_id, today)
+        is_goal = is_goal_achieved(r, user_id, today)
+        
+        current_app.logger.info(f"[CHAT build_context] 루틴 {r.id} ({r.name}): schedule_type={st}, is_done={is_done}, is_failed={is_failed}, is_goal={is_goal}")
+        if is_done:
+            current_app.logger.info(f"[CHAT build_context] 루틴 {r.id} ({r.name}): 오늘 완료되어서 제외")
             continue
-        if is_done_today(r, user_id, today):
-            continue
-        if is_failed_today(r, user_id, today):
+        if is_failed:
+            current_app.logger.info(f"[CHAT build_context] 루틴 {r.id} ({r.name}): 오늘 실패해서 제외")
             continue
         # WEEKLY/MONTHLY 루틴의 목표 달성 여부 확인 (목표 달성된 루틴은 제외)
-        if is_goal_achieved(r, user_id, today):
+        if is_goal:
+            current_app.logger.info(f"[CHAT build_context] 루틴 {r.id} ({r.name}): 목표 달성되어서 제외")
             continue
 
         # 원본 이름과 정규화된 이름 모두 로깅
@@ -154,6 +171,7 @@ def build_context_for_user(user_id: int, selected_routine_ids: list[int] = None)
         minutes = r.run_minutes or 0
         today_items.append(f"- {name} (예상 {minutes}분)")
         today_routine_ids.append(r.id)  # 디버깅용
+        current_app.logger.info(f"[CHAT build_context] 루틴 {r.id} ({r.name}): 오늘 루틴 목록에 추가됨")
 
     if not today_items:
         today_text = "오늘 스케줄된 루틴은 없습니다."
@@ -558,8 +576,8 @@ def chat():
                             if r.id not in selected_routine_ids:
                                 continue
                         
-                        if not is_scheduled_today(r, today):
-                            continue
+                        # 채팅봇에서는 is_scheduled_today 체크 제거 (VIEW ALL과 동일하게 모든 활성 루틴 표시)
+                        # 완료/실패/목표 달성 여부만 확인
                         if is_done_today(r, user_id, today):
                             continue
                         if is_failed_today(r, user_id, today):
@@ -905,7 +923,7 @@ def chat():
 [중요 규칙]
 - 본인 소개나 역할 설명은 하지 마세요. 바로 답변을 시작하세요.
 - '[추천 루틴 (가장 높은 우선순위)]' 섹션에 나열된 루틴 하나만 추천하세요.
-- 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하지 마세요.
+- 사용자가 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하라고 요청하면 날씨를 참고해 가전 루틴을 추천하세요.
 - 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
 - 날씨, 온도, 습도 등 요소를 이용하여 추천 이유를 설명하세요.
 - 주의: '[추천 루틴 (가장 높은 우선순위)]' 섹션에 나열된 루틴은 이미 목표 달성 여부를 확인한 루틴입니다. 
@@ -924,20 +942,17 @@ def chat():
 - 루틴 내용 (무엇을 하는지)
 - 예상 소요 시간 (예: "약 40분 정도 걸려요")
 - 추천 이유 (점수, 날씨, 최근 실행 기록 등 주어진 정보들을 함께 설명)
-
 추천 이유를 설명할 때는 점수와 구체적인 이유를 한 문장으로 자연스럽게 함께 설명하세요:
+추천 이유에 약간의 주관이 들어가도 좋아요.
 
 예시 (점수 + 이유를 자연스럽게 결합):
 - "점수가 4.44점으로 가장 높아요. 날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 높게 나왔어요."
 - "날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 4.44점으로 가장 높아요."
 - "오늘 습도가 높아서 점수가 2.13점으로 가장 높아요. 건조기를 먼저 돌리는 게 좋겠어요."
 
-날씨 정보(맑음/비/습도/기온)와 최근 실행 기록(오래됨/어제/오늘)을 활용하여 점수와 함께 자연스럽게 설명하세요.
-가능하면 "날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 높아요"처럼 한 문장으로 표현하는 것을 권장합니다.
+- 추천 이유에는 날씨 정보(맑음/비/습도/기온)와 최근 실행 기록(오래됨/어제/오늘)을 활용하여 점수와 함께 자연스럽게 설명하세요.
+정보가 충분하지 않으면 "우선순위 점수가 가장 높아서 추천드려요."처럼 간단히 언급하거나 약간의 주관을 추가하세요.
 
-'오늘의 정보'에 있는 날씨 정보, 최근 실행 기록 등의 실제 데이터를 활용하여 점수와 함께 자연스럽게 설명하세요.
-정보가 충분하지 않으면 "우선순위 점수가 가장 높아서 추천드려요."처럼 간단히 언급하세요.
-추천 이유에 약간의 주관이 들어가도 좋아요.
 
 """
     elif is_priority_request:
@@ -946,7 +961,7 @@ def chat():
 - 본인 소개나 역할 설명은 하지 마세요. 바로 답변을 시작하세요.
 - '[우선순위 추천 (점수 높은 순)]' 섹션에 나열된 루틴만 사용하세요.
 - 목록에 있는 정확한 개수만큼만 추천하세요. (예: 3개면 3개, 5개면 5개)
-- 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하지 마세요.
+- 사용자가 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하라고 요청하면 날씨를 참고해 가전 루틴을 추천하세요.
 - 각 루틴은 한 번만 언급하고, 루틴 이름과 순서는 목록에 나온 그대로 따르세요.
 - 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
 - 날씨, 온도, 습도 등 요소를 이용하여 추천 이유를 설명하세요.
@@ -961,6 +976,7 @@ def chat():
 [사용자 질문]
 {user_message}
 
+[우선순위 요청에 대한 답변]
 위 정보를 바탕으로, '[우선순위 추천 (점수 높은 순)]' 섹션의 루틴들을 순서대로 설명해주세요.
 각 루틴에 대해 다음을 포함하세요:
 - 루틴 내용 (무엇을 하는지)
@@ -987,6 +1003,7 @@ def chat():
     else:
         # 일반 질문: Gemini가 적당히 대응
         prompt = f"""
+[일반 질문에 대한 답변]
 [주의사항]
 - 본인 소개나 역할 설명은 하지 마세요. 사용자의 질문에 바로 답변하세요.
 - '오늘의 정보'에 있는 정보를 참고할 수 있지만, 사용자의 질문에 자연스럽게 답변하는 것이 우선입니다.
@@ -1008,15 +1025,19 @@ def chat():
 사용자의 질문에 친절하고 자연스럽게 답변해주세요. 
 - 날씨 관련 질문이면 '오늘의 정보'의 '날씨 정보' 섹션을 반드시 확인하고 활용하세요. 날씨 정보가 있으면 그 정보를 바탕으로 답변하세요.
 - 내일 날씨를 물어보면 '날씨 정보'에 '내일' 정보가 있으면 그 정보를 사용하세요.
-- 날씨와 관련된 가전 루틴을 추천할 때는 날씨 정보를 바탕으로 적절한 루틴을 제안하세요.
+- **날씨 관련 질문이 있을 때만** 날씨 정보를 바탕으로 가전 루틴(예: 스타일러, 건조기)을 추천하고 일정 추가를 제안하세요.
 - 루틴 관련 질문이면 '오늘의 정보'를 활용하세요.
+- **일반적인 질문(예: "오늘 할일 말해줘", "우선순위는?")에는 일정 추가 제안을 하지 마세요. 답변만 제공하세요.**
 
 [일정 추가 제안 규칙]
-- 날씨나 상황에 맞는 가전 루틴이나 일정을 추천할 때, 일정을 추가해드릴 수 있다고 제안하세요.
+- **중요: 일정 추가 제안은 다음 두 경우에만 제안하세요:**
+  1. 사용자가 날씨에 대해 물어봤고, 날씨 정보를 바탕으로 가전 루틴(예: 스타일러, 건조기)을 추천할 때만
+  2. 사용자가 목록에 없는 루틴 추천을 요청했을 때만 (예: "다른 루틴 추천해줘", "다른거 추천해줘")
+- **그 외의 경우에는 일정 추가 제안을 하지 마세요. 일반적인 답변만 제공하세요.**
 - 일정 추가 제안 시 반드시 다음 형식으로 응답하세요:
   "일정을 추가해드릴까요?"
 - 일정 추가 제안이 포함된 경우, 응답 끝에 반드시 다음 JSON 형식으로 정보를 포함하세요:
-  [ROUTINE_SUGGESTION]
+  [SCHEDULE_SUGGESTION]
   {{
     "routine_name": "스타일러 가동하기",
     "routine_type": "ETC",
@@ -1025,7 +1046,9 @@ def chat():
     "run_minutes": 30,
     "schedule_date": "2025-12-12"
   }}
-  [/ROUTINE_SUGGESTION]
+  [/SCHEDULE_SUGGESTION]
+  
+- **중요: [SCHEDULE_SUGGESTION] 태그와 JSON은 사용자에게 보이지 않도록 응답 텍스트의 맨 끝에만 포함하세요. 사용자가 보는 답변에는 "일정을 추가해드릴까요?" 문구만 포함하고, JSON은 별도로 숨겨진 형식으로 추가하세요.**
 - routine_name: 루틴 이름 (예: "스타일러 가동하기", "건조기 돌리기")
 - routine_type: 루틴 타입 ("CLEANING", "LAUNDRY", "ETC" 등)
 - schedule_type: 스케줄 타입 ("DAILY", "WEEKLY", "MONTHLY")
@@ -1035,7 +1058,7 @@ def chat():
   사용자가 언급한 날짜(예: "다음주", "내일", "12월 12일")가 있으면 그 날짜를 사용하고, 
   없으면 오늘 날짜를 사용하세요. 날짜는 반드시 YYYY-MM-DD 형식으로 제공하세요.
 
-그밖에 일반적인 대화나 다른 질문이면 적절히 대응해주세요.
+그밖에 일반적인 대화나 다른 질문이면 적절히 대응해주세요. 일정 추가 제안 없이 답변만 제공하세요.
 
 """
 
