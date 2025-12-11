@@ -783,9 +783,9 @@ class _PushScreenState extends State<PushScreen> {
                     ),
                   ],
 
-                  // 미사용 알림 카드들 (DB에서 가져온 미실행 루틴 알림들)
+                  // 미사용 알림 카드들 (DB에서 가져온 미실행 루틴 알림들) - 1개만 표시
                   if (!_isLoading && _unusedNotifications.isNotEmpty) ...[
-                    ..._unusedNotifications.asMap().entries.map((entry) {
+                    ..._unusedNotifications.take(1).toList().asMap().entries.map((entry) {
                       final index = entry.key;
                       final notification = entry.value;
                       return Padding(
