@@ -734,31 +734,109 @@
         const statusDots = document.querySelectorAll('.status-dots .dot');
         const bgmAudio = document.getElementById('bgmAudio');
 
+        // 오디오 볼륨 설정 (0.0 ~ 1.0)
+        if (bgmAudio) {
+            bgmAudio.volume = 0.7; // 70% 볼륨
+            // 오디오 로드 에러 처리
+            bgmAudio.addEventListener('error', function (e) {
+                console.error('[BGM] 오디오 로드 에러:', bgmAudio.error);
+                console.error('[BGM] 오디오 소스:', bgmAudio.src);
+            });
+        }
+
+        // 오디오 컨텍스트 활성화 플래그
+        let audioContextActivated = false;
+
+        // 사용자 상호작용 시 오디오 컨텍스트 활성화
+        function activateAudioContext() {
+            if (!audioContextActivated && bgmAudio) {
+                // 오디오 컨텍스트를 활성화하기 위해 조용히 재생 시도
+                const playPromise = bgmAudio.play();
+                if (playPromise !== undefined) {
+                    playPromise
+                        .then(() => {
+                            // 재생 성공 시 즉시 일시정지 (실제 재생은 나중에)
+                            bgmAudio.pause();
+                            bgmAudio.currentTime = 0;
+                            audioContextActivated = true;
+                            console.log('[BGM] 오디오 컨텍스트 활성화 완료');
+                        })
+                        .catch(() => {
+                            // 실패해도 무시 (나중에 재시도) - 조용히 처리
+                        });
+                }
+            }
+        }
+
+        // 페이지 클릭/터치 시 오디오 컨텍스트 활성화
+        document.addEventListener('click', activateAudioContext, { once: true });
+        document.addEventListener('touchstart', activateAudioContext, { once: true });
+
+        // 재생 버튼 클릭 시에도 활성화
+        if (playButton) {
+            playButton.addEventListener('click', activateAudioContext);
+        }
+
         let isRunning = false;
         let timeoutId = null;
 
         function handlePlayButton() {
+            console.log('[세탁기] handlePlayButton() 호출됨, isRunning:', isRunning);
+
             if (isRunning) {
                 // 일시정지
                 clearTimeout(timeoutId);
                 drum.classList.remove('rotating');
-                bgmAudio.pause();
+                if (bgmAudio) {
+                    bgmAudio.pause();
+                }
                 isRunning = false;
                 playButton.classList.remove('playing');
                 return;
             }
 
+            console.log('[세탁기] 세탁기 시작 처리 시작');
             isRunning = true;
             playButton.classList.add('playing');
             // ⏯️ 이모지는 자동으로 멈춤 상태를 보여줌
 
             // BGM 재생 시작 (끝까지 재생)
-            bgmAudio.currentTime = 0;
-            bgmAudio.play().catch(error => {
-                console.error('BGM 재생 실패:', error);
-            });
+            // 버튼 클릭은 사용자 상호작용으로 간주되므로 바로 재생 시도
+            // 오디오 컨텍스트가 활성화되어 있으면 재생, 아니면 조용히 실패 (로봇청소기와 동일)
+            if (bgmAudio && audioContextActivated) {
+                // 오디오가 로드되었는지 확인
+                if (bgmAudio.readyState >= 2) { // HAVE_CURRENT_DATA 이상
+                    bgmAudio.currentTime = 0;
+                    const playPromise = bgmAudio.play();
+                    if (playPromise !== undefined) {
+                        playPromise
+                            .then(() => {
+                                console.log('[BGM] 재생 시작 성공');
+                            })
+                            .catch(error => {
+                                console.error('[BGM] 재생 실패:', error.name, error.message);
+                            });
+                    }
+                } else {
+                    // 오디오가 아직 로드되지 않았으면 로드 대기
+                    bgmAudio.addEventListener('canplaythrough', function onCanPlay() {
+                        bgmAudio.removeEventListener('canplaythrough', onCanPlay);
+                        bgmAudio.currentTime = 0;
+                        bgmAudio.play()
+                            .then(() => {
+                                console.log('[BGM] 재생 시작 성공 (로드 후)');
+                            })
+                            .catch(error => {
+                                console.error('[BGM] 재생 실패 (로드 후):', error.name, error.message);
+                            });
+                    }, { once: true });
+                    // 로드 강제 시작
+                    bgmAudio.load();
+                }
+            }
 
             // 세탁통 회전 시작
+            console.log('[세탁기] 세탁통 회전 시작');
             drum.classList.add('rotating');
 
             // 안내판 변경: 세척 중
@@ -812,7 +890,104 @@
             }
         });
 
-        playButton.addEventListener('click', handlePlayButton);
+        playButton.addEventListener('click', function () {
+            // 클릭 이벤트는 사용자 상호작용으로 간주되므로 오디오 컨텍스트 활성화
+            activateAudioContext();
+
+            // handlePlayButton() 로직을 여기에 직접 구현 (로봇청소기와 동일)
+            if (isRunning) {
+                // 일시정지
+                clearTimeout(timeoutId);
+                drum.classList.remove('rotating');
+                if (bgmAudio) {
+                    bgmAudio.pause();
+                }
+                isRunning = false;
+                playButton.classList.remove('playing');
+                return;
+            }
+
+            isRunning = true;
+            playButton.classList.add('playing');
+
+            // BGM 재생 시작 (끝까지 재생)
+            // 버튼 클릭은 사용자 상호작용으로 간주되므로 바로 재생 시도
+            // 오디오 컨텍스트가 활성화되어 있으면 재생, 아니면 조용히 실패 (로봇청소기와 동일)
+            if (bgmAudio && audioContextActivated) {
+                // 오디오가 로드되었는지 확인
+                if (bgmAudio.readyState >= 2) { // HAVE_CURRENT_DATA 이상
+                    bgmAudio.currentTime = 0;
+                    const playPromise = bgmAudio.play();
+                    if (playPromise !== undefined) {
+                        playPromise
+                            .then(() => {
+                                console.log('[BGM] 재생 시작 성공');
+                            })
+                            .catch(error => {
+                                console.error('[BGM] 재생 실패:', error.name, error.message);
+                            });
+                    }
+                } else {
+                    // 오디오가 아직 로드되지 않았으면 로드 대기
+                    bgmAudio.addEventListener('canplaythrough', function onCanPlay() {
+                        bgmAudio.removeEventListener('canplaythrough', onCanPlay);
+                        bgmAudio.currentTime = 0;
+                        bgmAudio.play()
+                            .then(() => {
+                                console.log('[BGM] 재생 시작 성공 (로드 후)');
+                            })
+                            .catch(error => {
+                                console.error('[BGM] 재생 실패 (로드 후):', error.name, error.message);
+                            });
+                    }, { once: true });
+                    // 로드 강제 시작
+                    bgmAudio.load();
+                }
+            }
+
+            // 세탁통 회전 시작
+            drum.classList.add('rotating');
+
+            // 안내판 변경: 세척 중
+            mainStatus.textContent = '세탁 중';
+            subStatus.innerHTML = '온도 40°C 헹굼 2회<br>탈수 강';
+
+            // 상태 점들 활성화 (순차적으로)
+            statusDots.forEach((dot, index) => {
+                setTimeout(() => {
+                    dot.classList.add('active');
+
+                    // 마지막 dot이 채워지면 세탁 완료
+                    if (index === statusDots.length - 1) {
+                        setTimeout(() => {
+                            // 세탁통 회전을 점진적으로 멈춤
+                            drum.classList.remove('rotating');
+                            drum.classList.add('stopping');
+
+                            // 회전이 완전히 멈춘 후 완료 처리
+                            setTimeout(() => {
+                                drum.classList.remove('stopping');
+
+                                // 안내판 변경: 세척 완료
+                                mainStatus.textContent = '세탁 완료';
+                                subStatus.innerHTML = '';
+
+                                // 상태 점들 비활성화
+                                statusDots.forEach(dot => {
+                                    dot.classList.remove('active');
+                                });
+
+                                // 상태 초기화
+                                isRunning = false;
+                                playButton.classList.remove('playing');
+
+                                // BGM은 끝까지 재생되도록 유지 (자동 정지하지 않음)
+                            }, 3000);
+                        }, 800);
+                    }
+                }, index * 400);
+            });
+        });
 
         // 엔터 키로 작동 버튼 클릭
         document.addEventListener('keydown', function (event) {
@@ -855,9 +1030,10 @@
 
                     if (data.should_start && !isRunning) {
                         console.log('✅ 원격 시작 명령 수신:', data);
-                        console.log('✅ handlePlayButton() 호출 시작');
-                        handlePlayButton();
-                        console.log('✅ handlePlayButton() 호출 완료');
+                        console.log('✅ playButton.click() 호출 시작');
+                        // 버튼 클릭 이벤트를 트리거하여 사용자 상호작용으로 간주되도록 함 (로봇청소기와 동일)
+                        playButton.click();
+                        console.log('✅ playButton.click() 호출 완료');
                     } else if (data.should_start && isRunning) {
                         console.log('⚠️ 시작 명령 수신했지만 이미 실행 중입니다.');
                     } else {

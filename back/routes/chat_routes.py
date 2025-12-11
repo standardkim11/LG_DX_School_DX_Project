@@ -401,13 +401,35 @@ def chat():
     else:
         current_app.logger.info(f"[CHAT] 선택된 루틴 ID 없음 - 모든 루틴 사용")
 
-    # 1) 요청 타입 감지
+    # 1) 요청 타입 감지 (6가지 경우로 구분)
+    # 케이스 1: 오늘 할일, 오늘 루틴
+    today_todo_keywords = ["오늘 할일", "오늘 루틴", "오늘 해야 할", "오늘 할 일", "오늘 일정", "오늘 계획"]
+    is_today_todo_request = any(keyword in user_message for keyword in today_todo_keywords)
+    
+    # 케이스 2: 우선순위
     priority_keywords = ["우선순위", "중요한 순위", "어떤 순서", "순서대로", "뭐부터", "먼저 해야 할", "우선적으로"]
     is_priority_request = any(keyword in user_message for keyword in priority_keywords)
     
-    # 루틴 추천 요청 감지 (VIEW ALL 리스트의 모든 루틴 대상)
+    # 케이스 3: 루틴 추천 (기존 루틴 중 우선순위 높은 것)
     routine_recommend_keywords = ["루틴 추천", "루틴 추천해", "루틴 추천해줘", "루틴 추천해주", "추천 루틴", "추천해줘", "추천해주세요"]
-    is_routine_recommend_request = any(keyword in user_message for keyword in routine_recommend_keywords)
+    is_routine_recommend_request = any(keyword in user_message for keyword in routine_recommend_keywords) and not any(keyword in user_message for keyword in ["다른", "새로운", "새", "추가"])
+    
+    # 케이스 4: 날씨 물어보기
+    weather_keywords = ["날씨", "기온", "온도", "습도", "비", "맑", "흐림", "날씨가", "날씨는", "날씨 어때", "날씨 어떠"]
+    is_weather_request = any(keyword in user_message for keyword in weather_keywords)
+    
+    # 케이스 5: 다른 루틴 추천 (새로운 가전 루틴) - 기존 루틴 리스트에 없는 것
+    # 띄어쓰기 무시하고 매칭하기 위해 공백 제거 후 검사
+    user_message_no_space = user_message.replace(" ", "").replace("　", "")  # 일반 공백과 전각 공백 제거
+    other_routine_patterns = [
+        "다른루틴", "다른루틴은", "다른루틴없어", "다른루틴은없어", "다른루틴추천",
+        "다른거추천", "새로운루틴", "새루틴", "추가루틴", "다른추천",
+        "그거말고", "그거말고다른", "그거말고다른루틴"
+    ]
+    # "다른 루틴"이 포함되어 있고, "루틴 추천"이 아닌 경우만 (기존 루틴 추천과 구분)
+    is_other_routine_request = any(pattern in user_message_no_space for pattern in other_routine_patterns) and not is_routine_recommend_request
+    
+    # 케이스 6: 일반 질문 (위에 해당하지 않는 모든 경우)
 
     priority_data = None
     routine_recommend_data = None
@@ -670,11 +692,22 @@ def chat():
             priority_data = None
 
     # 2) 우리 서비스 컨텍스트 만들기
-    # 루틴 추천 요청인 경우: 가장 높은 우선순위 루틴 하나만 포함
-    # 우선순위 요청인 경우: 우선순위 정보만 포함 (중복 방지)
-    # 일반 요청인 경우: 전체 컨텍스트 포함
+    # 케이스별로 컨텍스트 구성:
+    # - 케이스 1 (오늘 할일): 전체 컨텍스트 (오늘 해야 할 루틴)
+    # - 케이스 2 (우선순위): 우선순위 정보만 포함
+    # - 케이스 3 (루틴 추천): 가장 높은 우선순위 루틴 하나만 포함
+    # - 케이스 4 (날씨): 날씨 정보 + 스타일러 추천
+    # - 케이스 5 (다른 루틴): 날씨 정보 + 새로운 가전 루틴 추천
+    # - 케이스 6 (일반 질문): 전체 컨텍스트
     
-    if is_routine_recommend_request and routine_recommend_data:
+    if is_today_todo_request:
+        # 케이스 1: 오늘 할일 - 전체 컨텍스트 사용
+        try:
+            context = build_context_for_user(user_id, selected_routine_ids)
+        except Exception as e:
+            current_app.logger.exception("build_context_for_user error")
+            context = "오늘의 루틴/기록 정보를 불러오지 못했습니다."
+    elif is_routine_recommend_request and routine_recommend_data:
         # 루틴 추천 요청: 가장 높은 우선순위 루틴 하나만 사용
         today = date.today()
         
@@ -904,8 +937,93 @@ def chat():
         # 디버깅
         current_app.logger.info(f"[CHAT] 우선순위 모드: {len(priority_data)}개 루틴만 전달")
         current_app.logger.info(f"[CHAT] 우선순위 루틴 IDs: {[item.get('routine_id') for item in priority_data]}")
+    elif is_weather_request or is_other_routine_request:
+        # 케이스 4, 5: 날씨 정보만 포함
+        today = date.today()
+        weather_info_text = ""
+        try:
+            from models import WeatherInfo
+            # 오늘 날씨
+            weather_today = WeatherInfo.query.filter_by(date=today).first()
+            # 내일 날씨
+            tomorrow = today + timedelta(days=1)
+            weather_tomorrow = WeatherInfo.query.filter_by(date=tomorrow).first()
+            
+            weather_parts = []
+            
+            # 기온을 자연어로 변환하는 함수
+            def get_temp_description(temp):
+                if temp is None:
+                    return None
+                if temp < 10:
+                    return "추움"
+                elif temp <= 25:
+                    return "따뜻함"
+                else:
+                    return "더움"
+            
+            # 습도를 자연어로 변환하는 함수
+            def get_humidity_description(humi):
+                if humi is None:
+                    return None
+                if humi < 50:
+                    return "낮음"
+                else:
+                    return "높음"
+            
+            # 오늘 날씨 정보
+            if weather_today:
+                temp = float(weather_today.temperature) if weather_today.temperature else None
+                humi = float(weather_today.humidity) if weather_today.humidity else None
+                weather_desc = weather_today.weather if weather_today.weather else None
+                
+                today_parts = []
+                if weather_desc:
+                    today_parts.append(f"날씨: {weather_desc}")
+                temp_desc = get_temp_description(temp)
+                if temp_desc:
+                    today_parts.append(f"기온: {temp_desc}")
+                humi_desc = get_humidity_description(humi)
+                if humi_desc:
+                    today_parts.append(f"습도: {humi_desc}")
+                
+                if today_parts:
+                    weather_parts.append(f"오늘 - {', '.join(today_parts)}")
+            
+            # 내일 날씨 정보
+            if weather_tomorrow:
+                temp_tomorrow = float(weather_tomorrow.temperature) if weather_tomorrow.temperature else None
+                humi_tomorrow = float(weather_tomorrow.humidity) if weather_tomorrow.humidity else None
+                weather_desc_tomorrow = weather_tomorrow.weather if weather_tomorrow.weather else None
+                
+                tomorrow_parts = []
+                if weather_desc_tomorrow:
+                    tomorrow_parts.append(f"날씨: {weather_desc_tomorrow}")
+                temp_tomorrow_desc = get_temp_description(temp_tomorrow)
+                if temp_tomorrow_desc:
+                    tomorrow_parts.append(f"기온: {temp_tomorrow_desc}")
+                humi_tomorrow_desc = get_humidity_description(humi_tomorrow)
+                if humi_tomorrow_desc:
+                    tomorrow_parts.append(f"습도: {humi_tomorrow_desc}")
+                
+                if tomorrow_parts:
+                    weather_parts.append(f"내일 - {', '.join(tomorrow_parts)}")
+            
+            if weather_parts:
+                weather_info_text = " | ".join(weather_parts)
+        except Exception as e:
+            current_app.logger.exception("날씨 정보 조회 오류")
+        
+        context_lines = [
+            f"오늘 날짜: {today.isoformat()}",
+        ]
+        
+        if weather_info_text:
+            context_lines.append(f"날씨 정보: {weather_info_text}")
+        
+        context = "\n".join(context_lines)
     else:
-        # 일반 요청: 전체 컨텍스트
+        # 케이스 6: 일반 질문 - 전체 컨텍스트
         try:
             context = build_context_for_user(user_id, selected_routine_ids)
         except Exception as e:
@@ -916,17 +1034,18 @@ def chat():
     current_app.logger.info(f"[CHAT] 최종 컨텍스트 길이: {len(context)} 문자")
     current_app.logger.info(f"[CHAT] 최종 컨텍스트 (처음 500자): {context[:500]}")
 
-     # 4) Gemini에 넘길 프롬프트 구성
-    if is_routine_recommend_request and routine_recommend_data:
-        # 루틴 추천 요청: 가장 높은 우선순위 루틴 하나만 추천
+     # 4) Gemini에 넘길 프롬프트 구성 (6가지 케이스로 구분)
+    if is_today_todo_request:
+        # 케이스 1: 오늘 할일, 오늘 루틴
         prompt = f"""
 [중요 규칙]
 - 본인 소개나 역할 설명은 하지 마세요. 바로 답변을 시작하세요.
-- '[추천 루틴 (가장 높은 우선순위)]' 섹션에 나열된 루틴 하나만 추천하세요.
-- 사용자가 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하라고 요청하면 날씨를 참고해 가전 루틴을 추천하세요.
+- '[오늘 해야 할 루틴]' 섹션에 나열된 루틴만 사용하세요.
+- 목록에 있는 정확한 개수만큼만 추천하세요. (예: 3개면 3개, 5개면 5개)
+- 각 루틴은 한 번만 언급하고, 루틴 이름과 순서는 목록에 나온 그대로 따르세요.
 - 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
 - 날씨, 온도, 습도 등 요소를 이용하여 추천 이유를 설명하세요.
-- 주의: '[추천 루틴 (가장 높은 우선순위)]' 섹션에 나열된 루틴은 이미 목표 달성 여부를 확인한 루틴입니다. 
+- 주의: '[오늘 해야 할 루틴]' 섹션에 나열된 루틴은 이미 목표 달성 여부를 확인한 루틴입니다. 
   WEEKLY(주간) 루틴은 이번 주 목표 횟수를 달성했으면 다음 주부터, 
   MONTHLY(월간) 루틴은 이번 달 목표 횟수를 달성했으면 다음 달부터 추천되어야 합니다.
   하지만 섹션에 나열된 루틴은 이미 필터링되어 있으므로 그대로 추천하시면 됩니다.
@@ -937,33 +1056,28 @@ def chat():
 [사용자 질문]
 {user_message}
 
-위 정보를 바탕으로, '[추천 루틴 (가장 높은 우선순위)]' 섹션의 루틴 하나를 추천해주세요.
-다음 내용을 포함하세요:
+위 정보를 바탕으로, '[오늘 해야 할 루틴]' 섹션의 루틴들을 오늘 할 일로 추천해주세요.
+각 루틴에 대해 다음을 포함하세요:
 - 루틴 내용 (무엇을 하는지)
 - 예상 소요 시간 (예: "약 40분 정도 걸려요")
 - 추천 이유 (점수, 날씨, 최근 실행 기록 등 주어진 정보들을 함께 설명)
-추천 이유를 설명할 때는 점수와 구체적인 이유를 한 문장으로 자연스럽게 함께 설명하세요:
+
+추천 이유를 설명할 때는 점수와 구체적인 이유를 한 문장으로 자연스럽게 함께 설명하세요.
+날씨 정보(맑음/비/습도/기온)와 최근 실행 기록(오래됨/어제/오늘)을 활용하여 점수와 함께 자연스럽게 설명하세요.
+정보가 충분하지 않으면 "오늘 해야 할 루틴이에요."처럼 간단히 언급하세요.
 추천 이유에 약간의 주관이 들어가도 좋아요.
-
-예시 (점수 + 이유를 자연스럽게 결합):
-- "점수가 4.44점으로 가장 높아요. 날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 높게 나왔어요."
-- "날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 4.44점으로 가장 높아요."
-- "오늘 습도가 높아서 점수가 2.13점으로 가장 높아요. 건조기를 먼저 돌리는 게 좋겠어요."
-
-- 추천 이유에는 날씨 정보(맑음/비/습도/기온)와 최근 실행 기록(오래됨/어제/오늘)을 활용하여 점수와 함께 자연스럽게 설명하세요.
-정보가 충분하지 않으면 "우선순위 점수가 가장 높아서 추천드려요."처럼 간단히 언급하거나 약간의 주관을 추가하세요.
-
 
 """
     elif is_priority_request:
+        # 케이스 2: 우선순위
         prompt = f"""
 [중요 규칙]
 - 본인 소개나 역할 설명은 하지 마세요. 바로 답변을 시작하세요.
-- '[우선순위 추천 (점수 높은 순)]' 섹션에 나열된 루틴만 사용하세요.
+- '[우선순위 추천 (점수 높은 순)]'은 섹션에 나열된 루틴만 사용하세요.
 - 목록에 있는 정확한 개수만큼만 추천하세요. (예: 3개면 3개, 5개면 5개)
 - 사용자가 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하라고 요청하면 날씨를 참고해 가전 루틴을 추천하세요.
 - 각 루틴은 한 번만 언급하고, 루틴 이름과 순서는 목록에 나온 그대로 따르세요.
-- 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
+- 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
 - 날씨, 온도, 습도 등 요소를 이용하여 추천 이유를 설명하세요.
 - 주의: '[우선순위 추천 (점수 높은 순)]' 섹션에 나열된 루틴은 이미 목표 달성 여부를 확인한 루틴입니다. 
   WEEKLY(주간) 루틴은 이번 주 목표 횟수를 달성했으면 다음 주부터, 
@@ -983,28 +1097,131 @@ def chat():
 - 예상 소요 시간 (예: "약 40분 정도 걸려요")
 - 추천 이유 (점수, 날씨, 최근 실행 기록 등 주어진 정보들을 함께 설명)
 
-추천 이유를 설명할 때는 점수와 구체적인 이유를 한 문장으로 자연스럽게 함께 설명하세요:
+**중요: 추천 이유를 설명할 때는 반드시 구체적인 이유를 포함하세요:**
+1. **날씨 정보**: 날씨가 어떤 상태여서 점수가 높은지/낮은지 구체적으로 설명 (예: "오늘 날씨가 맑아서", "내일 비가 올 예정이라서", "습도가 높아서")
+2. **최근 실행 기록**: 언제 마지막으로 실행했는지 구체적으로 언급 (예: "어제 실행하셔서", "3일 전에 실행하셔서", "오래 전에 실행하셔서")
+3. **점수**: 위 정보들을 바탕으로 점수가 왜 높은지/낮은지 설명
 
-예시 (점수 + 이유를 자연스럽게 결합):
-- "점수가 4.44점으로 높아요. 날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 높게 나왔어요."
-- "날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 4.44점으로 높아요."
-- "점수가 2.13점으로 두 번째로 높아요. 오늘 습도가 높아서 건조기를 먼저 돌리는 게 좋겠어요."
-- "오늘 습도가 높아서 점수가 2.13점으로 두 번째로 높아요."
+**특히 점수가 음수인 경우:**
+- 점수가 음수인 루틴은 반드시 왜 점수가 낮은지 구체적으로 설명하세요
+- 예: "아직 기간이 많이 남아서 점수가 낮아요. 하지만 해도 상관 없어요."
+- 예: "오늘 날씨때문에 점수가 낮아요. 하지만 해도 괜찮아요."
+- 예: "최근에 실행하셔서 점수가 낮아요. 하지만 필요하시면 해도 좋아요."
+- 점수가 낮은 이유(날씨, 실행 시점, 기간 등)를 구체적으로 설명하고, 그래도 해도 되는지 안내하세요
+
+예시 (구체적인 이유 포함):
+- "점수가 4.44점으로 가장 높아요. 오늘 날씨가 맑고, 5일 전에 실행하셔서 오래되어서 점수가 높게 나왔어요."
+- "날씨가 맑고 루틴을 실행한 지 5일이나 지나서 점수가 4.44점으로 가장 높아요."
+- "점수가 2.13점으로 두 번째로 높아요. 오늘 습도가 높아서 건조기를 먼저 돌리는 게 좋겠어요. 어제 실행하셨지만 습도가 높아서 점수가 높게 나왔어요."
+- "오늘 습도가 높아서 점수가 2.13점으로 두 번째로 높아요. 어제 실행하셨지만 습도가 높아서 다시 돌리는 게 좋을 것 같아요."
 - "점수가 1.62점으로 세 번째예요. 어제 이미 실행하셔서 점수가 낮지만, 오늘 해두시면 좋을 것 같아요."
+- "점수가 -1.44점으로 낮아요. 최근에 실행하셔서 점수가 낮지만, 내일 비가 와서 실내 활동하기 좋은 날이니 점검해보시면 좋을 것 같아요."
 
-날씨 정보(맑음/비/습도/기온)와 최근 실행 기록(오래됨/어제/오늘)을 활용하여 점수와 함께 자연스럽게 설명하세요.
-가능하면 "날씨가 맑고 루틴을 실행한 지 오래되어서 점수가 높아요"처럼 한 문장으로 표현하는 것을 권장합니다.
+**절대 하지 말아야 할 것:**
+- "점수가 높아서 추천드려요"처럼 점수만 언급하는 것
+- "우선순위 점수가 높아서"처럼 추상적인 설명만 하는 것
+- 점수가 음수인데 왜 낮은지 설명하지 않는 것
 
+**반드시 포함해야 할 것:**
+- 날씨 상태 (맑음/비/습도 높음/낮음/기온 등)
+- 최근 실행 시점 (어제/오늘/N일 전/오래됨 등)
+- 점수와 이유를 연결한 구체적인 설명
+- **점수가 음수인 경우: 왜 낮은지 구체적인 이유 + 그래도 해도 되는지 안내**
+
+날씨 정보(맑음/비/습도/기온)와 최근 실행 기록(오래됨/어제/오늘/N일 전)을 반드시 활용하여 점수와 함께 구체적으로 설명하세요.
 '오늘의 정보'에 있는 날씨 정보, 최근 실행 기록 등의 실제 데이터를 활용하여 점수와 함께 자연스럽게 설명하세요.
-정보가 충분하지 않으면 "우선순위 점수가 높아서 먼저 추천드려요."처럼 간단히 언급하세요.
 추천 이유에 약간의 주관이 들어가도 좋아요.
 
 """
-    else:
-        # 일반 질문: Gemini가 적당히 대응
+    elif is_weather_request:
+        # 케이스 4: 날씨 물어보기 → 스타일러 추천
         prompt = f"""
-[일반 질문에 대한 답변]
-[주의사항]
+[중요 규칙]
+- 본인 소개나 역할 설명은 하지 마세요. 바로 답변을 시작하세요.
+- 날씨 정보는 '[오늘의 정보]'의 '날씨 정보' 섹션을 반드시 확인하고 활용하세요. 날씨 정보가 있으면 그 정보를 바탕으로 답변하세요.
+- 내일 날씨를 물어보면 '날씨 정보'에 '내일' 정보가 있으면 그 정보를 사용하세요.
+- 날씨 정보를 바탕으로 스타일러 가동을 추천하고 일정 추가를 제안하세요.
+- 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
+- 날씨, 온도, 습도 등 요소를 이용하여 추천 이유를 설명하세요.
+
+[오늘의 정보]
+{context}
+
+[사용자 질문]
+{user_message}
+
+사용자의 날씨 질문에 친절하고 자연스럽게 답변해주세요.
+날씨 정보를 바탕으로 스타일러 가동을 추천하고, 일정 추가를 제안하세요.
+추천 이유에는 날씨 정보(맑음/비/습도/기온)를 활용하여 자연스럽게 설명하세요.
+추천 이유에 약간의 주관이 들어가도 좋아요.
+
+일정 추가 제안 시 반드시 다음 형식으로 응답하세요:
+"일정을 추가해드릴까요?"
+
+일정 추가 제안이 포함된 경우, 응답 끝에 반드시 다음 JSON 형식으로 정보를 포함하세요:
+[SCHEDULE_SUGGESTION]
+{{
+  "routine_name": "스타일러 가동하기",
+  "routine_type": "ETC",
+  "schedule_type": "DAILY",
+  "preferred_time": "19:00",
+  "run_minutes": 30,
+  "schedule_date": "2025-12-12"
+}}
+[/SCHEDULE_SUGGESTION]
+
+**중요: [SCHEDULE_SUGGESTION] 태그와 JSON은 사용자에게 보이지 않도록 응답 텍스트의 맨 끝에만 포함하세요. 사용자가 보는 답변에는 "일정을 추가해드릴까요?" 문구만 포함하고, JSON은 별도로 숨겨진 형식으로 추가하세요.**
+
+"""
+    elif is_other_routine_request:
+        # 케이스 5: 다른 루틴 추천 (날씨 정보를 참고해서 다른 가전 루틴 추천)
+        prompt = f"""
+[중요 규칙]
+- 본인 소개나 역할 설명은 하지 마세요. 바로 답변을 시작하세요.
+- **중요: 사용자가 "다른 루틴"을 요청한 것은 기존 루틴 리스트에 없는 새로운 가전 루틴을 원하는 것입니다.**
+- 기존 루틴 리스트(설거지 하기, 바닥 청소하기, 정수기 점검 등)에 있는 루틴을 추천하지 마세요.
+- 날씨 정보를 참고하여 **새로운 가전 루틴**(스타일러, 건조기, 세탁기 등)을 추천하세요.
+- 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
+- 날씨, 온도, 습도 등 요소를 이용하여 추천 이유를 구체적으로 설명하세요.
+
+[오늘의 정보]
+{context}
+
+[사용자 질문]
+{user_message}
+
+**사용자가 "다른 루틴"을 요청했으므로, 기존 루틴 리스트에 없는 새로운 가전 루틴을 추천해야 합니다.**
+날씨 정보를 바탕으로 새로운 가전 루틴(스타일러, 건조기, 세탁기 등)을 추천하고, 일정 추가를 제안하세요.
+
+추천 이유에는 날씨 정보(맑음/비/습도/기온)를 구체적으로 활용하여 설명하세요:
+- 예: "내일 비가 올 예정이라서 스타일러를 가동하면 좋겠어요."
+- 예: "오늘 습도가 높아서 건조기를 돌리면 좋겠어요."
+- 예: "날씨가 맑고 따뜻해서 세탁기를 돌리면 좋겠어요."
+
+추천 이유에 약간의 주관이 들어가도 좋아요.
+
+일정 추가 제안 시 반드시 다음 형식으로 응답하세요:
+"일정을 추가해드릴까요?"
+
+일정 추가 제안이 포함된 경우, 응답 끝에 반드시 다음 JSON 형식으로 정보를 포함하세요:
+[SCHEDULE_SUGGESTION]
+{{
+  "routine_name": "스타일러 가동하기",
+  "routine_type": "ETC",
+  "schedule_type": "DAILY",
+  "preferred_time": "19:00",
+  "run_minutes": 30,
+  "schedule_date": "2025-12-12"
+}}
+[/SCHEDULE_SUGGESTION]
+
+**중요: [SCHEDULE_SUGGESTION] 태그와 JSON은 사용자에게 보이지 않도록 응답 텍스트의 맨 끝에만 포함하세요. 사용자가 보는 답변에는 "일정을 추가해드릴까요?" 문구만 포함하고, JSON은 별도로 숨겨진 형식으로 추가하세요.**
+
+"""
+    else:
+        # 케이스 6: 일반 질문
+        prompt = f"""
+[중요 규칙]
 - 본인 소개나 역할 설명은 하지 마세요. 사용자의 질문에 바로 답변하세요.
 - '오늘의 정보'에 있는 정보를 참고할 수 있지만, 사용자의 질문에 자연스럽게 답변하는 것이 우선입니다.
 - 모든 숫자, 횟수, 날짜, 시간은 '오늘의 정보'에 있는 값을 사용하세요.
@@ -1022,43 +1239,8 @@ def chat():
 [사용자 질문]
 {user_message}
 
-사용자의 질문에 친절하고 자연스럽게 답변해주세요. 
-- 날씨 관련 질문이면 '오늘의 정보'의 '날씨 정보' 섹션을 반드시 확인하고 활용하세요. 날씨 정보가 있으면 그 정보를 바탕으로 답변하세요.
-- 내일 날씨를 물어보면 '날씨 정보'에 '내일' 정보가 있으면 그 정보를 사용하세요.
-- **날씨 관련 질문이 있을 때만** 날씨 정보를 바탕으로 가전 루틴(예: 스타일러, 건조기)을 추천하고 일정 추가를 제안하세요.
-- 루틴 관련 질문이면 '오늘의 정보'를 활용하세요.
-- **일반적인 질문(예: "오늘 할일 말해줘", "우선순위는?")에는 일정 추가 제안을 하지 마세요. 답변만 제공하세요.**
-
-[일정 추가 제안 규칙]
-- **중요: 일정 추가 제안은 다음 두 경우에만 제안하세요:**
-  1. 사용자가 날씨에 대해 물어봤고, 날씨 정보를 바탕으로 가전 루틴(예: 스타일러, 건조기)을 추천할 때만
-  2. 사용자가 목록에 없는 루틴 추천을 요청했을 때만 (예: "다른 루틴 추천해줘", "다른거 추천해줘")
-- **그 외의 경우에는 일정 추가 제안을 하지 마세요. 일반적인 답변만 제공하세요.**
-- 일정 추가 제안 시 반드시 다음 형식으로 응답하세요:
-  "일정을 추가해드릴까요?"
-- 일정 추가 제안이 포함된 경우, 응답 끝에 반드시 다음 JSON 형식으로 정보를 포함하세요:
-  [SCHEDULE_SUGGESTION]
-  {{
-    "routine_name": "스타일러 가동하기",
-    "routine_type": "ETC",
-    "schedule_type": "DAILY",
-    "preferred_time": "19:00",
-    "run_minutes": 30,
-    "schedule_date": "2025-12-12"
-  }}
-  [/SCHEDULE_SUGGESTION]
-  
-- **중요: [SCHEDULE_SUGGESTION] 태그와 JSON은 사용자에게 보이지 않도록 응답 텍스트의 맨 끝에만 포함하세요. 사용자가 보는 답변에는 "일정을 추가해드릴까요?" 문구만 포함하고, JSON은 별도로 숨겨진 형식으로 추가하세요.**
-- routine_name: 루틴 이름 (예: "스타일러 가동하기", "건조기 돌리기")
-- routine_type: 루틴 타입 ("CLEANING", "LAUNDRY", "ETC" 등)
-- schedule_type: 스케줄 타입 ("DAILY", "WEEKLY", "MONTHLY")
-- preferred_time: 선호 시간 (예: "19:00", "MORNING", "EVENING")
-- run_minutes: 예상 소요 시간 (분 단위)
-- schedule_date: 일정을 추가할 날짜 (YYYY-MM-DD 형식, 예: "2025-12-12"). 
-  사용자가 언급한 날짜(예: "다음주", "내일", "12월 12일")가 있으면 그 날짜를 사용하고, 
-  없으면 오늘 날짜를 사용하세요. 날짜는 반드시 YYYY-MM-DD 형식으로 제공하세요.
-
-그밖에 일반적인 대화나 다른 질문이면 적절히 대응해주세요. 일정 추가 제안 없이 답변만 제공하세요.
+사용자의 질문에 친절하고 자연스럽게 답변해주세요.
+일반적인 질문에는 일정 추가 제안을 하지 마세요. 답변만 제공하세요.
 
 """
 

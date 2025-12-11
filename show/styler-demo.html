@@ -14,7 +14,7 @@
 
         body {
             font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
-            background-image: url('room.png');
+            background-image: url('bg.png');
             background-size: contain;
             background-position: center;
             background-repeat: no-repeat;
@@ -379,6 +379,11 @@
         <button class="control-button" id="resetButton">리셋</button>
     </div>
 
+    <!-- BGM 오디오 요소 (스타일러는 BGM 없음) -->
+    <!-- <audio id="bgmAudio" preload="auto">
+        <source src="스타일러bgm.mp4" type="audio/mpeg">
+    </audio> -->
+
     <script>
         // 이미지 preload - 페이지 로드 시 미리 로드
         const images = ['1.png', '2.png', '3.png', '4.png'];
@@ -393,6 +398,7 @@
         const stylerComplete = document.getElementById('stylerComplete');
         const startButton = document.getElementById('startButton');
         const resetButton = document.getElementById('resetButton');
+        // 스타일러는 BGM이 없으므로 BGM 관련 코드 제거
 
         let isAnimating = false;
         let currentStep = 0;
@@ -542,6 +548,8 @@
             isAnimating = true;
             startButton.disabled = true;
 
+            // 스타일러는 BGM이 없으므로 BGM 재생 코드 제거
+
             for (let i = 0; i < sequence.length; i++) {
                 currentStep = sequence[i];
                 currentIndex = i;
@@ -573,6 +581,7 @@
         }
 
         startButton.addEventListener('click', runSequence);
+
         resetButton.addEventListener('click', reset);
 
         // 초기 상태 설정
@@ -590,11 +599,12 @@
 
         function handleStartButton() {
             const startBtn = document.getElementById('startButton');
-            if (startBtn && !startBtn.disabled) {
+            if (startBtn) {
                 console.log('✅ "시작" 버튼 클릭 시뮬레이션');
+                // 버튼 클릭 이벤트를 트리거하여 사용자 상호작용으로 간주되도록 함 (로봇청소기와 동일)
                 startBtn.click();
             } else {
-                console.error('❌ "시작" 버튼을 찾을 수 없거나 비활성화되어 있습니다.');
+                console.error('❌ "시작" 버튼을 찾을 수 없습니다.');
             }
         }
 

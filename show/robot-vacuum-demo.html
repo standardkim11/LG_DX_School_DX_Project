@@ -270,6 +270,58 @@
         const page3 = document.getElementById('page3');
         const bgmAudio = document.getElementById('bgmAudio');
 
+        // 오디오 볼륨 설정 (0.0 ~ 1.0)
+        if (bgmAudio) {
+            bgmAudio.volume = 0.7; // 70% 볼륨
+            // 오디오 로드 에러 처리
+            bgmAudio.addEventListener('error', function (e) {
+                console.error('[BGM] 오디오 로드 에러:', bgmAudio.error);
+                console.error('[BGM] 오디오 소스:', bgmAudio.src);
+            });
+        }
+
+        // 오디오 컨텍스트 활성화 플래그
+        let audioContextActivated = false;
+
+        // 사용자 상호작용 시 오디오 컨텍스트 활성화
+        function activateAudioContext() {
+            if (!audioContextActivated && bgmAudio) {
+                // 오디오 컨텍스트를 활성화하기 위해 조용히 재생 시도
+                const playPromise = bgmAudio.play();
+                if (playPromise !== undefined) {
+                    playPromise
+                        .then(() => {
+                            // 재생 성공 시 즉시 일시정지 (실제 재생은 나중에)
+                            bgmAudio.pause();
+                            bgmAudio.currentTime = 0;
+                            audioContextActivated = true;
+                            console.log('[BGM] 오디오 컨텍스트 활성화 완료');
+                        })
+                        .catch(() => {
+                            // 실패해도 무시 (나중에 재시도) - 조용히 처리
+                        });
+                }
+            }
+        }
+
+        // 페이지 클릭/터치 시 오디오 컨텍스트 활성화 (한 번만)
+        let userInteracted = false;
+        function handleUserInteraction() {
+            if (!userInteracted) {
+                userInteracted = true;
+                activateAudioContext();
+            }
+        }
+        document.addEventListener('click', handleUserInteraction, { once: true });
+        document.addEventListener('touchstart', handleUserInteraction, { once: true });
+
+        // 청소 버튼 클릭 시에도 활성화
+        buttons.forEach(button => {
+            button.addEventListener('click', function () {
+                activateAudioContext();
+            });
+        });
+
         // 전체 청소 버튼 클릭 함수
         function handleFullCleaningButton() {
             const fullCleaningButton = document.querySelector('.cleaning-button[data-type="full"]');
@@ -293,10 +345,42 @@
                 }
 
                 // BGM 재생 시작 (끝까지 재생)
-                bgmAudio.currentTime = 0;
-                bgmAudio.play().catch(error => {
-                    console.error('BGM 재생 실패:', error);
-                });
+                // 버튼 클릭은 사용자 상호작용으로 간주되므로 바로 재생 시도
+                // 오디오 컨텍스트가 활성화되어 있으면 재생, 아니면 조용히 실패
+                if (bgmAudio && audioContextActivated) {
+                    // 오디오가 로드되었는지 확인
+                    if (bgmAudio.readyState >= 2) { // HAVE_CURRENT_DATA 이상
+                        bgmAudio.currentTime = 0;
+                        const playPromise = bgmAudio.play();
+                        if (playPromise !== undefined) {
+                            playPromise
+                                .then(() => {
+                                    console.log('[BGM] 재생 시작 성공');
+                                })
+                                .catch(error => {
+                                    console.error('[BGM] 재생 실패:', error.name, error.message);
+                                });
+                        }
+                    } else {
+                        // 오디오가 아직 로드되지 않았으면 로드 대기
+                        bgmAudio.addEventListener('canplaythrough', function onCanPlay() {
+                            bgmAudio.removeEventListener('canplaythrough', onCanPlay);
+                            bgmAudio.currentTime = 0;
+                            bgmAudio.play()
+                                .then(() => {
+                                    console.log('[BGM] 재생 시작 성공 (로드 후)');
+                                })
+                                .catch(error => {
+                                    console.error('[BGM] 재생 실패 (로드 후):', error.name, error.message);
+                                });
+                        }, { once: true });
+                        // 로드 강제 시작
+                        bgmAudio.load();
+                    }
+                } else if (!audioContextActivated) {
+                    // 오디오 컨텍스트가 활성화되지 않았으면 조용히 무시
+                    // (사용자가 페이지를 클릭하면 자동으로 활성화됨)
+                }
 
                 // 첫 번째 페이지 숨기기
                 page1.classList.remove('active');
@@ -315,14 +399,14 @@
                             endImage.classList.add('show');
                         }
                     }, 200);
-                    
+
                     // BGM은 끝까지 재생되도록 유지 (자동 정지하지 않음)
                 }, 4000);
             });
         });
-        
+
         // 페이지 전환 시에도 BGM이 계속 재생되도록 유지
-        document.addEventListener('visibilitychange', function() {
+        document.addEventListener('visibilitychange', function () {
             if (!document.hidden && !bgmAudio.paused) {
                 // 페이지가 다시 보일 때 재생 중이었다면 계속 재생
                 bgmAudio.play().catch(error => {
