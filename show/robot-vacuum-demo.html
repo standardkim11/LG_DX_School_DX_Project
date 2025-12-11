@@ -258,11 +258,17 @@
         </div>
     </div>
 
+    <!-- BGM 오디오 요소 -->
+    <audio id="bgmAudio" preload="auto">
+        <source src="청소기bgm.mp4" type="audio/mpeg">
+    </audio>
+
     <script>
         const buttons = document.querySelectorAll('.cleaning-button');
         const page1 = document.getElementById('page1');
         const page2 = document.getElementById('page2');
         const page3 = document.getElementById('page3');
+        const bgmAudio = document.getElementById('bgmAudio');
 
         // 전체 청소 버튼 클릭 함수
         function handleFullCleaningButton() {
@@ -286,6 +292,12 @@
                     endImage.classList.remove('show');
                 }
 
+                // BGM 재생 시작 (끝까지 재생)
+                bgmAudio.currentTime = 0;
+                bgmAudio.play().catch(error => {
+                    console.error('BGM 재생 실패:', error);
+                });
+
                 // 첫 번째 페이지 숨기기
                 page1.classList.remove('active');
 
@@ -303,8 +315,20 @@
                             endImage.classList.add('show');
                         }
                     }, 200);
+                    
+                    // BGM은 끝까지 재생되도록 유지 (자동 정지하지 않음)
                 }, 4000);
             });
+        });
+        
+        // 페이지 전환 시에도 BGM이 계속 재생되도록 유지
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && !bgmAudio.paused) {
+                // 페이지가 다시 보일 때 재생 중이었다면 계속 재생
+                bgmAudio.play().catch(error => {
+                    console.error('BGM 재생 실패:', error);
+                });
+            }
         });
 
         // 원격 시작 명령 폴링 (Flutter 앱에서 시작 명령을 보내면 자동으로 시작)

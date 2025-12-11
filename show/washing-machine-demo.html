@@ -721,12 +721,18 @@
         </div>
     </div>
 
+    <!-- BGM 오디오 요소 -->
+    <audio id="bgmAudio" preload="auto">
+        <source src="세탁기bgm.mp4" type="audio/mpeg">
+    </audio>
+
     <script>
         const playButton = document.getElementById('playButton');
         const drum = document.getElementById('drum');
         const mainStatus = document.getElementById('mainStatus');
         const subStatus = document.getElementById('subStatus');
         const statusDots = document.querySelectorAll('.status-dots .dot');
+        const bgmAudio = document.getElementById('bgmAudio');
 
         let isRunning = false;
         let timeoutId = null;
@@ -736,6 +742,7 @@
                 // 일시정지
                 clearTimeout(timeoutId);
                 drum.classList.remove('rotating');
+                bgmAudio.pause();
                 isRunning = false;
                 playButton.classList.remove('playing');
                 return;
@@ -744,6 +751,12 @@
             isRunning = true;
             playButton.classList.add('playing');
             // ⏯️ 이모지는 자동으로 멈춤 상태를 보여줌
+
+            // BGM 재생 시작 (끝까지 재생)
+            bgmAudio.currentTime = 0;
+            bgmAudio.play().catch(error => {
+                console.error('BGM 재생 실패:', error);
+            });
 
             // 세탁통 회전 시작
             drum.classList.add('rotating');
@@ -780,12 +793,24 @@
                                 // 상태 초기화
                                 isRunning = false;
                                 playButton.classList.remove('playing');
+
+                                // BGM은 끝까지 재생되도록 유지 (자동 정지하지 않음)
                             }, 3000);
                         }, 800);
                     }
                 }, index * 400);
             });
         }
+
+        // 페이지 전환 시에도 BGM이 계속 재생되도록 유지
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden && !bgmAudio.paused) {
+                // 페이지가 다시 보일 때 재생 중이었다면 계속 재생
+                bgmAudio.play().catch(error => {
+                    console.error('BGM 재생 실패:', error);
+                });
+            }
+        });
 
         playButton.addEventListener('click', handlePlayButton);
 
