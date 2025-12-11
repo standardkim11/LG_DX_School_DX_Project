@@ -168,6 +168,10 @@ def start_styler():
     
     global styler_start_command
     
+    # 요청 IP 로깅
+    client_ip = request.remote_addr
+    print(f"[DeviceRoutes] [시작 명령] 스타일러 - 요청 IP: {client_ip}")
+    
     with lock:
         styler_start_command["pending"] = True
         styler_start_command["timestamp"] = datetime.now().isoformat()
@@ -193,6 +197,10 @@ def check_styler_command():
         return response
     
     global styler_start_command
+    
+    # 요청 IP 로깅
+    client_ip = request.remote_addr
+    print(f"[DeviceRoutes] [폴링 요청] 스타일러 - 요청 IP: {client_ip}")
     
     with lock:
         pending_status = styler_start_command["pending"]

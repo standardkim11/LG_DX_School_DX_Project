@@ -1176,7 +1176,13 @@
         // PC의 IP 주소 확인 방법:
         //   - Windows: ipconfig 명령어 실행 후 "IPv4 주소" 확인
         //   - Mac/Linux: ifconfig 또는 ip addr 명령어 실행
-        const API_BASE_URL = 'http://192.168.0.16:8088/api';
+        // URL 파라미터에서 IP 주소 가져오기 (예: ?ip=192.168.0.16)
+        const urlParams = new URLSearchParams(window.location.search);
+        const serverIP = urlParams.get('ip') || '192.168.0.16'; // 기본값: 192.168.0.16
+        const API_BASE_URL = `http://${serverIP}:8088/api`;
+
+        console.log('[세탁기] 서버 IP:', serverIP);
+        console.log('[세탁기] API_BASE_URL:', API_BASE_URL);
 
         // 폴링 간격 (밀리초)
         const POLLING_INTERVAL = 1000; // 1초마다 확인
@@ -1229,7 +1235,8 @@
             } catch (error) {
                 console.error('❌ 서버 연결 실패:', error);
                 console.error('API_BASE_URL:', API_BASE_URL);
-                console.error('서버가 실행 중인지 확인하세요: http://192.168.0.16:8088');
+                console.error(`서버가 실행 중인지 확인하세요: http://${serverIP}:8088`);
+                console.error('URL 파라미터로 IP를 지정할 수 있습니다: ?ip=192.168.0.XX');
             }
 
             // 폴링 시작

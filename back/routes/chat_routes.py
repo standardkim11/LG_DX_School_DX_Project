@@ -160,12 +160,187 @@ def build_context_for_user(user_id: int, selected_routine_ids: list[int] = None)
     else:
         today_text = "\n".join(today_items)
 
+    # 날씨 정보 추가 (오늘 + 내일)
+    weather_info_text = ""
+    try:
+        from models import WeatherInfo
+        from flask import current_app
+        
+        # 디버깅: 조회할 날짜 확인
+        current_app.logger.info(f"[CHAT 날씨] 오늘 날짜: {today.isoformat()}")
+        
+        # 오늘 날씨 - Oracle 호환성을 위해 명시적 쿼리 사용
+        from sqlalchemy import func
+        weather_today = WeatherInfo.query.filter(
+            func.TRUNC(WeatherInfo.date) == func.TRUNC(today)
+        ).first()
+        # 대안: filter_by도 시도
+        if not weather_today:
+            weather_today = WeatherInfo.query.filter_by(date=today).first()
+        current_app.logger.info(f"[CHAT 날씨] 오늘 날짜: {today.isoformat()}, 조회 결과: {weather_today}")
+        if weather_today:
+            current_app.logger.info(f"[CHAT 날씨] 오늘 날씨 (DB): weather={weather_today.weather}, temp={weather_today.temperature}, humi={weather_today.humidity}, date={weather_today.date}")
+        else:
+            current_app.logger.warning(f"[CHAT 날씨] 오늘 날씨 데이터 없음!")
+        
+        # 내일 날씨
+        tomorrow = today + timedelta(days=1)
+        current_app.logger.info(f"[CHAT 날씨] 내일 날짜: {tomorrow.isoformat()}")
+        
+        # 모든 날씨 데이터를 먼저 확인 (디버깅용)
+        all_weather = WeatherInfo.query.order_by(WeatherInfo.date.desc()).limit(20).all()
+        current_app.logger.info(f"[CHAT 날씨] 전체 날씨 데이터 개수 (최근 20개): {len(all_weather)}")
+        matching_weather = None
+        for w in all_weather:
+            current_app.logger.info(f"[CHAT 날씨] 날씨 데이터: date={w.date} (type={type(w.date)}), weather={w.weather}, temp={w.temperature}, humi={w.humidity}")
+            # 내일 날짜와 비교
+            if w.date:
+                try:
+                    if isinstance(w.date, date):
+                        date_diff = (w.date - tomorrow).days
+                        current_app.logger.info(f"[CHAT 날씨] 날짜 차이: {date_diff}일 (내일과 비교)")
+                        if date_diff == 0:
+                            current_app.logger.info(f"[CHAT 날씨] ✅ 내일 날짜와 일치하는 데이터 발견! weather={w.weather}")
+                            matching_weather = w
+                except Exception as e:
+                    current_app.logger.warning(f"[CHAT 날씨] 날짜 비교 오류: {e}")
+        
+        # Oracle 호환성을 위해 명시적 쿼리 사용
+        weather_tomorrow = None
+        # 방법 1: TRUNC 사용
+        try:
+            weather_tomorrow = WeatherInfo.query.filter(
+                func.TRUNC(WeatherInfo.date) == func.TRUNC(tomorrow)
+            ).first()
+            if weather_tomorrow:
+                current_app.logger.info(f"[CHAT 날씨] 방법1(TRUNC) 성공: weather={weather_tomorrow.weather}")
+        except Exception as e:
+            current_app.logger.warning(f"[CHAT 날씨] 방법1(TRUNC) 실패: {e}")
+        
+        # 방법 2: filter_by 사용
+        if not weather_tomorrow:
+            try:
+                weather_tomorrow = WeatherInfo.query.filter_by(date=tomorrow).first()
+                if weather_tomorrow:
+                    current_app.logger.info(f"[CHAT 날씨] 방법2(filter_by) 성공: weather={weather_tomorrow.weather}")
+            except Exception as e:
+                current_app.logger.warning(f"[CHAT 날씨] 방법2(filter_by) 실패: {e}")
+        
+        # 방법 3: 문자열 비교 사용
+        if not weather_tomorrow:
+            try:
+                tomorrow_str = tomorrow.isoformat()
+                weather_tomorrow = WeatherInfo.query.filter(
+                    func.TO_CHAR(WeatherInfo.date, 'YYYY-MM-DD') == tomorrow_str
+                ).first()
+                if weather_tomorrow:
+                    current_app.logger.info(f"[CHAT 날씨] 방법3(TO_CHAR) 성공: weather={weather_tomorrow.weather}")
+            except Exception as e:
+                current_app.logger.warning(f"[CHAT 날씨] 방법3(TO_CHAR) 실패: {e}")
+        
+        # 방법 4: 수동으로 찾은 데이터 사용
+        if not weather_tomorrow and matching_weather:
+            current_app.logger.info(f"[CHAT 날씨] 방법4(수동 매칭) 사용: weather={matching_weather.weather}")
+            weather_tomorrow = matching_weather
+        
+        current_app.logger.info(f"[CHAT 날씨] 내일 날씨 최종 조회 결과: {weather_tomorrow}")
+        if weather_tomorrow:
+            current_app.logger.info(f"[CHAT 날씨] 내일 날씨 (DB): weather={weather_tomorrow.weather}, temp={weather_tomorrow.temperature}, humi={weather_tomorrow.humidity}, date={weather_tomorrow.date}")
+        else:
+            current_app.logger.error(f"[CHAT 날씨] ❌ 내일 날씨 데이터 없음! (조회한 날짜: {tomorrow.isoformat()})")
+        
+        weather_parts = []
+        
+        # 기온을 자연어로 변환하는 함수
+        def get_temp_description(temp):
+            if temp is None:
+                return None
+            if temp < 10:
+                return "추움"
+            elif temp <= 25:
+                return "따뜻함"
+            else:
+                return "더움"
+        
+        # 습도를 자연어로 변환하는 함수
+        def get_humidity_description(humi):
+            if humi is None:
+                return None
+            if humi < 50:
+                return "낮음"
+            else:
+                return "높음"
+        
+        # 오늘 날씨 정보
+        if weather_today:
+            temp = float(weather_today.temperature) if weather_today.temperature else None
+            humi = float(weather_today.humidity) if weather_today.humidity else None
+            weather_desc = weather_today.weather if weather_today.weather else None
+            
+            today_parts = []
+            if weather_desc:
+                today_parts.append(f"날씨: {weather_desc}")
+            temp_desc = get_temp_description(temp)
+            if temp_desc:
+                today_parts.append(f"기온: {temp_desc}")
+            humi_desc = get_humidity_description(humi)
+            if humi_desc:
+                today_parts.append(f"습도: {humi_desc}")
+            
+            if today_parts:
+                weather_parts.append(f"오늘 - {', '.join(today_parts)}")
+        
+        # 내일 날씨 정보
+        if weather_tomorrow:
+            temp_tomorrow = float(weather_tomorrow.temperature) if weather_tomorrow.temperature else None
+            humi_tomorrow = float(weather_tomorrow.humidity) if weather_tomorrow.humidity else None
+            weather_desc_tomorrow = weather_tomorrow.weather if weather_tomorrow.weather else None
+            
+            # 디버깅: 내일 날씨 정보 로깅
+            from flask import current_app
+            current_app.logger.info(f"[CHAT 날씨] 내일 날짜: {tomorrow.isoformat()}")
+            current_app.logger.info(f"[CHAT 날씨] 내일 날씨 (DB): {weather_desc_tomorrow}")
+            current_app.logger.info(f"[CHAT 날씨] 내일 기온 (DB): {temp_tomorrow}")
+            current_app.logger.info(f"[CHAT 날씨] 내일 습도 (DB): {humi_tomorrow}")
+            
+            tomorrow_parts = []
+            if weather_desc_tomorrow:
+                tomorrow_parts.append(f"날씨: {weather_desc_tomorrow}")
+            temp_tomorrow_desc = get_temp_description(temp_tomorrow)
+            if temp_tomorrow_desc:
+                tomorrow_parts.append(f"기온: {temp_tomorrow_desc}")
+            humi_tomorrow_desc = get_humidity_description(humi_tomorrow)
+            if humi_tomorrow_desc:
+                tomorrow_parts.append(f"습도: {humi_tomorrow_desc}")
+            
+            if tomorrow_parts:
+                weather_parts.append(f"내일 - {', '.join(tomorrow_parts)}")
+                current_app.logger.info(f"[CHAT 날씨] 내일 날씨 정보 (컨텍스트): {', '.join(tomorrow_parts)}")
+        else:
+            from flask import current_app
+            current_app.logger.warning(f"[CHAT 날씨] 내일 날씨 데이터 없음: {tomorrow.isoformat()}")
+        
+        if weather_parts:
+            weather_info_text = " | ".join(weather_parts)
+    except Exception as e:
+        from flask import current_app
+        current_app.logger.exception("날씨 정보 조회 오류")
+
     ctx_lines = [
         f"오늘 날짜: {today.isoformat()}",
+    ]
+    
+    if weather_info_text:
+        ctx_lines.append(f"날씨 정보: {weather_info_text}")
+        # 디버깅: 날씨 정보 로깅
+        from flask import current_app
+        current_app.logger.info(f"[CHAT 날씨] 최종 날씨 정보 (컨텍스트): {weather_info_text}")
+    
+    ctx_lines.extend([
         "",
         "[오늘 해야 할 루틴]",
         today_text,
-    ]
+    ])
     context_str = "\n".join(ctx_lines)
     
     # 디버깅: build_context 결과 확인
@@ -727,9 +902,8 @@ def chat():
     if is_routine_recommend_request and routine_recommend_data:
         # 루틴 추천 요청: 가장 높은 우선순위 루틴 하나만 추천
         prompt = f"""
-당신은 사용자의 생활 루틴과 가전 사용을 도와주는 친근한 한국어 어시스턴트입니다.
-
 [중요 규칙]
+- 본인 소개나 역할 설명은 하지 마세요. 바로 답변을 시작하세요.
 - '[추천 루틴 (가장 높은 우선순위)]' 섹션에 나열된 루틴 하나만 추천하세요.
 - 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하지 마세요.
 - 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
@@ -768,9 +942,8 @@ def chat():
 """
     elif is_priority_request:
         prompt = f"""
-당신은 사용자의 생활 루틴과 가전 사용을 도와주는 친근한 한국어 어시스턴트입니다.
-
 [중요 규칙]
+- 본인 소개나 역할 설명은 하지 마세요. 바로 답변을 시작하세요.
 - '[우선순위 추천 (점수 높은 순)]' 섹션에 나열된 루틴만 사용하세요.
 - 목록에 있는 정확한 개수만큼만 추천하세요. (예: 3개면 3개, 5개면 5개)
 - 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하지 마세요.
@@ -814,11 +987,11 @@ def chat():
     else:
         # 일반 질문: Gemini가 적당히 대응
         prompt = f"""
-당신은 사용자의 생활 루틴과 가전 사용을 도와주는 친근한 한국어 어시스턴트입니다.
-
 [주의사항]
+- 본인 소개나 역할 설명은 하지 마세요. 사용자의 질문에 바로 답변하세요.
 - '오늘의 정보'에 있는 정보를 참고할 수 있지만, 사용자의 질문에 자연스럽게 답변하는 것이 우선입니다.
 - 모든 숫자, 횟수, 날짜, 시간은 '오늘의 정보'에 있는 값을 사용하세요.
+- **중요: '오늘의 정보'에 날씨 정보가 포함되어 있으면 반드시 그 정보를 활용하세요. 날씨 정보가 있으면 "알 수 없다"고 답변하지 마세요.**
 - 정보에 없는 내용은 지어내지 말고, 모른다고 솔직히 말씀하세요.
 - 사용자의 질문이 루틴과 관련이 없어도 친절하고 도움이 되는 답변을 제공하세요.
 - 중요: '[오늘 해야 할 루틴]' 섹션에 나열된 루틴은 이미 필터링된 루틴입니다.
@@ -832,9 +1005,11 @@ def chat():
 [사용자 질문]
 {user_message}
 
-사용자의 질문에 친절하고 자연스럽게 답변해주세요. 루틴 관련 질문이면 '오늘의 정보'를 활용하세요.  
-만약, 날씨에 관련된 질문이 들어오면 "오늘의 정보" 에 날씨 정보가 있다면 이를 활용하고, 날씨와 관련된 가전 루틴을 추천해주세요. 이건 '오늘의 정보'에 없어도 좋아요.
-ex. "다음주에 눈이 온데 뭘 하면 좋을까?" -> "다음주에는 눈이 예보 되어있어요. 눈이 온다면 따뜻한 옷을 미리 준비하는게 좋겠어요. 스타일러 사용을 추천드려요."
+사용자의 질문에 친절하고 자연스럽게 답변해주세요. 
+- 날씨 관련 질문이면 '오늘의 정보'의 '날씨 정보' 섹션을 반드시 확인하고 활용하세요. 날씨 정보가 있으면 그 정보를 바탕으로 답변하세요.
+- 내일 날씨를 물어보면 '날씨 정보'에 '내일' 정보가 있으면 그 정보를 사용하세요.
+- 날씨와 관련된 가전 루틴을 추천할 때는 날씨 정보를 바탕으로 적절한 루틴을 제안하세요.
+- 루틴 관련 질문이면 '오늘의 정보'를 활용하세요.
 
 [일정 추가 제안 규칙]
 - 날씨나 상황에 맞는 가전 루틴이나 일정을 추천할 때, 일정을 추가해드릴 수 있다고 제안하세요.
