@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:convert' show utf8;
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -667,6 +668,33 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                // 스타일러 관련 루틴인지 확인
+                if (_isStylerRoutine(routineSuggestion))
+                  ElevatedButton(
+                    onPressed: () =>
+                        _executeStylerFromSuggestion(routineSuggestion),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF8863EF),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      '바로 실행하기',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontFamily: 'LG Smart_H',
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                if (_isStylerRoutine(routineSuggestion))
+                  const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: () =>
                       _createRoutineFromSuggestion(routineSuggestion),
@@ -696,6 +724,108 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
+  }
+
+  bool _isStylerRoutine(Map<String, dynamic> suggestion) {
+    final routineName = suggestion['routine_name'] as String? ?? '';
+    return routineName.contains('스타일러') ||
+        routineName.contains('스타일리') ||
+        routineName.contains('styler') ||
+        routineName.contains('Styler');
+  }
+
+  Future<void> _executeStylerFromSuggestion(
+    Map<String, dynamic> suggestion,
+  ) async {
+    // 스타일러 시작 명령 전송
+    List<String> urlsToTry = [baseUrl];
+    if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+      urlsToTry = ApiConfig.getAndroidBaseUrls();
+    }
+
+    print('[ChatScreen] 스타일러 시작 명령 전송 시도 시작');
+    print('[ChatScreen] 시도할 URL 목록: $urlsToTry');
+
+    bool success = false;
+    for (final url in urlsToTry) {
+      try {
+        final uri = Uri.parse('$url/device/start-styler');
+        print('[ChatScreen] API 호출 시도: $uri');
+
+        final response = await http
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+            )
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                throw Exception('요청 시간 초과');
+              },
+            );
+
+        print('[ChatScreen] 응답 상태 코드: ${response.statusCode}');
+        print('[ChatScreen] 응답 본문: ${response.body}');
+
+        if (response.statusCode == 200) {
+          final responseBody = jsonDecode(utf8.decode(response.bodyBytes));
+          print('[ChatScreen] ✅ 스타일러 시작 명령 전송 성공: $url');
+          print('[ChatScreen] 응답 본문: $responseBody');
+          success = true;
+          break;
+        } else {
+          print(
+            '[ChatScreen] ⚠️ 스타일러 시작 명령 전송 실패: HTTP ${response.statusCode}',
+          );
+          print('[ChatScreen] 응답 본문: ${response.body}');
+        }
+      } catch (e, stackTrace) {
+        print('[ChatScreen] ❌ 스타일러 시작 명령 전송 실패 ($url): $e');
+        print('[ChatScreen] 스택 트레이스: $stackTrace');
+        continue;
+      }
+    }
+
+    if (success) {
+      final routineName = suggestion['routine_name'] as String? ?? '스타일러';
+      setState(() {
+        _messages.add({
+          'text': '$routineName를 시작했습니다!',
+          'isUser': false,
+          'fontSize': 15.0,
+        });
+      });
+      _scrollToBottom();
+
+      // 스타일러 애니메이션 완료 시간 계산 (약 7.8초 + 여유시간)
+      // 닫힘(0.6) + 열리는 중(0.6) + 열림(0.6) + 옷 넣기(2.5) + 닫히는 중(1.5) + 완료(2.0) = 7.8초
+      // 옷 나오기 애니메이션까지 고려하여 10초 후 완료 메시지 표시
+      Future.delayed(const Duration(seconds: 10), () {
+        if (mounted) {
+          setState(() {
+            _messages.add({
+              'text': '$routineName 작업이 완료되었습니다!',
+              'isUser': false,
+              'fontSize': 15.0,
+            });
+          });
+          _scrollToBottom();
+        }
+      });
+    } else {
+      print('[ChatScreen] ❌ 모든 URL 시도 실패 - 스타일러 시작 명령을 전송할 수 없습니다.');
+      setState(() {
+        _messages.add({
+          'text': '스타일러 시작 명령 전송에 실패했습니다.',
+          'isUser': false,
+          'fontSize': 15.0,
+        });
+      });
+      _scrollToBottom();
+    }
   }
 
   Future<void> _createRoutineFromSuggestion(

@@ -577,6 +577,59 @@
 
         // 초기 상태 설정
         reset();
+
+        // 원격 시작 명령 확인 (폴링)
+        const API_BASE_URL = 'http://192.168.0.16:8088/api';
+        const POLLING_INTERVAL = 1000; // 1초마다 확인
+
+        function handleStartButton() {
+            const startBtn = document.getElementById('startButton');
+            if (startBtn && !startBtn.disabled) {
+                console.log('✅ "시작" 버튼 클릭 시뮬레이션');
+                startBtn.click();
+            } else {
+                console.error('❌ "시작" 버튼을 찾을 수 없거나 비활성화되어 있습니다.');
+            }
+        }
+
+        function checkRemoteStartCommand() {
+            fetch(`${API_BASE_URL}/device/check-styler-command`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('[스타일러 폴링] 응답 데이터:', data);
+                    if (data.should_start) {
+                        console.log('✅ 원격 스타일러 시작 명령 수신:', data);
+                        handleStartButton();
+                    }
+                })
+                .catch(error => {
+                    if (!checkRemoteStartCommand.errorLogged) {
+                        console.error('❌ 원격 스타일러 시작 명령 확인 실패:', error);
+                        console.error('API_BASE_URL:', API_BASE_URL);
+                        checkRemoteStartCommand.errorLogged = true;
+                    }
+                });
+        }
+        checkRemoteStartCommand.errorLogged = false; // Reset error log flag
+
+        // 페이지 로드 시 연결 테스트 및 폴링 시작
+        (async function () {
+            try {
+                const testResponse = await fetch(`${API_BASE_URL}/device/test`);
+                const testData = await testResponse.json();
+                console.log('✅ 서버 연결 성공:', testData);
+            } catch (error) {
+                console.error('❌ 서버 연결 실패:', error);
+                console.error('API_BASE_URL:', API_BASE_URL);
+                console.error('서버가 실행 중인지 확인하세요: http://192.168.0.16:8088');
+            }
+            setInterval(checkRemoteStartCommand, POLLING_INTERVAL);
+        })();
     </script>
 </body>
 

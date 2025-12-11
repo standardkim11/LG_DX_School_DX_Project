@@ -485,26 +485,78 @@ def chat():
         # 루틴 추천 요청: 가장 높은 우선순위 루틴 하나만 사용
         today = date.today()
         
-        # 날씨 정보 추가
+        # 날씨 정보 추가 (오늘 + 내일)
         weather_info_text = ""
         try:
             from models import WeatherInfo
-            weather = WeatherInfo.query.filter_by(date=today).first()
-            if weather:
-                temp = float(weather.temperature) if weather.temperature else None
-                humi = float(weather.humidity) if weather.humidity else None
-                weather_desc = weather.weather if weather.weather else None
+            # 오늘 날씨
+            weather_today = WeatherInfo.query.filter_by(date=today).first()
+            # 내일 날씨
+            tomorrow = today + timedelta(days=1)
+            weather_tomorrow = WeatherInfo.query.filter_by(date=tomorrow).first()
+            
+            weather_parts = []
+            
+            # 기온을 자연어로 변환하는 함수
+            def get_temp_description(temp):
+                if temp is None:
+                    return None
+                if temp < 10:
+                    return "추움"
+                elif temp <= 25:
+                    return "따뜻함"
+                else:
+                    return "더움"
+            
+            # 습도를 자연어로 변환하는 함수
+            def get_humidity_description(humi):
+                if humi is None:
+                    return None
+                if humi < 50:
+                    return "낮음"
+                else:
+                    return "높음"
+            
+            # 오늘 날씨 정보
+            if weather_today:
+                temp = float(weather_today.temperature) if weather_today.temperature else None
+                humi = float(weather_today.humidity) if weather_today.humidity else None
+                weather_desc = weather_today.weather if weather_today.weather else None
                 
-                weather_parts = []
+                today_parts = []
                 if weather_desc:
-                    weather_parts.append(f"날씨: {weather_desc}")
-                if temp is not None:
-                    weather_parts.append(f"기온: {temp}°C")
-                if humi is not None:
-                    weather_parts.append(f"습도: {humi}%")
+                    today_parts.append(f"날씨: {weather_desc}")
+                temp_desc = get_temp_description(temp)
+                if temp_desc:
+                    today_parts.append(f"기온: {temp_desc}")
+                humi_desc = get_humidity_description(humi)
+                if humi_desc:
+                    today_parts.append(f"습도: {humi_desc}")
                 
-                if weather_parts:
-                    weather_info_text = ", ".join(weather_parts)
+                if today_parts:
+                    weather_parts.append(f"오늘 - {', '.join(today_parts)}")
+            
+            # 내일 날씨 정보
+            if weather_tomorrow:
+                temp_tomorrow = float(weather_tomorrow.temperature) if weather_tomorrow.temperature else None
+                humi_tomorrow = float(weather_tomorrow.humidity) if weather_tomorrow.humidity else None
+                weather_desc_tomorrow = weather_tomorrow.weather if weather_tomorrow.weather else None
+                
+                tomorrow_parts = []
+                if weather_desc_tomorrow:
+                    tomorrow_parts.append(f"날씨: {weather_desc_tomorrow}")
+                temp_tomorrow_desc = get_temp_description(temp_tomorrow)
+                if temp_tomorrow_desc:
+                    tomorrow_parts.append(f"기온: {temp_tomorrow_desc}")
+                humi_tomorrow_desc = get_humidity_description(humi_tomorrow)
+                if humi_tomorrow_desc:
+                    tomorrow_parts.append(f"습도: {humi_tomorrow_desc}")
+                
+                if tomorrow_parts:
+                    weather_parts.append(f"내일 - {', '.join(tomorrow_parts)}")
+            
+            if weather_parts:
+                weather_info_text = " | ".join(weather_parts)
         except Exception as e:
             current_app.logger.exception("날씨 정보 조회 오류")
         
@@ -513,7 +565,7 @@ def chat():
         ]
         
         if weather_info_text:
-            context_lines.append(f"오늘의 날씨 정보: {weather_info_text}")
+            context_lines.append(f"날씨 정보: {weather_info_text}")
         
         context_lines.extend([
             "",
@@ -534,26 +586,78 @@ def chat():
         # 우선순위 요청: 우선순위 섹션만 사용
         today = date.today()
         
-        # 날씨 정보 추가 (우선순위 추천 이유 설명에 필요)
+        # 날씨 정보 추가 (우선순위 추천 이유 설명에 필요) - 오늘 + 내일
         weather_info_text = ""
         try:
             from models import WeatherInfo
-            weather = WeatherInfo.query.filter_by(date=today).first()
-            if weather:
-                temp = float(weather.temperature) if weather.temperature else None
-                humi = float(weather.humidity) if weather.humidity else None
-                weather_desc = weather.weather if weather.weather else None
+            # 오늘 날씨
+            weather_today = WeatherInfo.query.filter_by(date=today).first()
+            # 내일 날씨
+            tomorrow = today + timedelta(days=1)
+            weather_tomorrow = WeatherInfo.query.filter_by(date=tomorrow).first()
+            
+            weather_parts = []
+            
+            # 기온을 자연어로 변환하는 함수
+            def get_temp_description(temp):
+                if temp is None:
+                    return None
+                if temp < 10:
+                    return "추움"
+                elif temp <= 25:
+                    return "따뜻함"
+                else:
+                    return "더움"
+            
+            # 습도를 자연어로 변환하는 함수
+            def get_humidity_description(humi):
+                if humi is None:
+                    return None
+                if humi < 50:
+                    return "낮음"
+                else:
+                    return "높음"
+            
+            # 오늘 날씨 정보
+            if weather_today:
+                temp = float(weather_today.temperature) if weather_today.temperature else None
+                humi = float(weather_today.humidity) if weather_today.humidity else None
+                weather_desc = weather_today.weather if weather_today.weather else None
                 
-                weather_parts = []
+                today_parts = []
                 if weather_desc:
-                    weather_parts.append(f"날씨: {weather_desc}")
-                if temp is not None:
-                    weather_parts.append(f"기온: {temp}°C")
-                if humi is not None:
-                    weather_parts.append(f"습도: {humi}%")
+                    today_parts.append(f"날씨: {weather_desc}")
+                temp_desc = get_temp_description(temp)
+                if temp_desc:
+                    today_parts.append(f"기온: {temp_desc}")
+                humi_desc = get_humidity_description(humi)
+                if humi_desc:
+                    today_parts.append(f"습도: {humi_desc}")
                 
-                if weather_parts:
-                    weather_info_text = ", ".join(weather_parts)
+                if today_parts:
+                    weather_parts.append(f"오늘 - {', '.join(today_parts)}")
+            
+            # 내일 날씨 정보
+            if weather_tomorrow:
+                temp_tomorrow = float(weather_tomorrow.temperature) if weather_tomorrow.temperature else None
+                humi_tomorrow = float(weather_tomorrow.humidity) if weather_tomorrow.humidity else None
+                weather_desc_tomorrow = weather_tomorrow.weather if weather_tomorrow.weather else None
+                
+                tomorrow_parts = []
+                if weather_desc_tomorrow:
+                    tomorrow_parts.append(f"날씨: {weather_desc_tomorrow}")
+                temp_tomorrow_desc = get_temp_description(temp_tomorrow)
+                if temp_tomorrow_desc:
+                    tomorrow_parts.append(f"기온: {temp_tomorrow_desc}")
+                humi_tomorrow_desc = get_humidity_description(humi_tomorrow)
+                if humi_tomorrow_desc:
+                    tomorrow_parts.append(f"습도: {humi_tomorrow_desc}")
+                
+                if tomorrow_parts:
+                    weather_parts.append(f"내일 - {', '.join(tomorrow_parts)}")
+            
+            if weather_parts:
+                weather_info_text = " | ".join(weather_parts)
         except Exception as e:
             current_app.logger.exception("날씨 정보 조회 오류")
         
@@ -562,7 +666,7 @@ def chat():
         ]
         
         if weather_info_text:
-            context_lines.append(f"오늘의 날씨 정보: {weather_info_text}")
+            context_lines.append(f"날씨 정보: {weather_info_text}")
         
         context_lines.extend([
             "",
