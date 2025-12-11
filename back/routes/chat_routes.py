@@ -25,6 +25,7 @@ from models import Routine, RoutineExecution
 from .maping import (
     is_scheduled_today, normalize_routine_name, is_done_today,
     encode_routine_type, encode_schedule_type, encode_weather, parse_preferred_time, is_failed_today,
+    is_goal_achieved,
     REVERSE_ROUTINE_TYPE, REVERSE_SCHEDULE_TYPE, REVERSE_WEATHER
 )
 
@@ -141,6 +142,9 @@ def build_context_for_user(user_id: int, selected_routine_ids: list[int] = None)
             continue
         if is_failed_today(r, user_id, today):
             continue
+        # WEEKLY/MONTHLY 루틴의 목표 달성 여부 확인 (목표 달성된 루틴은 제외)
+        if is_goal_achieved(r, user_id, today):
+            continue
 
         # 원본 이름과 정규화된 이름 모두 로깅
         original_name = r.name or ""
@@ -238,9 +242,19 @@ def chat():
                     # 모든 활성 루틴 가져오기 (오늘 스케줄 여부와 관계없이)
                     all_routines = Routine.query.filter_by(user_id=user_id, is_active=True).all()
                     
-                    current_app.logger.info(f"[CHAT] 루틴 추천 요청: VIEW ALL 리스트의 모든 루틴 {len(all_routines)}개 대상")
+                    # 목표 달성된 WEEKLY/MONTHLY 루틴 필터링
+                    filtered_routines = []
+                    for r in all_routines:
+                        # WEEKLY/MONTHLY 루틴의 경우 목표 달성 여부 확인
+                        st = (r.schedule_type or "").upper()
+                        if st in ("WEEKLY", "MONTHLY"):
+                            if is_goal_achieved(r, user_id, today):
+                                continue  # 목표 달성된 루틴은 제외
+                        filtered_routines.append(r)
                     
-                    if all_routines:
+                    current_app.logger.info(f"[CHAT] 루틴 추천 요청: 전체 {len(all_routines)}개 중 목표 미달성 {len(filtered_routines)}개 대상")
+                    
+                    if filtered_routines:
                         # 날씨 정보
                         weather = WeatherInfo.query.filter_by(date=today).first()
                         temp = float(weather.temperature) if weather and weather.temperature else 20.0
@@ -249,9 +263,9 @@ def chat():
                         pm25 = float(weather.pm25) if weather and weather.pm25 else 40.0
                         pm10 = float(weather.pm10) if weather and weather.pm10 else 60.0
                         
-                        # 모델 입력 데이터 생성 (모든 활성 루틴)
+                        # 모델 입력 데이터 생성 (필터링된 루틴)
                         rows = []
-                        for r in all_routines:
+                        for r in filtered_routines:
                             rt = encode_routine_type(r.routine_type)
                             st = encode_schedule_type(r.schedule_type)
                             preferred_hour = parse_preferred_time(r.preferred_time)
@@ -374,6 +388,9 @@ def chat():
                         if is_done_today(r, user_id, today):
                             continue
                         if is_failed_today(r, user_id, today):
+                            continue
+                        # WEEKLY/MONTHLY 루틴의 목표 달성 여부 확인 (목표 달성된 루틴은 제외)
+                        if is_goal_achieved(r, user_id, today):
                             continue
                         routines.append(r)
                     
@@ -613,6 +630,10 @@ def chat():
 - 새로운 루틴을 만들거나 정보에 없는 루틴을 추가하지 마세요.
 - 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
 - 날씨, 온도, 습도 등 요소를 이용하여 추천 이유를 설명하세요.
+- 주의: '[추천 루틴 (가장 높은 우선순위)]' 섹션에 나열된 루틴은 이미 목표 달성 여부를 확인한 루틴입니다. 
+  WEEKLY(주간) 루틴은 이번 주 목표 횟수를 달성했으면 다음 주부터, 
+  MONTHLY(월간) 루틴은 이번 달 목표 횟수를 달성했으면 다음 달부터 추천되어야 합니다.
+  하지만 섹션에 나열된 루틴은 이미 필터링되어 있으므로 그대로 추천하시면 됩니다.
 
 [오늘의 정보]
 {context}
@@ -652,6 +673,10 @@ def chat():
 - 각 루틴은 한 번만 언급하고, 루틴 이름과 순서는 목록에 나온 그대로 따르세요.
 - 모든 숫자, 시간, 횟수, 날짜는 '[오늘의 정보]'에 있는 값만 사용하세요.
 - 날씨, 온도, 습도 등 요소를 이용하여 추천 이유를 설명하세요.
+- 주의: '[우선순위 추천 (점수 높은 순)]' 섹션에 나열된 루틴은 이미 목표 달성 여부를 확인한 루틴입니다. 
+  WEEKLY(주간) 루틴은 이번 주 목표 횟수를 달성했으면 다음 주부터, 
+  MONTHLY(월간) 루틴은 이번 달 목표 횟수를 달성했으면 다음 달부터 추천되어야 합니다.
+  하지만 섹션에 나열된 루틴은 이미 필터링되어 있으므로 그대로 추천하시면 됩니다.
 
 [오늘의 정보]
 {context}
@@ -692,6 +717,10 @@ def chat():
 - 모든 숫자, 횟수, 날짜, 시간은 '오늘의 정보'에 있는 값을 사용하세요.
 - 정보에 없는 내용은 지어내지 말고, 모른다고 솔직히 말씀하세요.
 - 사용자의 질문이 루틴과 관련이 없어도 친절하고 도움이 되는 답변을 제공하세요.
+- 중요: '[오늘 해야 할 루틴]' 섹션에 나열된 루틴은 이미 필터링된 루틴입니다.
+  WEEKLY(주간) 루틴은 이번 주 목표 횟수를 달성했으면 다음 주부터, 
+  MONTHLY(월간) 루틴은 이번 달 목표 횟수를 달성했으면 다음 달부터 추천되어야 합니다.
+  섹션에 나열된 루틴은 이미 목표 달성 여부를 확인하여 필터링된 것이므로 그대로 추천하시면 됩니다.
 
 [오늘의 정보]
 {context}
@@ -699,8 +728,35 @@ def chat():
 [사용자 질문]
 {user_message}
 
-사용자의 질문에 친절하고 자연스럽게 답변해주세요. 루틴 관련 질문이면 '오늘의 정보'를 활용하고, 
-일반적인 대화나 다른 질문이면 적절히 대응해주세요.
+사용자의 질문에 친절하고 자연스럽게 답변해주세요. 루틴 관련 질문이면 '오늘의 정보'를 활용하세요.  
+만약, 날씨에 관련된 질문이 들어오면 "오늘의 정보" 에 날씨 정보가 있다면 이를 활용하고, 날씨와 관련된 가전 루틴을 추천해주세요. 이건 '오늘의 정보'에 없어도 좋아요.
+ex. "다음주에 눈이 온데 뭘 하면 좋을까?" -> "다음주에는 눈이 예보 되어있어요. 눈이 온다면 따뜻한 옷을 미리 준비하는게 좋겠어요. 스타일러 사용을 추천드려요."
+
+[일정 추가 제안 규칙]
+- 날씨나 상황에 맞는 가전 루틴이나 일정을 추천할 때, 일정을 추가해드릴 수 있다고 제안하세요.
+- 일정 추가 제안 시 반드시 다음 형식으로 응답하세요:
+  "일정을 추가해드릴까요?"
+- 일정 추가 제안이 포함된 경우, 응답 끝에 반드시 다음 JSON 형식으로 정보를 포함하세요:
+  [ROUTINE_SUGGESTION]
+  {{
+    "routine_name": "스타일러 가동하기",
+    "routine_type": "ETC",
+    "schedule_type": "DAILY",
+    "preferred_time": "19:00",
+    "run_minutes": 30,
+    "schedule_date": "2025-12-12"
+  }}
+  [/ROUTINE_SUGGESTION]
+- routine_name: 루틴 이름 (예: "스타일러 가동하기", "건조기 돌리기")
+- routine_type: 루틴 타입 ("CLEANING", "LAUNDRY", "ETC" 등)
+- schedule_type: 스케줄 타입 ("DAILY", "WEEKLY", "MONTHLY")
+- preferred_time: 선호 시간 (예: "19:00", "MORNING", "EVENING")
+- run_minutes: 예상 소요 시간 (분 단위)
+- schedule_date: 일정을 추가할 날짜 (YYYY-MM-DD 형식, 예: "2025-12-12"). 
+  사용자가 언급한 날짜(예: "다음주", "내일", "12월 12일")가 있으면 그 날짜를 사용하고, 
+  없으면 오늘 날짜를 사용하세요. 날짜는 반드시 YYYY-MM-DD 형식으로 제공하세요.
+
+그밖에 일반적인 대화나 다른 질문이면 적절히 대응해주세요.
 
 """
 

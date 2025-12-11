@@ -3,7 +3,7 @@ from datetime import datetime, date, timedelta
 from sqlalchemy import func, case
 
 from Project.extensions import db
-from models import User, Routine, RoutineExecution
+from models import User, Routine, RoutineExecution, RoutineTimeOverride
 from routes.maping import normalize_routine_name, parse_preferred_time
 
 routine_bp = Blueprint("routine", __name__, url_prefix="/api")
@@ -128,9 +128,10 @@ def list_routines():
     전체 루틴 목록 조회 (VIEW ALL 화면용)
     집계 정보(완료 횟수 등)를 포함하여 반환
     목표 달성된 WEEKLY/MONTHLY 루틴은 필터링하여 제외
-    GET /api/routines?user_id=1
+    GET /api/routines?user_id=1&date=2024-01-15 (날짜 파라미터 선택, 없으면 오늘 날짜)
     """
     user_id = request.args.get("user_id", type=int, default=1)
+    date_str = request.args.get("date")  # 선택된 날짜 (YYYY-MM-DD 형식)
 
     user = User.query.get(user_id)
     if not user:
@@ -147,8 +148,15 @@ def list_routines():
     
     # 목표 달성된 WEEKLY/MONTHLY 루틴 필터링
     from .maping import is_scheduled_today
-    from datetime import date
-    today = date.today()
+    
+    # 날짜 파싱 (없으면 오늘 날짜) - 한 번만 파싱
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            target_date = date.today()
+    else:
+        target_date = date.today()
     
     # 성능 최적화: 모든 WEEKLY/MONTHLY 루틴의 목표 달성 여부를 배치로 조회
     weekly_routines = []
@@ -170,9 +178,9 @@ def list_routines():
     # WEEKLY 루틴 목표 달성 여부 배치 조회
     goal_achieved_map = {}
     if weekly_routines:
-        # 이번 주 시작일 계산
-        weekday = today.weekday()
-        week_start = today - timedelta(days=weekday)
+        # 이번 주 시작일 계산 (target_date 기준)
+        weekday = target_date.weekday()
+        week_start = target_date - timedelta(days=weekday)
         week_start_dt = datetime.combine(week_start, datetime.min.time())
         week_end_dt = datetime.combine(week_start + timedelta(days=7), datetime.min.time())
         
@@ -206,7 +214,7 @@ def list_routines():
         # 각 MONTHLY 루틴의 created_at과 frequency 정보 수집
         monthly_info = {}
         for r in monthly_routines:
-            created = r.created_at.date() if r.created_at else today
+            created = r.created_at.date() if r.created_at else target_date
             created_dt = datetime.combine(created, datetime.min.time())
             period_end = created + timedelta(days=30)
             period_end_dt = datetime.combine(period_end, datetime.min.time())
@@ -274,36 +282,37 @@ def list_routines():
                 last_date = last_completed_dates.get(rid)
                 if last_date:
                     # 마지막 완료 날짜의 다음날부터는 더 이상 표시하지 않음
-                    goal_achieved_map[rid] = today > last_date
+                    goal_achieved_map[rid] = target_date > last_date
                 else:
                     # 완료 기록이 있지만 날짜 정보가 없으면 목표 달성으로 간주
                     goal_achieved_map[rid] = True
     
     # 필터링된 루틴 리스트 구성
+    # VIEW ALL 화면에서는 목표 달성 여부만 체크하고, 스케줄 여부는 체크하지 않음
+    # (사용자가 언제든지 루틴을 선택할 수 있도록)
     filtered_routines = []
     filtered_routines.extend(daily_routines)
     filtered_routines.extend(other_routines)
     
     for r in weekly_routines:
-        scheduled = is_scheduled_today(r, today)
         goal_achieved = goal_achieved_map.get(r.id, False)
-        if scheduled and not goal_achieved:
+        # 목표 달성되지 않은 루틴만 표시 (스케줄 여부는 체크하지 않음)
+        if not goal_achieved:
             filtered_routines.append(r)
     
     for r in monthly_routines:
-        scheduled = is_scheduled_today(r, today)
         goal_achieved = goal_achieved_map.get(r.id, False)
-        if scheduled and not goal_achieved:
+        # 목표 달성되지 않은 루틴만 표시 (스케줄 여부는 체크하지 않음)
+        if not goal_achieved:
             filtered_routines.append(r)
     
     routines = filtered_routines
 
     routine_ids = [r.id for r in routines]
     
-    # 오늘 날짜 범위 계산
-    today = date.today()
-    today_start = datetime.combine(today, datetime.min.time())
-    today_end = datetime.combine(today + timedelta(days=1), datetime.min.time())
+    # 날짜 범위 계산 (target_date는 이미 위에서 파싱됨)
+    date_start = datetime.combine(target_date, datetime.min.time())
+    date_end = datetime.combine(target_date + timedelta(days=1), datetime.min.time())
 
     # 한 번의 쿼리로 모든 루틴의 완료 횟수 집계 (status는 숫자로 저장됨: 2=완료)
     # Oracle에서는 숫자 컬럼과 문자열 비교 시 타입 오류 발생하므로 숫자만 비교
@@ -324,30 +333,75 @@ def list_routines():
     # 완료 횟수 딕셔너리로 변환
     completed_count_map = {routine_id: count for routine_id, count in completed_counts}
     
-    # 한 번의 쿼리로 오늘 완료된 루틴 ID 목록 가져오기 (status는 숫자로 저장됨: 2=완료)
+    # 한 번의 쿼리로 해당 날짜에 완료된 루틴 ID 목록 가져오기 (status는 숫자로 저장됨: 2=완료)
     # Oracle에서는 숫자 컬럼과 문자열 비교 시 타입 오류 발생하므로 숫자만 비교
-    today_completed_routine_ids = (
+    date_completed_routine_ids = (
         db.session.query(RoutineExecution.routine_id)
         .filter(
             RoutineExecution.user_id == user_id,
             RoutineExecution.routine_id.in_(routine_ids),
-            RoutineExecution.start_time >= today_start,
-            RoutineExecution.start_time < today_end,
+            RoutineExecution.start_time >= date_start,
+            RoutineExecution.start_time < date_end,
             RoutineExecution.status == 2  # 숫자 2만 비교 (완료 상태)
         )
         .distinct()
         .all()
     )
     
-    # 오늘 완료된 루틴 ID 집합으로 변환
-    today_completed_set = {row[0] for row in today_completed_routine_ids}
+    # 해당 날짜에 완료된 루틴 ID 집합으로 변환
+    date_completed_set = {row[0] for row in date_completed_routine_ids}
 
+    # 해당 날짜의 시간 오버라이드 조회 (배치)
+    routine_ids_list = [r.id for r in routines]
+    date_overrides = {}
+    if routine_ids_list:
+        overrides = RoutineTimeOverride.query.filter(
+            RoutineTimeOverride.routine_id.in_(routine_ids_list),
+            RoutineTimeOverride.override_date == target_date
+        ).all()
+        date_overrides = {ov.routine_id: ov.override_time for ov in overrides}
+
+    # WEEKLY 루틴의 이번 주 완료 횟수 계산
+    weekly_completed_count_map = {}
+    weekly_routine_ids = [r.id for r in routines if (r.schedule_type or "").upper() == "WEEKLY"]
+    if weekly_routine_ids:
+        # 이번 주 시작일 계산 (월요일)
+        weekday = target_date.weekday()  # 0=월요일, 6=일요일
+        week_start = target_date - timedelta(days=weekday)
+        week_start_dt = datetime.combine(week_start, datetime.min.time())
+        week_end_dt = datetime.combine(week_start + timedelta(days=7), datetime.min.time())
+        
+        # 이번 주 완료 횟수 집계 (status는 숫자로 저장됨: 2=완료)
+        weekly_completed_counts = (
+            db.session.query(
+                RoutineExecution.routine_id,
+                func.count(RoutineExecution.id).label('count')
+            )
+            .filter(
+                RoutineExecution.user_id == user_id,
+                RoutineExecution.routine_id.in_(weekly_routine_ids),
+                RoutineExecution.start_time >= week_start_dt,
+                RoutineExecution.start_time < week_end_dt,
+                RoutineExecution.status == 2  # 숫자 2만 비교 (완료 상태)
+            )
+            .group_by(RoutineExecution.routine_id)
+            .all()
+        )
+        
+        weekly_completed_count_map = {routine_id: count for routine_id, count in weekly_completed_counts}
+    
     # 집계 정보 포함하여 반환
     result = []
     for r in routines:
         routine_dict = routine_to_dict(r)
         routine_dict["completed_count"] = completed_count_map.get(r.id, 0)
-        routine_dict["is_done_today"] = r.id in today_completed_set
+        routine_dict["is_done_today"] = r.id in date_completed_set
+        # 해당 날짜의 오버라이드 시간이 있으면 추가
+        if r.id in date_overrides:
+            routine_dict["override_time"] = date_overrides[r.id]
+        # WEEKLY 루틴의 경우 이번 주 완료 횟수 추가
+        if (r.schedule_type or "").upper() == "WEEKLY":
+            routine_dict["weekly_completed_count"] = weekly_completed_count_map.get(r.id, 0)
         result.append(routine_dict)
 
     return jsonify(result)
@@ -458,3 +512,120 @@ def today_checklist():
         )
 
     return jsonify(items)
+
+
+# 4. 루틴 시간 오버라이드 저장/수정 --------------------------------
+@routine_bp.post("/routine-time-override")
+def set_routine_time_override():
+    """
+    특정 날짜에 루틴 시간을 오버라이드 (오늘만 시간 변경)
+    POST /api/routine-time-override
+    Body: {
+        "routine_id": 1,
+        "override_date": "2024-01-15",  # YYYY-MM-DD 형식
+        "override_time": "17:00"  # HH:MM 형식
+    }
+    """
+    data = request.get_json() or {}
+    
+    routine_id = data.get("routine_id")
+    override_date_str = data.get("override_date")
+    override_time = data.get("override_time")
+    
+    if not routine_id:
+        return jsonify({"error": "routine_id is required"}), 400
+    if not override_date_str:
+        return jsonify({"error": "override_date is required"}), 400
+    if not override_time:
+        return jsonify({"error": "override_time is required"}), 400
+    
+    # 날짜 파싱
+    try:
+        override_date = datetime.strptime(override_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+    
+    # 시간 형식 검증 (HH:MM)
+    if not isinstance(override_time, str) or not override_time.count(':') == 1:
+        return jsonify({"error": "Invalid time format. Use HH:MM"}), 400
+    
+    try:
+        time_parts = override_time.split(':')
+        hour = int(time_parts[0])
+        minute = int(time_parts[1])
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return jsonify({"error": "Invalid time values"}), 400
+    except (ValueError, IndexError):
+        return jsonify({"error": "Invalid time format. Use HH:MM"}), 400
+    
+    # 루틴 존재 확인
+    routine = Routine.query.get(routine_id)
+    if not routine:
+        return jsonify({"error": "routine not found"}), 404
+    
+    # 기존 오버라이드 확인 (있으면 업데이트, 없으면 생성)
+    existing_override = RoutineTimeOverride.query.filter_by(
+        routine_id=routine_id,
+        override_date=override_date
+    ).first()
+    
+    if existing_override:
+        existing_override.override_time = override_time
+    else:
+        new_override = RoutineTimeOverride(
+            routine_id=routine_id,
+            override_date=override_date,
+            override_time=override_time
+        )
+        db.session.add(new_override)
+    
+    db.session.commit()
+    
+    return jsonify({
+        "success": True,
+        "message": "루틴 시간 오버라이드가 저장되었습니다.",
+        "routine_id": routine_id,
+        "override_date": override_date_str,
+        "override_time": override_time
+    }), 200
+
+
+# 5. 루틴 시간 오버라이드 삭제 --------------------------------
+@routine_bp.delete("/routine-time-override")
+def delete_routine_time_override():
+    """
+    특정 날짜의 루틴 시간 오버라이드 삭제
+    DELETE /api/routine-time-override?routine_id=1&override_date=2024-01-15
+    """
+    routine_id = request.args.get("routine_id", type=int)
+    override_date_str = request.args.get("override_date")
+    
+    if not routine_id:
+        return jsonify({"error": "routine_id is required"}), 400
+    if not override_date_str:
+        return jsonify({"error": "override_date is required"}), 400
+    
+    # 날짜 파싱
+    try:
+        override_date = datetime.strptime(override_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+    
+    # 오버라이드 삭제
+    override = RoutineTimeOverride.query.filter_by(
+        routine_id=routine_id,
+        override_date=override_date
+    ).first()
+    
+    if override:
+        db.session.delete(override)
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": "루틴 시간 오버라이드가 삭제되었습니다."
+        }), 200
+    else:
+        return jsonify({
+            "success": False,
+            "message": "오버라이드를 찾을 수 없습니다."
+        }), 404

@@ -75,7 +75,7 @@ from routes.device_routes import device_bp
 from models.voice import voice_bp
 
 # 모델 import (SQLAlchemy 인식용)
-from models import User, UserDevice, Routine, RoutineExecution, Notification, WeatherInfo, DeviceLog
+from models import User, UserDevice, Routine, RoutineExecution, RoutineTimeOverride, Notification, WeatherInfo, DeviceLog
 
 # ============================================================
 #  🔹 1) .env 파일 로드

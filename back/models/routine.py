@@ -1,6 +1,34 @@
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy import Sequence
 from Project.extensions import db
+
+
+class RoutineTimeOverride(db.Model):
+    """루틴 시간 오버라이드 (특정 날짜에만 루틴 시간 변경)"""
+    __tablename__ = "routine_time_overrides"
+
+    id = db.Column(db.Integer, Sequence('routine_time_overrides_id_seq', start=1), primary_key=True)
+    routine_id = db.Column(db.Integer, db.ForeignKey("routines.id"), nullable=False)
+    override_date = db.Column(db.Date, nullable=False)  # 오버라이드가 적용되는 날짜
+    override_time = db.Column(db.String(50), nullable=False)  # 오버라이드 시간 (예: "17:00")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # unique constraint: 같은 루틴, 같은 날짜에는 하나의 오버라이드만 존재
+    __table_args__ = (
+        db.UniqueConstraint('routine_id', 'override_date', name='uq_routine_date'),
+    )
+
+    def __repr__(self):
+        return f"<RoutineTimeOverride routine={self.routine_id} date={self.override_date} time={self.override_time}>"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "routine_id": self.routine_id,
+            "override_date": self.override_date.isoformat() if self.override_date else None,
+            "override_time": self.override_time,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class Routine(db.Model):
@@ -28,6 +56,7 @@ class Routine(db.Model):
 
     executions = db.relationship("RoutineExecution", backref="routine", lazy=True)
     notifications = db.relationship("Notification", backref="routine", lazy=True)
+    time_overrides = db.relationship("RoutineTimeOverride", backref="routine", lazy=True, cascade="all, delete-orphan")
     habit_goal_days = db.Column("HABIT_GOAL_DAYS", db.Integer, nullable=True)
     habit_start_date = db.Column("HABIT_START_DATE", db.Date, nullable=True)
     def __repr__(self):

@@ -54,6 +54,21 @@ List<Map<String, dynamic>> getTodosForDate(String dateKey) {
   return _TodoScreenStateManager.getTodosForDate(dateKey);
 }
 
+// 외부에서 todo를 추가할 수 있는 함수
+void addTodoToDate(String dateKey, Map<String, dynamic> todo) {
+  final todosByDate = Map<String, List<Map<String, dynamic>>>.from(
+    _TodoScreenStateManager.todosByDate,
+  );
+
+  if (todosByDate.containsKey(dateKey)) {
+    todosByDate[dateKey]!.add(todo);
+  } else {
+    todosByDate[dateKey] = [todo];
+  }
+
+  _TodoScreenStateManager.setTodosByDate(todosByDate);
+}
+
 class _TodoScreenState extends State<TodoScreen> {
   int _selectedTabIndex = 0;
   int _selectedDateIndex = _TodoScreenStateManager.selectedDateIndex;
@@ -128,40 +143,19 @@ class _TodoScreenState extends State<TodoScreen> {
     _TodoScreenStateManager.selectedDateIndex = 15;
     _selectedDateIndex = 15;
 
+    // 전역 상태에서 todo 목록 복원
+    _todosByDate = Map<String, List<Map<String, dynamic>>>.from(
+      _TodoScreenStateManager.todosByDate,
+    );
+
     // 오늘 날짜 계산
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final dateKeyToday = _formatDateKey(today); // 오늘 날짜 키
 
-    // 기존에 다른 날짜에 저장된 할 일들을 오늘 날짜로 이동
-    // 모든 날짜 키를 확인하여 데이터가 있으면 오늘 날짜로 이동
-    final allDateKeys = _todosByDate.keys.toList();
-    List<Map<String, dynamic>> allTodos = [];
-    for (var key in allDateKeys) {
-      if (key != dateKeyToday) {
-        allTodos.addAll(_todosByDate[key] ?? []);
-        _todosByDate.remove(key); // 기존 날짜 키 삭제
-        // 전역 상태도 업데이트
-        _TodoScreenStateManager.setTodosByDate(_todosByDate);
-      } else {
-        // 오늘 날짜에 이미 데이터가 있으면 그것도 포함
-        allTodos.addAll(_todosByDate[key] ?? []);
-      }
-    }
-
-    // 오늘 날짜의 할 일 초기화 (기존 할 일들을 오늘 날짜에 할당)
-    // 기존 데이터가 있으면 사용, 없으면 기본 데이터 사용
-    if (allTodos.isNotEmpty) {
-      // 중복 제거 (같은 title과 category를 가진 항목 제거)
-      final uniqueTodos = <String, Map<String, dynamic>>{};
-      for (var todo in allTodos) {
-        final key = '${todo['title']}_${todo['category']}';
-        if (!uniqueTodos.containsKey(key)) {
-          uniqueTodos[key] = todo;
-        }
-      }
-      _todosByDate[dateKeyToday] = uniqueTodos.values.toList();
-    } else if (!_todosByDate.containsKey(dateKeyToday)) {
+    // 오늘 날짜에 기본 todo가 없으면 추가
+    if (!_todosByDate.containsKey(dateKeyToday) ||
+        _todosByDate[dateKeyToday]!.isEmpty) {
       _todosByDate[dateKeyToday] = [
         {
           'title': '18:00 지나랑 밥 🍚',
@@ -182,6 +176,8 @@ class _TodoScreenState extends State<TodoScreen> {
           'checkType': 'done',
         },
       ];
+      // 전역 상태도 업데이트
+      _TodoScreenStateManager.setTodosByDate(_todosByDate);
     }
 
     // 저장된 체크 상태 복원
@@ -265,6 +261,8 @@ class _TodoScreenState extends State<TodoScreen> {
       final selectedDate = _getSelectedDate();
       final dateKey = _formatDateKey(selectedDate);
       _todosByDate[dateKey] = todos;
+      // 전역 상태도 업데이트
+      _TodoScreenStateManager.setTodosByDate(_todosByDate);
       // 체크 상태 저장
       final key = _getTodoKey(todos[index]);
       _TodoScreenStateManager.setCheckState(key, newState);

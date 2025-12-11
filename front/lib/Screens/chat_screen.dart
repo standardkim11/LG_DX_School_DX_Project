@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import '../Services/config.dart';
 import 'routine_screen.dart';
+import 'todo_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -184,8 +185,42 @@ class _ChatScreenState extends State<ChatScreen> {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         final reply = data['reply'] as String? ?? '응답을 받지 못했습니다.';
 
+        // 루틴 제안 파싱
+        Map<String, dynamic>? routineSuggestion;
+        String displayText = reply;
+
+        final suggestionMatch = RegExp(
+          r'\[ROUTINE_SUGGESTION\](.*?)\[/ROUTINE_SUGGESTION\]',
+          dotAll: true,
+        ).firstMatch(reply);
+
+        if (suggestionMatch != null) {
+          try {
+            final suggestionJson = suggestionMatch.group(1)?.trim() ?? '';
+            routineSuggestion =
+                jsonDecode(suggestionJson) as Map<String, dynamic>;
+            // JSON 부분을 제거한 텍스트만 표시
+            displayText = reply
+                .replaceAll(
+                  RegExp(
+                    r'\[ROUTINE_SUGGESTION\].*?\[/ROUTINE_SUGGESTION\]',
+                    dotAll: true,
+                  ),
+                  '',
+                )
+                .trim();
+          } catch (e) {
+            print('[ChatScreen] 루틴 제안 JSON 파싱 실패: $e');
+          }
+        }
+
         setState(() {
-          _messages.add({'text': reply, 'isUser': false, 'fontSize': 15.0});
+          _messages.add({
+            'text': displayText,
+            'isUser': false,
+            'fontSize': 15.0,
+            'routineSuggestion': routineSuggestion,
+          });
           _isLoading = false;
         });
       } else {
@@ -377,11 +412,23 @@ class _ChatScreenState extends State<ChatScreen> {
                           // 질문-답 그룹 사이에만 여백 추가 (Rou 답변 다음에 사용자 질문이 오는 경우)
                           final shouldAddSpacing =
                               prevIsUser == false && isUser == true;
-                          return _buildMessageBubble(
-                            message['text'] as String,
-                            isUser,
-                            fontSize: fontSize,
-                            addTopSpacing: shouldAddSpacing,
+                          final routineSuggestion =
+                              message['routineSuggestion']
+                                  as Map<String, dynamic>?;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildMessageBubble(
+                                message['text'] as String,
+                                isUser,
+                                fontSize: fontSize,
+                                addTopSpacing: shouldAddSpacing,
+                              ),
+                              if (routineSuggestion != null && !isUser)
+                                _buildRoutineSuggestionButton(
+                                  routineSuggestion,
+                                ),
+                            ],
                           );
                         },
                       ),
@@ -564,5 +611,201 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildRoutineSuggestionButton(Map<String, dynamic> routineSuggestion) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, top: 8, bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF8863EF).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFF8863EF).withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '일정을 추가하시겠어요?',
+              style: const TextStyle(
+                color: Color(0xFF111111),
+                fontSize: 14,
+                fontFamily: 'LG Smart_H',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              routineSuggestion['routine_name'] as String? ?? '루틴',
+              style: const TextStyle(
+                color: Color(0xFF111111),
+                fontSize: 13,
+                fontFamily: 'LG Smart_H',
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () {
+                    // 취소 - 아무것도 하지 않음
+                  },
+                  child: const Text(
+                    '취소',
+                    style: TextStyle(
+                      color: Color(0xFF606D80),
+                      fontSize: 13,
+                      fontFamily: 'LG Smart_H',
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () =>
+                      _createRoutineFromSuggestion(routineSuggestion),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF8863EF),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text(
+                    '추가하기',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontFamily: 'LG Smart_H',
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createRoutineFromSuggestion(
+    Map<String, dynamic> suggestion,
+  ) async {
+    try {
+      // 일정을 추가할 날짜 결정
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      String targetDateKey;
+      final scheduleDateStr = suggestion['schedule_date'] as String?;
+
+      if (scheduleDateStr != null && scheduleDateStr.isNotEmpty) {
+        // Gemini가 제안한 날짜 사용
+        try {
+          final scheduleDate = DateTime.parse(scheduleDateStr);
+          targetDateKey =
+              '${scheduleDate.year}-${scheduleDate.month.toString().padLeft(2, '0')}-${scheduleDate.day.toString().padLeft(2, '0')}';
+        } catch (e) {
+          // 날짜 파싱 실패 시 오늘 날짜 사용
+          print('[ChatScreen] 날짜 파싱 실패: $scheduleDateStr, 오늘 날짜 사용');
+          targetDateKey =
+              '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+        }
+      } else {
+        // 날짜 정보가 없으면 오늘 날짜 사용
+        targetDateKey =
+            '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+      }
+
+      // 해당 날짜의 todo 목록 가져오기
+      final todos = getTodosForDate(targetDateKey);
+
+      // todo에서 시간 추출 (예: "18:00 장보기" -> "18:00")
+      final todoTimes = <int>[];
+      for (final todo in todos) {
+        final title = todo['title'] as String? ?? '';
+        final timeMatch = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(title);
+        if (timeMatch != null) {
+          final hour = int.parse(timeMatch.group(1)!);
+          todoTimes.add(hour);
+        }
+      }
+
+      // 충돌하지 않는 시간 선택
+      String? selectedTime = suggestion['preferred_time'] as String?;
+
+      // preferred_time이 시간 형식이 아니면 기본값 사용
+      if (selectedTime == null || !selectedTime.contains(':')) {
+        // todo 시간과 충돌하지 않는 시간 선택 (기본값: 19시)
+        int preferredHour = 19;
+        if (todoTimes.contains(19)) {
+          // 19시가 충돌하면 다른 시간 시도
+          for (int hour = 18; hour <= 21; hour++) {
+            if (!todoTimes.contains(hour)) {
+              preferredHour = hour;
+              break;
+            }
+          }
+        }
+        selectedTime = '${preferredHour.toString().padLeft(2, '0')}:00';
+      } else {
+        // preferred_time이 시간 형식이면 todo와 충돌 확인
+        final timeMatch = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(selectedTime);
+        if (timeMatch != null) {
+          final hour = int.parse(timeMatch.group(1)!);
+          if (todoTimes.contains(hour)) {
+            // 충돌하면 다른 시간 선택
+            for (int h = hour - 1; h <= hour + 1; h++) {
+              if (h >= 0 && h <= 23 && !todoTimes.contains(h)) {
+                selectedTime = '${h.toString().padLeft(2, '0')}:00';
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // todo list에 추가
+      final routineName = suggestion['routine_name'] as String? ?? '새 일정';
+      final title = '$selectedTime $routineName';
+
+      // todo 추가 함수 호출 (해당 날짜에 추가)
+      addTodoToDate(targetDateKey, {
+        'title': title,
+        'category': '기타',
+        'isHighlighted': true,
+        'checkType': 'none',
+      });
+
+      // 성공 메시지 추가
+      setState(() {
+        _messages.add({
+          'text': '$routineName 일정이 추가되었습니다!',
+          'isUser': false,
+          'fontSize': 15.0,
+        });
+      });
+      _scrollToBottom();
+    } catch (e) {
+      print('[ChatScreen] todo 추가 실패: $e');
+      setState(() {
+        _messages.add({
+          'text': '일정 추가 중 오류가 발생했습니다.',
+          'isUser': false,
+          'fontSize': 15.0,
+        });
+      });
+      _scrollToBottom();
+    }
   }
 }

@@ -266,7 +266,9 @@ class _WashPushScreenState extends State<WashPushScreen> {
                 },
               );
 
-          print('[WashPushScreen] 날씨 정보 API 응답: statusCode=${response.statusCode}');
+          print(
+            '[WashPushScreen] 날씨 정보 API 응답: statusCode=${response.statusCode}',
+          );
           if (response.statusCode == 200) {
             try {
               final data =
@@ -282,7 +284,9 @@ class _WashPushScreenState extends State<WashPushScreen> {
                 final weatherLabel = data['weather_label'] as String? ?? '맑음';
                 weatherMessage = '오늘 날씨는 $weatherLabel이에요.';
               }
-              print('[WashPushScreen] 날씨 정보 로딩 성공: $url, weather_label=${data['weather_label']}, recommendation_message=$recommendationMessage');
+              print(
+                '[WashPushScreen] 날씨 정보 로딩 성공: $url, weather_label=${data['weather_label']}, recommendation_message=$recommendationMessage',
+              );
               break; // 성공하면 종료
             } catch (parseError) {
               print('[WashPushScreen] 날씨 정보 JSON 파싱 실패: $parseError');
@@ -387,7 +391,8 @@ class _WashPushScreenState extends State<WashPushScreen> {
                           ),
                         ),
                         // 날씨 정보 표시
-                        if (_weatherMessage != null && _weatherMessage!.isNotEmpty) ...[
+                        if (_weatherMessage != null &&
+                            _weatherMessage!.isNotEmpty) ...[
                           const SizedBox(height: 12),
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -485,7 +490,8 @@ class _WashPushScreenState extends State<WashPushScreen> {
                                     Navigator.pushReplacement(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => const PushScreen(),
+                                        builder: (context) =>
+                                            const PushScreen(),
                                       ),
                                     );
                                   }
@@ -617,31 +623,32 @@ class _WashPushScreenState extends State<WashPushScreen> {
                                           fontSize: 20,
                                         ),
                                       ),
-                                       const SizedBox(height: 12),
-                                       if (_notificationFirstLine != null && _notificationSecondLine != null) ...[
-                                         Text(
-                                           _notificationFirstLine!,
-                                           style: _bannerTextStyle.copyWith(
-                                             fontSize: 11,
-                                             height: 1.3,
-                                           ),
-                                         ),
-                                         const SizedBox(height: 4),
-                                         Text(
-                                           _notificationSecondLine!,
-                                           style: _bannerTextStyle.copyWith(
-                                             fontSize: 11,
-                                             height: 1.3,
-                                           ),
-                                         ),
-                                       ] else
-                                         Text(
-                                           '선택한 루틴을 확인해주세요',
-                                           style: _bannerTextStyle.copyWith(
-                                             fontSize: 11,
-                                             height: 1.3,
-                                           ),
-                                         ),
+                                      const SizedBox(height: 12),
+                                      if (_notificationFirstLine != null &&
+                                          _notificationSecondLine != null) ...[
+                                        Text(
+                                          _notificationFirstLine!,
+                                          style: _bannerTextStyle.copyWith(
+                                            fontSize: 11,
+                                            height: 1.3,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _notificationSecondLine!,
+                                          style: _bannerTextStyle.copyWith(
+                                            fontSize: 11,
+                                            height: 1.3,
+                                          ),
+                                        ),
+                                      ] else
+                                        Text(
+                                          '선택한 루틴을 확인해주세요',
+                                          style: _bannerTextStyle.copyWith(
+                                            fontSize: 11,
+                                            height: 1.3,
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -696,151 +703,186 @@ class _WashPushScreenState extends State<WashPushScreen> {
                                   if (_isSkipped && _routineName != null) {
                                     // 건너뛴 루틴 이름과 일치하는 루틴 제거
                                     filteredRoutines = _allRoutines
-                                        .where((r) => r['title'] != _routineName)
+                                        .where(
+                                          (r) => r['title'] != _routineName,
+                                        )
                                         .toList();
                                   } else {
-                                    filteredRoutines = List<Map<String, dynamic>>.from(_allRoutines);
+                                    filteredRoutines =
+                                        List<Map<String, dynamic>>.from(
+                                          _allRoutines,
+                                        );
                                   }
 
                                   if (filteredRoutines.isEmpty) {
                                     return Center(
                                       child: Text(
                                         '표시할 루틴이 없습니다',
-                                        style: AppTextStyles.todoCategory(context),
-                                      ),
-                                    );
-                                  }
-
-                            // 순서 번호 재정렬
-                            final routinesWithOrder = filteredRoutines
-                                .asMap()
-                                .entries
-                                .map((entry) {
-                                  final routine = Map<String, dynamic>.from(
-                                    entry.value,
-                                  );
-                                  routine['orderNumber'] = entry.key + 1;
-                                  // key가 없으면 새로 생성
-                                  if (routine['key'] == null) {
-                                    routine['key'] = ValueKey(
-                                      'routine_${entry.key}',
-                                    );
-                                  }
-                                  return routine;
-                                })
-                                .toList();
-
-                            return ClipRect(
-                              child: ReorderableListView(
-                                physics: const ClampingScrollPhysics(),
-                                buildDefaultDragHandles: false,
-                                onReorder: (oldIndex, newIndex) {
-                                  setState(() {
-                                    // 인덱스 범위 검증
-                                    if (oldIndex < 0 ||
-                                        oldIndex >= routinesWithOrder.length)
-                                      return;
-                                    if (newIndex < 0) newIndex = 0;
-                                    if (newIndex >= routinesWithOrder.length)
-                                      newIndex = routinesWithOrder.length - 1;
-
-                                    if (newIndex > oldIndex) {
-                                      newIndex -= 1;
-                                    }
-
-                                    // 범위 재검증
-                                    if (newIndex < 0) newIndex = 0;
-                                    if (newIndex >= routinesWithOrder.length)
-                                      newIndex = routinesWithOrder.length - 1;
-
-                                    // 필터링된 리스트에서 아이템 이동
-                                    final item = routinesWithOrder.removeAt(
-                                      oldIndex,
-                                    );
-                                    routinesWithOrder.insert(newIndex, item);
-
-                                    // 원본 리스트 업데이트
-                                    if (_isSkipped) {
-                                      // 세탁기가 제거된 상태면 필터링된 리스트만 업데이트
-                                      _allRoutines = _allRoutines
-                                          .where((r) => r['title'] != '세탁기 돌리기')
-                                          .toList();
-                                      for (
-                                        int i = 0;
-                                        i < routinesWithOrder.length;
-                                        i++
-                                      ) {
-                                        final key = routinesWithOrder[i]['key'];
-                                        final index = _allRoutines.indexWhere(
-                                          (r) => r['key'] == key,
-                                        );
-                                        if (index != -1) {
-                                          _allRoutines[index] =
-                                              routinesWithOrder[i];
-                                        }
-                                      }
-                                    } else {
-                                      // 모든 루틴이 있는 상태면 전체 리스트 업데이트
-                                      for (
-                                        int i = 0;
-                                        i < routinesWithOrder.length;
-                                        i++
-                                      ) {
-                                        final key = routinesWithOrder[i]['key'];
-                                        final index = _allRoutines.indexWhere(
-                                          (r) => r['key'] == key,
-                                        );
-                                        if (index != -1) {
-                                          _allRoutines[index] =
-                                              routinesWithOrder[i];
-                                        }
-                                      }
-                                    }
-
-                                    // 순서 번호 재정렬
-                                    for (
-                                      int i = 0;
-                                      i < _allRoutines.length;
-                                      i++
-                                    ) {
-                                      _allRoutines[i]['orderNumber'] = i + 1;
-                                    }
-                                  });
-                                },
-                                children: routinesWithOrder.asMap().entries.map(
-                                  (entry) {
-                                    final index = entry.key;
-                                    final routine = entry.value;
-
-                                    return Padding(
-                                      key:
-                                          routine['key'] as Key? ??
-                                          ValueKey('routine_$index'),
-                                      padding: EdgeInsets.only(
-                                        bottom:
-                                            index < routinesWithOrder.length - 1
-                                            ? 12
-                                            : 0,
-                                      ),
-                                      child: ReorderableDragStartListener(
-                                        index: index,
-                                        child: _PriorityCard(
-                                          title: routine['title'] as String,
-                                          time: routine['time'] as String,
-                                          imagePath:
-                                              routine['imagePath'] as String,
-                                          orderNumber:
-                                              routine['orderNumber'] as int,
+                                        style: AppTextStyles.todoCategory(
+                                          context,
                                         ),
                                       ),
                                     );
-                                  },
-                                ).toList(),
+                                  }
+
+                                  // 순서 번호 재정렬
+                                  final routinesWithOrder = filteredRoutines
+                                      .asMap()
+                                      .entries
+                                      .map((entry) {
+                                        final routine =
+                                            Map<String, dynamic>.from(
+                                              entry.value,
+                                            );
+                                        routine['orderNumber'] = entry.key + 1;
+                                        // key가 없으면 새로 생성
+                                        if (routine['key'] == null) {
+                                          routine['key'] = ValueKey(
+                                            'routine_${entry.key}',
+                                          );
+                                        }
+                                        return routine;
+                                      })
+                                      .toList();
+
+                                  return ClipRect(
+                                    child: ReorderableListView(
+                                      physics: const ClampingScrollPhysics(),
+                                      buildDefaultDragHandles: false,
+                                      onReorder: (oldIndex, newIndex) {
+                                        setState(() {
+                                          // 인덱스 범위 검증
+                                          if (oldIndex < 0 ||
+                                              oldIndex >=
+                                                  routinesWithOrder.length)
+                                            return;
+                                          if (newIndex < 0) newIndex = 0;
+                                          if (newIndex >=
+                                              routinesWithOrder.length)
+                                            newIndex =
+                                                routinesWithOrder.length - 1;
+
+                                          if (newIndex > oldIndex) {
+                                            newIndex -= 1;
+                                          }
+
+                                          // 범위 재검증
+                                          if (newIndex < 0) newIndex = 0;
+                                          if (newIndex >=
+                                              routinesWithOrder.length)
+                                            newIndex =
+                                                routinesWithOrder.length - 1;
+
+                                          // 필터링된 리스트에서 아이템 이동
+                                          final item = routinesWithOrder
+                                              .removeAt(oldIndex);
+                                          routinesWithOrder.insert(
+                                            newIndex,
+                                            item,
+                                          );
+
+                                          // 원본 리스트 업데이트
+                                          if (_isSkipped) {
+                                            // 세탁기가 제거된 상태면 필터링된 리스트만 업데이트
+                                            _allRoutines = _allRoutines
+                                                .where(
+                                                  (r) =>
+                                                      r['title'] != '세탁기 돌리기',
+                                                )
+                                                .toList();
+                                            for (
+                                              int i = 0;
+                                              i < routinesWithOrder.length;
+                                              i++
+                                            ) {
+                                              final key =
+                                                  routinesWithOrder[i]['key'];
+                                              final index = _allRoutines
+                                                  .indexWhere(
+                                                    (r) => r['key'] == key,
+                                                  );
+                                              if (index != -1) {
+                                                _allRoutines[index] =
+                                                    routinesWithOrder[i];
+                                              }
+                                            }
+                                          } else {
+                                            // 모든 루틴이 있는 상태면 전체 리스트 업데이트
+                                            for (
+                                              int i = 0;
+                                              i < routinesWithOrder.length;
+                                              i++
+                                            ) {
+                                              final key =
+                                                  routinesWithOrder[i]['key'];
+                                              final index = _allRoutines
+                                                  .indexWhere(
+                                                    (r) => r['key'] == key,
+                                                  );
+                                              if (index != -1) {
+                                                _allRoutines[index] =
+                                                    routinesWithOrder[i];
+                                              }
+                                            }
+                                          }
+
+                                          // 순서 번호 재정렬
+                                          for (
+                                            int i = 0;
+                                            i < _allRoutines.length;
+                                            i++
+                                          ) {
+                                            _allRoutines[i]['orderNumber'] =
+                                                i + 1;
+                                          }
+                                        });
+                                      },
+                                      children: routinesWithOrder
+                                          .asMap()
+                                          .entries
+                                          .map((entry) {
+                                            final index = entry.key;
+                                            final routine = entry.value;
+
+                                            return Padding(
+                                              key:
+                                                  routine['key'] as Key? ??
+                                                  ValueKey('routine_$index'),
+                                              padding: EdgeInsets.only(
+                                                bottom:
+                                                    index <
+                                                        routinesWithOrder
+                                                                .length -
+                                                            1
+                                                    ? 12
+                                                    : 0,
+                                              ),
+                                              child:
+                                                  ReorderableDragStartListener(
+                                                    index: index,
+                                                    child: _PriorityCard(
+                                                      title:
+                                                          routine['title']
+                                                              as String,
+                                                      time:
+                                                          routine['time']
+                                                              as String,
+                                                      imagePath:
+                                                          routine['imagePath']
+                                                              as String,
+                                                      orderNumber:
+                                                          routine['orderNumber']
+                                                              as int,
+                                                    ),
+                                                  ),
+                                            );
+                                          })
+                                          .toList(),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
-                      ),
+                            ),
                     ),
                   )
                 else

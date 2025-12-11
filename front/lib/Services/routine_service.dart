@@ -18,8 +18,9 @@ class RoutineService {
 
   /// 전체 루틴 목록을 가져옵니다 (VIEW ALL 화면용)
   /// 집계 정보(완료 횟수 등)를 포함하여 반환
+  /// [date] 조회할 날짜 (YYYY-MM-DD 형식, 없으면 오늘 날짜)
   /// Returns: 전체 루틴 목록 리스트
-  static Future<List<ViewAllRoutineItem>> getAllRoutines() async {
+  static Future<List<ViewAllRoutineItem>> getAllRoutines({String? date}) async {
     // Android인 경우 여러 URL 시도 (에뮬레이터와 실제 기기 모두 지원)
     List<String> urlsToTry = [baseUrl];
     if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
@@ -36,9 +37,13 @@ class RoutineService {
         '[RoutineService] getAllRoutines 시도 ${i + 1}/${urlsToTry.length}: $url',
       );
       try {
+        final queryParams = {'user_id': userId.toString()};
+        if (date != null && date.isNotEmpty) {
+          queryParams['date'] = date;
+        }
         final uri = Uri.parse(
           '$url/routines',
-        ).replace(queryParameters: {'user_id': userId.toString()});
+        ).replace(queryParameters: queryParams);
 
         final response = await http
             .get(
@@ -441,6 +446,8 @@ class ViewAllRoutineItem {
   final int completedCount; // 완료 횟수
   final bool isDoneToday; // 오늘 완료 여부
   final int scheduleFrequency; // 스케줄 빈도 (1=1회, 2=2회 등)
+  final String? overrideTime; // 오늘 날짜의 오버라이드 시간 (오늘만 시간 변경)
+  final int weeklyCompletedCount; // 이번 주 완료 횟수 (WEEKLY 루틴용)
 
   ViewAllRoutineItem({
     required this.id,
@@ -455,6 +462,8 @@ class ViewAllRoutineItem {
     required this.completedCount,
     required this.isDoneToday,
     this.scheduleFrequency = 1,
+    this.overrideTime,
+    this.weeklyCompletedCount = 0,
   });
 
   factory ViewAllRoutineItem.fromJson(Map<String, dynamic> json) {
@@ -471,23 +480,29 @@ class ViewAllRoutineItem {
       completedCount: json['completed_count'] as int? ?? 0,
       isDoneToday: json['is_done_today'] as bool? ?? false,
       scheduleFrequency: json['schedule_frequency'] as int? ?? 1,
+      overrideTime: json['override_time'] as String?,
+      weeklyCompletedCount: json['weekly_completed_count'] as int? ?? 0,
     );
   }
 
   /// schedule_type과 preferred_time을 UI 표시 형식으로 변환
+  /// override_time이 있으면 우선 사용 (오늘만 시간 변경)
   String getTimeDisplay() {
+    // 오버라이드 시간이 있으면 우선 사용
+    final timeToDisplay = overrideTime ?? preferredTime;
+
     if (scheduleType == 'DAILY') {
-      if (preferredTime != null) {
+      if (timeToDisplay != null) {
         // 시간 형식 변환 (예: "MORNING" -> "8시까지 완료하기", "17:30" -> "17:30")
-        if (preferredTime!.contains(':')) {
+        if (timeToDisplay.contains(':')) {
           // "HH:MM" 형식
           try {
-            final timeParts = preferredTime!.split(':');
+            final timeParts = timeToDisplay.split(':');
             if (timeParts.length >= 2) {
               final hour = int.parse(timeParts[0]);
               final minute = timeParts[1];
               // WEEKLY/MONTHLY 루틴의 경우 요일 정보 추가
-              if (scheduleType == 'WEEKLY' && preferredTime!.contains(':')) {
+              if (scheduleType == 'WEEKLY' && timeToDisplay.contains(':')) {
                 final weekday = _getWeekdayDisplay();
                 return '${hour.toString().padLeft(2, '0')}:$minute$weekday';
               }
@@ -496,7 +511,7 @@ class ViewAllRoutineItem {
           } catch (e) {
             // 파싱 실패 시 그대로 반환
           }
-          return preferredTime!;
+          return timeToDisplay;
         } else {
           // "MORNING", "EVENING" 등
           final timeMap = {
@@ -505,14 +520,15 @@ class ViewAllRoutineItem {
             'EVENING': '19:00',
             'NIGHT': '21:00',
           };
-          return timeMap[preferredTime!.toUpperCase()] ?? preferredTime!;
+          return timeMap[timeToDisplay.toUpperCase()] ?? timeToDisplay;
         }
       }
       return '매일';
     } else if (scheduleType == 'WEEKLY') {
-      // 주간 루틴: "주 X회" 형식
+      // 주간 루틴: "완료횟수/목표횟수" 형식 (예: "0/4", "2/3")
       final frequency = scheduleFrequency > 0 ? scheduleFrequency : 1;
-      return '주 $frequency회';
+      final completed = weeklyCompletedCount > 0 ? weeklyCompletedCount : 0;
+      return '$completed/$frequency';
     } else if (scheduleType == 'MONTHLY') {
       // 월간 루틴: "월 X회" 형식
       final frequency = scheduleFrequency > 0 ? scheduleFrequency : 1;

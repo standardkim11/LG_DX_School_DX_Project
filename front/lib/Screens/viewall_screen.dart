@@ -59,7 +59,12 @@ class _ViewAllScreenState extends State<ViewAllScreen>
     });
 
     try {
-      final routines = await RoutineService.getAllRoutines();
+      // 선택된 날짜가 있으면 해당 날짜 사용, 없으면 오늘 날짜
+      final targetDate = widget.selectedDateKey ?? 
+          '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}';
+      
+      print('[ViewAllScreen] 조회할 날짜: $targetDate');
+      final routines = await RoutineService.getAllRoutines(date: targetDate);
       print('[ViewAllScreen] API에서 받은 루틴 수: ${routines.length}');
       print(
         '[ViewAllScreen] API에서 받은 루틴 ID들: ${routines.map((r) => r.id).toList()}',
@@ -102,16 +107,16 @@ class _ViewAllScreenState extends State<ViewAllScreen>
 
       // preferredTime이 있는 경우에만 확인
       if (routine.preferredTime != null && routine.preferredTime!.isNotEmpty) {
-        final hasConflict = _checkTimeConflictWithTodos(routine.preferredTime!);
+        final hasConflict = await _checkTimeConflictWithTodos(routine.preferredTime!);
         if (hasConflict && mounted) {
-          _showTimeConflictDialog();
+          _showTimeConflictDialog(routine);
         }
       }
     }
   }
 
   /// 오늘 todo 일정과의 시간 충돌 확인
-  bool _checkTimeConflictWithTodos(String routineTime) {
+  Future<bool> _checkTimeConflictWithTodos(String routineTime) async {
     try {
       // 오늘 날짜 가져오기
       final now = DateTime.now();
@@ -166,7 +171,7 @@ class _ViewAllScreenState extends State<ViewAllScreen>
   }
 
   /// 시간 충돌 팝업 표시
-  void _showTimeConflictDialog() {
+  void _showTimeConflictDialog(ViewAllRoutineItem routine) {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -183,7 +188,7 @@ class _ViewAllScreenState extends State<ViewAllScreen>
             ),
           ),
           content: const Text(
-            '일정과 루틴의 수행시간이 비슷해요.',
+            '일정과 루틴의 수행시간이 비슷해요.\n오늘만 루틴 시간을 변경할 수 있어요.',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w400,
@@ -205,10 +210,257 @@ class _ViewAllScreenState extends State<ViewAllScreen>
                 ),
               ),
             ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _showTimeEditDialog(routine);
+              },
+              child: const Text(
+                '수정하기',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'LG Smart_H',
+                  color: Color(0xFF8863EF),
+                ),
+              ),
+            ),
           ],
         );
       },
     );
+  }
+
+  /// 오늘만 루틴 시간 수정 다이얼로그
+  void _showTimeEditDialog(ViewAllRoutineItem routine) {
+    int? selectedHour;
+    int? selectedMinute;
+
+    // 현재 시간 파싱 (override_time이 있으면 우선, 없으면 preferred_time)
+    final currentTime = routine.overrideTime ?? routine.preferredTime;
+    if (currentTime != null && currentTime.contains(':')) {
+      try {
+        final parts = currentTime.split(':');
+        if (parts.length >= 2) {
+          selectedHour = int.parse(parts[0]);
+          final parsedMinute = int.parse(parts[1]);
+          // 가장 가까운 5분 단위로 반올림
+          selectedMinute = (parsedMinute / 5).round() * 5;
+          if (selectedMinute == 60) selectedMinute = 0; // 60분은 0분으로
+        }
+      } catch (e) {
+        selectedHour = 19;
+        selectedMinute = 0;
+      }
+    } else {
+      selectedHour = 19;
+      selectedMinute = 0;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            // 시간 옵션 (0-23)
+            final hourOptions = List.generate(24, (i) => i);
+            // 분 옵션 (0, 5, 10, ..., 55)
+            final minuteOptions = List.generate(12, (i) => i * 5);
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text(
+                '오늘만 시간 변경',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'LG Smart_H',
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${routine.name}의 오늘 시간을 변경하세요.',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                      fontFamily: 'LG Smart_H',
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // 시간 선택
+                      SizedBox(
+                        width: 80,
+                        child: DropdownButton<int>(
+                          value: selectedHour,
+                          isExpanded: true,
+                          items: hourOptions.map((hour) {
+                            return DropdownMenuItem<int>(
+                              value: hour,
+                              child: Text(
+                                hour.toString().padLeft(2, '0'),
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontFamily: 'LG Smart_H',
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (int? newHour) {
+                            if (newHour != null) {
+                              setDialogState(() {
+                                selectedHour = newHour;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                      const Text(
+                        ' : ',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'LG Smart_H',
+                        ),
+                      ),
+                      // 분 선택
+                      SizedBox(
+                        width: 80,
+                        child: DropdownButton<int>(
+                          value: selectedMinute,
+                          isExpanded: true,
+                          items: minuteOptions.map((minute) {
+                            return DropdownMenuItem<int>(
+                              value: minute,
+                              child: Text(
+                                minute.toString().padLeft(2, '0'),
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontFamily: 'LG Smart_H',
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (int? newMinute) {
+                            if (newMinute != null) {
+                              setDialogState(() {
+                                selectedMinute = newMinute;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text(
+                    '취소',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'LG Smart_H',
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    if (selectedHour != null && selectedMinute != null) {
+                      final newTime =
+                          '${selectedHour.toString().padLeft(2, '0')}:${selectedMinute.toString().padLeft(2, '0')}';
+                      await _saveTimeOverride(routine.id, newTime);
+                      Navigator.of(dialogContext).pop();
+                      // 루틴 목록 새로고침
+                      _loadAllRoutines();
+                    }
+                  },
+                  child: const Text(
+                    '저장',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'LG Smart_H',
+                      color: Color(0xFF8863EF),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 오늘 날짜의 루틴 시간 오버라이드 저장
+  Future<void> _saveTimeOverride(int routineId, String overrideTime) async {
+    try {
+      // 오늘 날짜 가져오기
+      final now = DateTime.now();
+      final todayStr =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+      // API 호출
+      List<String> urlsToTry = [ApiConfig.getBaseUrl(
+        isWeb: kIsWeb,
+        isAndroid: !kIsWeb && Platform.isAndroid,
+        isIOS: !kIsWeb && Platform.isIOS,
+      )];
+      if (!kIsWeb && Platform.isAndroid && ApiConfig.useEmulator == null) {
+        urlsToTry = ApiConfig.getAndroidBaseUrls();
+      }
+
+      for (final url in urlsToTry) {
+        try {
+          final uri = Uri.parse('$url/routine-time-override');
+          final response = await http
+              .post(
+                uri,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+                body: jsonEncode({
+                  'routine_id': routineId,
+                  'override_date': todayStr,
+                  'override_time': overrideTime,
+                }),
+              )
+              .timeout(
+                const Duration(seconds: 10),
+                onTimeout: () {
+                  throw Exception('요청 시간 초과');
+                },
+              );
+
+          if (response.statusCode == 200) {
+            print('[ViewAllScreen] 루틴 시간 오버라이드 저장 성공: $url');
+            return;
+          } else {
+            print(
+              '[ViewAllScreen] 루틴 시간 오버라이드 저장 실패: HTTP ${response.statusCode}',
+            );
+          }
+        } catch (e) {
+          print('[ViewAllScreen] 루틴 시간 오버라이드 저장 실패 ($url): $e');
+          continue;
+        }
+      }
+    } catch (e) {
+      print('[ViewAllScreen] 루틴 시간 오버라이드 저장 중 오류: $e');
+    }
   }
 
   Future<bool> _showConfirmDialog({VoidCallback? onConfirm}) async {
