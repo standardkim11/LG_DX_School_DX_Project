@@ -912,8 +912,13 @@
 
             // BGM 재생 시작 (끝까지 재생)
             // 버튼 클릭은 사용자 상호작용으로 간주되므로 바로 재생 시도
-            // 오디오 컨텍스트가 활성화되어 있으면 재생, 아니면 조용히 실패 (로봇청소기와 동일)
-            if (bgmAudio && audioContextActivated) {
+            // 클릭 이벤트가 발생했으므로 오디오 컨텍스트 활성화 후 재생 시도
+            if (bgmAudio) {
+                // 오디오 컨텍스트가 아직 활성화되지 않았으면 먼저 활성화
+                if (!audioContextActivated) {
+                    activateAudioContext();
+                }
+
                 // 오디오가 로드되었는지 확인
                 if (bgmAudio.readyState >= 2) { // HAVE_CURRENT_DATA 이상
                     bgmAudio.currentTime = 0;
@@ -922,9 +927,23 @@
                         playPromise
                             .then(() => {
                                 console.log('[BGM] 재생 시작 성공');
+                                audioContextActivated = true; // 재생 성공 시 플래그 설정
                             })
                             .catch(error => {
                                 console.error('[BGM] 재생 실패:', error.name, error.message);
+                                // 재생 실패 시 오디오 컨텍스트 활성화를 다시 시도
+                                if (!audioContextActivated) {
+                                    setTimeout(() => {
+                                        activateAudioContext();
+                                        // 활성화 후 재생 재시도
+                                        setTimeout(() => {
+                                            bgmAudio.currentTime = 0;
+                                            bgmAudio.play().catch(err => {
+                                                console.error('[BGM] 재생 재시도 실패:', err.name, err.message);
+                                            });
+                                        }, 100);
+                                    }, 100);
+                                }
                             });
                     }
                 } else {
@@ -935,6 +954,7 @@
                         bgmAudio.play()
                             .then(() => {
                                 console.log('[BGM] 재생 시작 성공 (로드 후)');
+                                audioContextActivated = true; // 재생 성공 시 플래그 설정
                             })
                             .catch(error => {
                                 console.error('[BGM] 재생 실패 (로드 후):', error.name, error.message);
