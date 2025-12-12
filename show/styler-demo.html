@@ -588,9 +588,9 @@
         reset();
 
         // 원격 시작 명령 확인 (폴링)
-        // URL 파라미터에서 IP 주소 가져오기 (예: ?ip=192.168.0.16)
+        // URL 파라미터에서 IP 주소 가져오기 (예: ?ip=192.168.0.47)
         const urlParams = new URLSearchParams(window.location.search);
-        const serverIP = urlParams.get('ip') || '192.168.0.16'; // 기본값: 192.168.0.16
+        const serverIP = urlParams.get('ip') || '192.168.0.47'; // 기본값: 192.168.0.47
         const API_BASE_URL = `http://${serverIP}:8088/api`;
         const POLLING_INTERVAL = 1000; // 1초마다 확인
 

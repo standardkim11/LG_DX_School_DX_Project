@@ -14,7 +14,7 @@ class ApiConfig {
   // PC의 IP 주소 확인 방법:
   //   - Windows: ipconfig 명령어 실행 후 "IPv4 주소" 확인
   //   - Mac/Linux: ifconfig 또는 ip addr 명령어 실행
-  static const String localNetworkIp = '192.168.0.16'; // PC의 실제 IP 주소
+  static const String localNetworkIp = '192.168.0.47'; // PC의 실제 IP 주소
 
   // Android 에뮬레이터에서 사용할 IP (변경 불필요)
   static const String androidEmulatorIp = '10.0.2.2';

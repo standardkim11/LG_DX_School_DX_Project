@@ -1000,13 +1000,13 @@
         // 원격 시작 명령 폴링 (Flutter 앱에서 시작 명령을 보내면 자동으로 시작)
         // 백엔드 서버 URL 설정
         // 로컬 개발: 'http://localhost:8088/api'
-        // 다른 기기에서 접근: 'http://[PC의 IP 주소]:8088/api' (예: 'http://192.168.0.16:8088/api')
+        // 다른 기기에서 접근: 'http://[PC의 IP 주소]:8088/api' (예: 'http://192.168.0.47:8088/api')
         // PC의 IP 주소 확인 방법:
         //   - Windows: ipconfig 명령어 실행 후 "IPv4 주소" 확인
         //   - Mac/Linux: ifconfig 또는 ip addr 명령어 실행
-        // URL 파라미터에서 IP 주소 가져오기 (예: ?ip=192.168.0.16)
+        // URL 파라미터에서 IP 주소 가져오기 (예: ?ip=192.168.0.47)
         const urlParams = new URLSearchParams(window.location.search);
-        const serverIP = urlParams.get('ip') || '192.168.0.16'; // 기본값: 192.168.0.16
+        const serverIP = urlParams.get('ip') || '192.168.0.47'; // 기본값: 192.168.0.47
         const API_BASE_URL = `http://${serverIP}:8088/api`;
 
         console.log('[세탁기] 서버 IP:', serverIP);
