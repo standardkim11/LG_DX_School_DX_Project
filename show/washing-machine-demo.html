@@ -912,12 +912,10 @@
 
             // BGM 재생 시작 (끝까지 재생)
             // 버튼 클릭은 사용자 상호작용으로 간주되므로 바로 재생 시도
-            // 클릭 이벤트가 발생했으므로 오디오 컨텍스트 활성화 후 재생 시도
+            // 클릭 이벤트가 발생했으므로 오디오 컨텍스트가 활성화되어 있든 없든 재생 시도
             if (bgmAudio) {
-                // 오디오 컨텍스트가 아직 활성화되지 않았으면 먼저 활성화
-                if (!audioContextActivated) {
-                    activateAudioContext();
-                }
+                // 오디오 컨텍스트 활성화 (비동기이지만 클릭 이벤트는 사용자 상호작용이므로 재생 가능)
+                activateAudioContext();
 
                 // 오디오가 로드되었는지 확인
                 if (bgmAudio.readyState >= 2) { // HAVE_CURRENT_DATA 이상
@@ -931,19 +929,19 @@
                             })
                             .catch(error => {
                                 console.error('[BGM] 재생 실패:', error.name, error.message);
-                                // 재생 실패 시 오디오 컨텍스트 활성화를 다시 시도
-                                if (!audioContextActivated) {
-                                    setTimeout(() => {
-                                        activateAudioContext();
-                                        // 활성화 후 재생 재시도
-                                        setTimeout(() => {
-                                            bgmAudio.currentTime = 0;
-                                            bgmAudio.play().catch(err => {
-                                                console.error('[BGM] 재생 재시도 실패:', err.name, err.message);
-                                            });
-                                        }, 100);
-                                    }, 100);
-                                }
+                                // 재생 실패 시 오디오 컨텍스트 활성화 후 재시도
+                                activateAudioContext();
+                                setTimeout(() => {
+                                    bgmAudio.currentTime = 0;
+                                    bgmAudio.play()
+                                        .then(() => {
+                                            console.log('[BGM] 재생 재시도 성공');
+                                            audioContextActivated = true;
+                                        })
+                                        .catch(err => {
+                                            console.error('[BGM] 재생 재시도 실패:', err.name, err.message);
+                                        });
+                                }, 200);
                             });
                     }
                 } else {
@@ -1055,7 +1053,22 @@
                         playButton.click();
                         console.log('✅ playButton.click() 호출 완료');
                     } else if (data.should_start && isRunning) {
-                        console.log('⚠️ 시작 명령 수신했지만 이미 실행 중입니다.');
+                        console.log('⚠️ 시작 명령 수신했지만 이미 실행 중입니다. BGM만 재생합니다.');
+                        // 이미 실행 중이어도 원격 명령이 오면 BGM 재생
+                        if (bgmAudio) {
+                            activateAudioContext();
+                            if (bgmAudio.readyState >= 2) {
+                                bgmAudio.currentTime = 0;
+                                bgmAudio.play()
+                                    .then(() => {
+                                        console.log('[BGM] 재생 시작 성공 (원격 명령)');
+                                        audioContextActivated = true;
+                                    })
+                                    .catch(error => {
+                                        console.error('[BGM] 재생 실패 (원격 명령):', error.name, error.message);
+                                    });
+                            }
+                        }
                     } else {
                         // should_start가 false인 경우는 로그를 출력하지 않음 (너무 많아짐)
                         // console.log('[폴링] 시작 명령 없음');
