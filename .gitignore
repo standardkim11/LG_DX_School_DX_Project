@@ -29,3 +29,7 @@ android/.gradle/
 
 # Log files
 debug.log
+
+# Environment variables
+.env
+.env.*
