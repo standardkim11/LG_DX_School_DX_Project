@@ -322,16 +322,83 @@
             });
         });
 
-        // 전체 청소 버튼 클릭 함수
+        // 전체 청소 실행 함수 (원격 명령용)
         function handleFullCleaningButton() {
-            const fullCleaningButton = document.querySelector('.cleaning-button[data-type="full"]');
-            if (fullCleaningButton) {
-                console.log('✅ 전체 청소 버튼 클릭 시뮬레이션');
-                // 버튼 클릭 이벤트 트리거
-                fullCleaningButton.click();
-            } else {
-                console.error('❌ 전체 청소 버튼을 찾을 수 없습니다.');
+            console.log('✅ 전체 청소 시작 (원격 명령)');
+
+            const endImage = document.querySelector('.end-image');
+            if (endImage) {
+                endImage.classList.remove('show');
             }
+
+            // BGM 재생 시작
+            if (bgmAudio) {
+                activateAudioContext();
+
+                if (bgmAudio.readyState >= 2) {
+                    bgmAudio.currentTime = 0;
+                    const playPromise = bgmAudio.play();
+                    if (playPromise !== undefined) {
+                        playPromise
+                            .then(() => {
+                                console.log('[BGM] 재생 시작 성공 (원격 명령)');
+                                audioContextActivated = true;
+                            })
+                            .catch(error => {
+                                console.error('[BGM] 재생 실패 (원격 명령):', error.name, error.message);
+                                // 재시도
+                                setTimeout(() => {
+                                    activateAudioContext();
+                                    bgmAudio.currentTime = 0;
+                                    bgmAudio.play()
+                                        .then(() => {
+                                            console.log('[BGM] 재생 재시도 성공 (원격 명령)');
+                                            audioContextActivated = true;
+                                        })
+                                        .catch(err => {
+                                            console.error('[BGM] 재생 재시도 실패 (원격 명령):', err.name, err.message);
+                                        });
+                                }, 200);
+                            });
+                    }
+                } else {
+                    bgmAudio.addEventListener('canplaythrough', function onCanPlay() {
+                        bgmAudio.removeEventListener('canplaythrough', onCanPlay);
+                        activateAudioContext();
+                        bgmAudio.currentTime = 0;
+                        bgmAudio.play()
+                            .then(() => {
+                                console.log('[BGM] 재생 시작 성공 (원격 명령, 로드 후)');
+                                audioContextActivated = true;
+                            })
+                            .catch(error => {
+                                console.error('[BGM] 재생 실패 (원격 명령, 로드 후):', error.name, error.message);
+                            });
+                    }, { once: true });
+                    bgmAudio.load();
+                }
+            }
+
+            // 첫 번째 페이지 숨기기
+            page1.classList.remove('active');
+
+            // 두 번째 페이지 보이기
+            page2.classList.add('active');
+
+            // 4초 후 세 번째 페이지로 이동
+            setTimeout(() => {
+                page2.classList.remove('active');
+                page3.classList.add('active');
+
+                // end.png가 나타나도록
+                setTimeout(() => {
+                    if (endImage) {
+                        endImage.classList.add('show');
+                    }
+                }, 200);
+
+                // BGM은 끝까지 재생되도록 유지 (자동 정지하지 않음)
+            }, 4000);
         }
 
         buttons.forEach(button => {
